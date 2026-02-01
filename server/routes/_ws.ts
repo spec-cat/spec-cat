@@ -1,0 +1,628 @@
+/**
+ * WebSocket endpoint for AI provider chat streaming
+ * Path: /_ws
+ * Uses incremental permission approval for 'ask' mode
+ */
+
+import { existsSync } from 'node:fs'
+import { getProjectDir } from '~/server/utils/projectDir'
+import { ensureChatWorktree } from '~/server/utils/ensureChatWorktree'
+import { loadSpecContext } from '~/server/utils/specContext'
+import { guardProviderCapability, resolveServerProviderSelection } from '~/server/utils/aiProviderSelection'
+import type { AIProviderStreamController } from '~/server/utils/aiProvider'
+import { streamChatWithProvider } from '~/server/utils/aiProvider'
+import { hasCodexMissingRolloutPathError, hasCodexPermissionError, summarizeProviderProcessError } from '~/server/utils/providerProcessError'
+
+type PermissionMode = 'plan' | 'ask' | 'auto' | 'bypass'
+
+interface ChatMessage {
+  type: 'chat'
+  message: string
+  requestId: string
+  sessionId?: string
+  permissionMode?: PermissionMode
+  cwd?: string  // Custom working directory (e.g. worktree path)
+  worktreeBranch?: string  // Branch name for worktree recovery
+  featureId?: string  // Associated feature ID for spec context injection
+  providerId?: string
+  providerModelKey?: string
+}
+
+interface PingMessage {
+  type: 'ping'
+}
+
+interface PermissionResponse {
+  type: 'permission_response'
+  allow: boolean
+}
+
+interface AbortMessage {
+  type: 'abort'
+}
+
+interface ResetContextMessage {
+  type: 'reset_context'
+}
+
+type ClientMessage = ChatMessage | PingMessage | PermissionResponse | AbortMessage | ResetContextMessage
+
+// Track state per peer
+interface PeerState {
+  proc: AIProviderStreamController | null
+  procGeneration: number  // Incremented when process is superseded; stale close handlers skip
+  pendingMessage: ChatMessage | null
+  approvedTools: Set<string>
+  pendingTools: string[]  // Multiple tools can be pending
+  providerSessionId: string | null
+}
+
+const peerStates = new Map<string, PeerState>()
+
+function getPeerState(peerId: string): PeerState {
+  let state = peerStates.get(peerId)
+  if (!state) {
+    state = {
+      proc: null,
+      procGeneration: 0,
+      pendingMessage: null,
+      approvedTools: new Set(),
+      pendingTools: [],
+      providerSessionId: null,
+    }
+    peerStates.set(peerId, state)
+  }
+  return state
+}
+
+function killProc(proc: AIProviderStreamController) {
+  try {
+    proc.kill()
+  } catch {}
+}
+
+function hasRenderableProviderContent(message: Record<string, unknown>): boolean {
+  const type = typeof message.type === 'string' ? message.type : ''
+
+  if (type === 'stream_event') {
+    const event = message.event
+    if (event && typeof event === 'object') {
+      const streamEvent = event as Record<string, unknown>
+      if (streamEvent.type === 'content_block_start') {
+        const contentBlock = streamEvent.content_block
+        if (contentBlock && typeof contentBlock === 'object') {
+          const block = contentBlock as Record<string, unknown>
+          const blockType = typeof block.type === 'string' ? block.type : ''
+          if (blockType === 'text' || blockType === 'thinking' || blockType === 'tool_use' || blockType === 'server_tool_use') {
+            return true
+          }
+        }
+      }
+      if (streamEvent.type === 'content_block_delta') {
+        const delta = streamEvent.delta
+        if (delta && typeof delta === 'object') {
+          const d = delta as Record<string, unknown>
+          if (typeof d.text === 'string' || typeof d.thinking === 'string' || typeof d.partial_json === 'string') {
+            return true
+          }
+        }
+      }
+    }
+  }
+
+  if (type === 'tool_result' || type === 'permission_request') {
+    return true
+  }
+
+  if (type === 'result') {
+    const subtype = typeof message.subtype === 'string' ? message.subtype : ''
+    return subtype.startsWith('error')
+  }
+
+  return false
+}
+
+function sendAssistantText(peer: any, text: string, sessionId?: string | null) {
+  peer.send(JSON.stringify({
+    type: 'provider_json',
+    data: {
+      type: 'stream_event',
+      ...(sessionId ? { session_id: sessionId } : {}),
+      event: {
+        type: 'content_block_start',
+        content_block: { type: 'text', text },
+      },
+    },
+  }))
+  peer.send(JSON.stringify({
+    type: 'provider_json',
+    data: {
+      type: 'stream_event',
+      ...(sessionId ? { session_id: sessionId } : {}),
+      event: { type: 'content_block_stop' },
+    },
+  }))
+}
+
+export default defineWebSocketHandler({
+  open(_peer) {
+    // Client connected
+  },
+
+  close(peer) {
+    const state = peerStates.get(peer.id)
+    if (state?.proc) {
+      killProc(state.proc)
+    }
+    peerStates.delete(peer.id)
+  },
+
+  error(peer, error) {
+    console.error('[WS] Error for peer', peer.id, ':', error)
+  },
+
+  message(peer, rawMessage) {
+    let msg: ClientMessage
+    try {
+      msg = JSON.parse(rawMessage.text())
+    } catch {
+      peer.send(JSON.stringify({ type: 'error', error: 'Invalid JSON' }))
+      return
+    }
+
+    if (msg.type === 'ping') {
+      peer.send(JSON.stringify({ type: 'pong' }))
+      return
+    }
+
+    if (msg.type === 'chat') {
+      handleChatMessage(peer, msg)
+      return
+    }
+
+    if (msg.type === 'permission_response') {
+      handlePermissionResponse(peer, msg)
+      return
+    }
+
+    if (msg.type === 'abort') {
+      handleAbort(peer)
+      return
+    }
+
+    if (msg.type === 'reset_context') {
+      handleResetContext(peer)
+      return
+    }
+  },
+})
+
+function handlePermissionResponse(peer: any, msg: PermissionResponse) {
+  const state = getPeerState(peer.id)
+
+  console.log('[WS] Permission response:', {
+    allow: msg.allow,
+    pendingTools: state.pendingTools,
+    approvedTools: Array.from(state.approvedTools),
+    sessionId: state.providerSessionId,
+    providerId: state.pendingMessage?.providerId,
+    providerModelKey: state.pendingMessage?.providerModelKey,
+  })
+
+  if (msg.allow && state.pendingTools.length > 0 && state.pendingMessage) {
+    // Add all pending tools to approved set
+    for (const tool of state.pendingTools) {
+      state.approvedTools.add(tool)
+    }
+    console.log('[WS] Tools approved:', state.pendingTools, '- Total approved:', Array.from(state.approvedTools))
+    state.pendingTools = []
+    // Keep providerSessionId to resume the conversation
+    runProvider(peer, state, state.pendingMessage)
+  } else {
+    state.pendingTools = []
+    state.pendingMessage = null
+    peer.send(JSON.stringify({ type: 'done', requestId: 'denied', denied: true }))
+  }
+}
+
+function handleAbort(peer: any) {
+  const state = getPeerState(peer.id)
+
+  console.log('[WS] Abort requested for peer:', peer.id)
+
+  // Kill the process if running
+  if (state.proc) {
+    state.procGeneration++
+    killProc(state.proc)
+    state.proc = null
+  }
+
+  // Clear pending state
+  state.pendingMessage = null
+  state.pendingTools = []
+
+  // Send confirmation
+  peer.send(JSON.stringify({ type: 'aborted' }))
+
+  console.log('[WS] Abort completed for peer:', peer.id)
+}
+
+/**
+ * Clear AI provider session state (shared logic for reset and speckit commands)
+ */
+function clearProviderSession(state: PeerState) {
+  // Kill the process if running
+  if (state.proc) {
+    state.procGeneration++
+    killProc(state.proc)
+    state.proc = null
+  }
+
+  // Clear all session state (this forces a new conversation context)
+  state.providerSessionId = null
+  state.approvedTools.clear()
+  state.pendingMessage = null
+  state.pendingTools = []
+}
+
+function handleResetContext(peer: any) {
+  const state = getPeerState(peer.id)
+
+  console.log('[WS] Reset context requested for peer:', peer.id)
+
+  clearProviderSession(state)
+
+  // Send confirmation
+  peer.send(JSON.stringify({ type: 'context_reset' }))
+
+  console.log('[WS] Context reset completed for peer:', peer.id)
+}
+
+async function handleChatMessage(peer: any, msg: ChatMessage) {
+  const state = getPeerState(peer.id)
+
+  // Validate message content
+  if (!msg.message || typeof msg.message !== 'string') {
+    console.error('[WS] Invalid chat message - missing or invalid message property:', msg)
+    peer.send(JSON.stringify({ 
+      type: 'error', 
+      error: 'Invalid message: message property is required',
+      requestId: msg.requestId 
+    }))
+    return
+  }
+
+  // Detect /speckit.* commands (e.g., /speckit.plan, /speckit.tasks, /speckit.implement)
+  const isSpeckitCommand = msg.message.trim().startsWith('/speckit.')
+
+  // Auto-reset context for speckit commands to prevent context pollution between pipeline steps
+  if (isSpeckitCommand) {
+    console.log('[WS] Speckit command detected - auto-resetting context for peer:', peer.id)
+    clearProviderSession(state)
+    // Note: don't send context_reset event here to avoid UI noise
+  } else {
+    // Kill any existing process for non-speckit messages
+    if (state.proc) {
+      state.procGeneration++
+      killProc(state.proc)
+      state.proc = null
+    }
+  }
+
+  // Reset state for new message
+  state.pendingMessage = msg
+  state.pendingTools = []
+
+  // Use existing session ID if provided (continuing conversation)
+  // But for speckit commands, session was already cleared above
+  if (!isSpeckitCommand && msg.sessionId) {
+    state.providerSessionId = msg.sessionId
+    // Keep approvedTools when continuing a session
+  } else if (!isSpeckitCommand) {
+    // New conversation - clear approved tools
+    state.approvedTools.clear()
+    state.providerSessionId = null
+  }
+
+  console.log('[WS] Chat message received:', {
+    hasSessionId: !!msg.sessionId,
+    sessionId: state.providerSessionId,
+    approvedTools: Array.from(state.approvedTools),
+    providerId: msg.providerId,
+    providerModelKey: msg.providerModelKey,
+    isSpeckitCommand,
+  })
+
+  runProvider(peer, state, msg)
+}
+
+async function runProvider(peer: any, state: PeerState, msg: ChatMessage, isRetry = false, forceEphemeral = false) {
+  const requestedSelection = msg.providerId
+    ? { providerId: msg.providerId, modelKey: msg.providerModelKey || '' }
+    : { providerId: 'claude', modelKey: msg.providerModelKey || '' }
+  const selection = await resolveServerProviderSelection(requestedSelection)
+  const providerGuard = await guardProviderCapability(
+    selection,
+    'streaming',
+    'Choose a provider with streaming capability in Settings.',
+  )
+  if ('failure' in providerGuard) {
+    peer.send(JSON.stringify({
+      type: 'error',
+      error: providerGuard.failure.error,
+      requestId: msg.requestId,
+    }))
+    return
+  }
+
+  const projectDir = getProjectDir()
+  const workingDirectory = msg.cwd || projectDir
+  const mode = msg.permissionMode || 'ask'
+
+  if (mode !== 'bypass') {
+    const permissionGuard = await guardProviderCapability(
+      selection,
+      'permissions',
+      'Switch permission mode to bypass or choose a provider that supports permission prompts.',
+    )
+    if ('failure' in permissionGuard) {
+      peer.send(JSON.stringify({
+        type: 'error',
+        error: permissionGuard.failure.error,
+        requestId: msg.requestId,
+      }))
+      return
+    }
+  }
+
+  // Recover worktree if /tmp was wiped (e.g. after reboot)
+  if (workingDirectory.startsWith('/tmp/br-') && !existsSync(workingDirectory)) {
+    const result = await ensureChatWorktree(projectDir, workingDirectory, msg.worktreeBranch)
+    if (result.recovered) {
+      peer.send(JSON.stringify({ type: 'worktree_recovered' }))
+    } else if (result.error) {
+      peer.send(JSON.stringify({
+        type: 'error',
+        error: `Worktree recovery failed: ${result.error}`,
+        requestId: msg.requestId,
+      }))
+      return
+    }
+  }
+
+  // Add resume flag if we have a session (skip on retry)
+  const usedResumeFlag = !isRetry && !!state.providerSessionId
+  const resumeSessionId = usedResumeFlag ? state.providerSessionId! : undefined
+
+  // Inject feature spec context via --append-system-prompt (new sessions only)
+  let systemPrompt: string | undefined
+  if (msg.featureId && !usedResumeFlag) {
+    try {
+      const specContext = await loadSpecContext(projectDir, msg.featureId)
+      if (specContext) {
+        systemPrompt = specContext
+      }
+    } catch (error) {
+      console.error('[WS] Failed to load spec context:', error)
+      // Non-fatal: proceed without spec context
+    }
+  }
+
+  console.log('[WS] Running provider stream:', selection.providerId, selection.modelKey, isRetry ? '(retry)' : '')
+
+  const generation = state.procGeneration
+  let permissionRequested = false
+  let emittedRenderableContent = false
+
+  try {
+    state.proc = await streamChatWithProvider(
+      {
+        message: msg.message,
+        selection,
+        cwd: workingDirectory,
+        permissionMode: mode,
+        approvedTools: Array.from(state.approvedTools),
+        resumeSessionId,
+        systemPrompt,
+        ephemeral: forceEphemeral && selection.providerId === 'codex',
+      },
+      {
+        onProviderJson(parsed) {
+          const sessionId = extractSessionId(parsed)
+          if (sessionId) {
+            state.providerSessionId = sessionId
+          }
+          if (hasRenderableProviderContent(parsed)) {
+            emittedRenderableContent = true
+          }
+
+          if (selection.providerId === 'claude' && parsed.type === 'user' && !permissionRequested) {
+            const content = (parsed.message as any)?.content || parsed.content
+            if (Array.isArray(content)) {
+              for (const block of content) {
+                if (block?.type === 'tool_result' && block?.is_error && typeof block.content === 'string') {
+                  const errorContent = block.content
+                  if (errorContent.includes('requested permissions') || errorContent.includes('haven\'t granted')) {
+                    permissionRequested = true
+                    const tools = parseToolsFromError(errorContent)
+                    state.pendingTools = tools
+
+                    peer.send(JSON.stringify({
+                      type: 'permission_request',
+                      tool: tools[0],
+                      tools,
+                      description: errorContent,
+                    }))
+                    state.proc?.kill()
+                    return
+                  }
+                }
+              }
+            }
+          }
+
+          peer.send(JSON.stringify({ type: 'provider_json', data: parsed }))
+        },
+        onClose({ exitCode, signal, nonJsonOutput }) {
+          if (state.procGeneration !== generation) {
+            return
+          }
+
+          try {
+            if (!permissionRequested) {
+              if (exitCode !== 0 && exitCode !== null) {
+                const hasPermissionError = hasCodexPermissionError(nonJsonOutput)
+                const missingRolloutPath = hasCodexMissingRolloutPathError(nonJsonOutput)
+                if (missingRolloutPath && !hasPermissionError && !isRetry) {
+                  peer.send(JSON.stringify({
+                    type: 'session_reset',
+                    reason: 'Codex session state was missing rollout data. Retrying with a fresh ephemeral session.',
+                  }))
+                  state.providerSessionId = null
+                  state.proc = null
+                  runProvider(peer, state, msg, true, true)
+                  return
+                }
+
+                if (usedResumeFlag && !isRetry) {
+                  const retryWithEphemeral = selection.providerId === 'codex'
+                  peer.send(JSON.stringify({
+                    type: 'session_reset',
+                    reason: retryWithEphemeral
+                      ? `Session resume failed (exit code ${exitCode}). Retrying with a fresh ephemeral session.`
+                      : `Session resume failed (exit code ${exitCode}). Retrying with a fresh session.`,
+                  }))
+                  state.providerSessionId = null
+                  state.proc = null
+                  runProvider(peer, state, msg, true, retryWithEphemeral)
+                  return
+                }
+
+                const summary = summarizeProviderProcessError(nonJsonOutput, 700)
+                const details = summary ? ` — ${summary}` : ''
+                peer.send(JSON.stringify({
+                  type: 'error',
+                  error: `Provider process exited unexpectedly (code: ${exitCode}${signal ? ', signal: ' + signal : ''})${details}`,
+                  requestId: msg.requestId,
+                }))
+              } else if (exitCode === null && signal) {
+                const summary = summarizeProviderProcessError(nonJsonOutput, 700)
+                const details = summary ? ` — ${summary}` : ''
+                peer.send(JSON.stringify({
+                  type: 'error',
+                  error: `Provider process was killed by signal ${signal}${details}`,
+                  requestId: msg.requestId,
+                }))
+              } else {
+                if (!emittedRenderableContent) {
+                  const summary = summarizeProviderProcessError(nonJsonOutput, 700)
+                  const fallbackText = summary
+                    ? `Provider returned no structured response.\n\nRaw output:\n${summary}`
+                    : 'Provider completed without returning visible response content.'
+                  sendAssistantText(peer, fallbackText, state.providerSessionId)
+                }
+                peer.send(JSON.stringify({ type: 'done', requestId: msg.requestId }))
+              }
+              state.pendingMessage = null
+            }
+          } finally {
+            state.proc = null
+          }
+        },
+        onError(error) {
+          try {
+            peer.send(JSON.stringify({
+              type: 'error',
+              error: `Provider process error: ${error.message}`,
+              requestId: msg.requestId,
+            }))
+          } finally {
+            state.pendingMessage = null
+            state.pendingTools = []
+            state.proc = null
+          }
+        },
+      },
+    )
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : 'Failed to start provider process'
+    peer.send(JSON.stringify({
+      type: 'error',
+      error: errorMsg,
+      requestId: msg.requestId,
+    }))
+    state.pendingMessage = null
+    state.pendingTools = []
+    state.proc = null
+  }
+}
+
+function extractSessionId(message: Record<string, unknown>): string | null {
+  const eventType = typeof message.type === 'string' ? message.type.toLowerCase() : ''
+  const subtype = typeof message.subtype === 'string' ? message.subtype.toLowerCase() : ''
+  const isErrorLike = eventType.includes('error') || eventType.includes('failed') || subtype.startsWith('error')
+  if (isErrorLike) {
+    return null
+  }
+
+  const sessionIdKeys = ['session_id', 'sessionId', 'conversation_id', 'conversationId', 'thread_id', 'threadId']
+  for (const key of sessionIdKeys) {
+    const value = message[key]
+    if (typeof value === 'string' && value.length > 0) {
+      return value
+    }
+  }
+  return null
+}
+
+function parseToolsFromError(errorContent: string): string[] {
+  // Parse tool name(s) from error message
+  // Claude CLI error format examples:
+  // - "The user hasn't granted permission to use the Write tool"
+  // - "Claude requested permissions to write to /path/file.txt"
+  // - "Permission Required: Write - /path/file.txt"
+  const lowerContent = errorContent.toLowerCase()
+  const tools: string[] = []
+
+  // First, try to match explicit tool name in message
+  const toolNameMatch = errorContent.match(/(?:use the |Permission Required: )(\w+)(?: tool)?/i)
+  if (toolNameMatch) {
+    const toolName = toolNameMatch[1]
+    // Normalize tool name
+    const normalized = toolName.charAt(0).toUpperCase() + toolName.slice(1).toLowerCase()
+    if (['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep', 'Webfetch', 'Websearch'].includes(normalized)) {
+      const tool = normalized === 'Webfetch' ? 'WebFetch' : normalized === 'Websearch' ? 'WebSearch' : normalized
+      return [tool]
+    }
+  }
+
+  // Fallback to content-based detection
+  // "write to" could mean Write (new file) or Edit (existing file) - approve both
+  if (lowerContent.includes('write to') || lowerContent.includes('write ')) {
+    tools.push('Write', 'Edit')
+  }
+  if (lowerContent.includes('edit ') && !tools.includes('Edit')) {
+    tools.push('Edit')
+  }
+  if (lowerContent.includes('read ')) {
+    tools.push('Read')
+  }
+  if (lowerContent.includes('run ') || lowerContent.includes('execute') || lowerContent.includes('bash')) {
+    tools.push('Bash')
+  }
+  if (lowerContent.includes('glob')) {
+    tools.push('Glob')
+  }
+  if (lowerContent.includes('grep')) {
+    tools.push('Grep')
+  }
+  if (lowerContent.includes('fetch') || lowerContent.includes('webfetch')) {
+    tools.push('WebFetch')
+  }
+  if (lowerContent.includes('websearch')) {
+    tools.push('WebSearch')
+  }
+
+  // Default to Write and Edit as most common permission requests
+  return tools.length > 0 ? tools : ['Write', 'Edit']
+}

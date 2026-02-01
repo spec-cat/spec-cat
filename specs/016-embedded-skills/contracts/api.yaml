@@ -1,0 +1,159 @@
+openapi: 3.0.3
+info:
+  title: Embedded Skills API
+  description: Server API endpoints for the embedded skills system
+  version: 1.0.0
+
+paths:
+  /api/skills:
+    get:
+      summary: List all registered skills
+      description: |
+        Scans the skills/ directory, parses skill definition files,
+        validates required fields, and returns metadata for all valid skills.
+        Malformed definitions are skipped with a server-side warning.
+        [FR-001, FR-015]
+      operationId: listSkills
+      responses:
+        '200':
+          description: List of registered skill metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SkillsListResponse'
+              example:
+                skills:
+                  - id: better-spec
+                    name: Better Spec
+                    description: Validates spec documents against What/How/Track separation
+                    icon: DocumentCheckIcon
+                    prerequisites:
+                      - spec.md
+        '500':
+          description: Failed to scan skills directory
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/skills/{skillId}/prompt:
+    post:
+      summary: Render a skill's prompt template for a feature
+      description: |
+        Loads the specified skill definition, renders its prompt template
+        with feature-specific context (featureId, specsDir, available documents),
+        and returns the rendered prompt text.
+        [FR-006]
+      operationId: renderSkillPrompt
+      parameters:
+        - name: skillId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The skill identifier (e.g., "better-spec")
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - featureId
+              properties:
+                featureId:
+                  type: string
+                  description: Target feature identifier (e.g., "016-embedded-skills")
+      responses:
+        '200':
+          description: Rendered prompt text
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SkillPromptResponse'
+              example:
+                prompt: "You are a spec quality validator. Analyze the following feature..."
+                featureId: "016-embedded-skills"
+                skillId: "better-spec"
+        '404':
+          description: Skill not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '400':
+          description: Missing featureId or feature spec directory not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    SkillMetadata:
+      type: object
+      required:
+        - id
+        - name
+        - description
+        - icon
+        - prerequisites
+      properties:
+        id:
+          type: string
+          description: Unique skill identifier
+          example: better-spec
+        name:
+          type: string
+          description: Human-readable display name
+          example: Better Spec
+        description:
+          type: string
+          description: Short description of what the skill does
+          example: Validates spec documents against What/How/Track separation
+        icon:
+          type: string
+          description: "@heroicons/vue icon component name"
+          example: DocumentCheckIcon
+        prerequisites:
+          type: array
+          items:
+            type: string
+          description: Required document filenames for the skill to be available
+          example:
+            - spec.md
+
+    SkillsListResponse:
+      type: object
+      required:
+        - skills
+      properties:
+        skills:
+          type: array
+          items:
+            $ref: '#/components/schemas/SkillMetadata'
+
+    SkillPromptResponse:
+      type: object
+      required:
+        - prompt
+        - featureId
+        - skillId
+      properties:
+        prompt:
+          type: string
+          description: Fully rendered prompt text with template variables resolved
+        featureId:
+          type: string
+          description: Target feature identifier
+        skillId:
+          type: string
+          description: Skill identifier
+
+    ErrorResponse:
+      type: object
+      properties:
+        statusCode:
+          type: integer
+        statusMessage:
+          type: string

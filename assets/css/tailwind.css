@@ -1,0 +1,430 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Theme CSS Variables — space-separated RGB for Tailwind opacity support */
+:root {
+  /* Light theme (default CSS layer) */
+  --color-retro-black: 255 255 255;
+  --color-retro-dark: 246 248 250;
+  --color-retro-panel: 234 238 242;
+  --color-retro-border: 208 215 222;
+  --color-retro-cyan: 9 105 218;
+  --color-retro-green: 26 127 55;
+  --color-retro-yellow: 154 103 0;
+  --color-retro-orange: 188 76 0;
+  --color-retro-red: 207 34 46;
+  --color-retro-magenta: 130 80 223;
+  --color-retro-pink: 191 57 137;
+  --color-retro-text: 31 35 40;
+  --color-retro-muted: 101 109 118;
+  --color-retro-subtle: 110 118 129;
+  --color-feature-panel: 249 250 251;
+  --color-feature-border: 223 227 233;
+}
+
+.dark {
+  /* Dark theme (current retro terminal palette — preserved exactly) */
+  --color-retro-black: 13 17 23;
+  --color-retro-dark: 22 27 34;
+  --color-retro-panel: 33 38 45;
+  --color-retro-border: 48 54 61;
+  --color-retro-cyan: 88 166 255;
+  --color-retro-green: 63 185 80;
+  --color-retro-yellow: 210 153 34;
+  --color-retro-orange: 219 109 40;
+  --color-retro-red: 248 81 73;
+  --color-retro-magenta: 188 140 255;
+  --color-retro-pink: 247 120 186;
+  --color-retro-text: 230 237 243;
+  --color-retro-muted: 139 148 158;
+  --color-retro-subtle: 110 118 129;
+}
+
+@layer base {
+  html, body {
+    @apply bg-retro-black text-retro-text font-mono text-sm;
+    overflow: hidden;
+  }
+}
+
+@layer components {
+  /* Button styles */
+  .btn {
+    @apply px-3 py-1.5 bg-retro-panel border border-retro-border text-retro-text font-mono text-sm;
+    @apply hover:bg-retro-dark hover:border-retro-cyan transition-all duration-150;
+    @apply active:scale-95;
+  }
+
+  .btn-primary {
+    @apply bg-retro-cyan/20 border-retro-cyan text-retro-cyan;
+    @apply hover:bg-retro-cyan/30;
+  }
+
+  .btn-success {
+    @apply bg-retro-green/20 border-retro-green text-retro-green;
+    @apply hover:bg-retro-green/30;
+  }
+
+  .btn-warning {
+    @apply bg-retro-yellow/20 border-retro-yellow text-retro-yellow;
+    @apply hover:bg-retro-yellow/30;
+  }
+
+  .btn-danger {
+    @apply bg-retro-red/20 border-retro-red text-retro-red;
+    @apply hover:bg-retro-red/30;
+  }
+
+  /* Panel styles */
+  .panel {
+    @apply bg-retro-panel border border-retro-border p-3;
+  }
+
+  /* Input styles */
+  .input {
+    @apply bg-retro-dark border border-retro-border text-retro-text font-mono text-sm px-3 py-2;
+    @apply focus:outline-none focus:border-retro-cyan;
+    @apply placeholder:text-retro-subtle;
+  }
+
+  /* Scrollbar */
+  .scrollbar-custom::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .scrollbar-custom::-webkit-scrollbar-track {
+    @apply bg-retro-black;
+  }
+
+  .scrollbar-custom::-webkit-scrollbar-thumb {
+    @apply bg-retro-border rounded;
+  }
+
+  .scrollbar-custom::-webkit-scrollbar-thumb:hover {
+    @apply bg-retro-muted;
+  }
+
+  /* Feature cards — light mode only */
+  .feature-card-light {
+    background-image:
+      radial-gradient(circle at 15% 0%, rgba(var(--color-retro-cyan), 0.18), transparent 40%),
+      radial-gradient(circle at 85% 5%, rgba(var(--color-retro-magenta), 0.12), transparent 50%),
+      linear-gradient(145deg, rgb(var(--color-feature-panel)) 0%, rgb(var(--color-feature-border)) 100%);
+    border-color: rgb(var(--color-feature-border));
+    box-shadow: 0 25px 45px rgba(15, 23, 42, 0.12);
+    backdrop-filter: blur(10px);
+    transition: box-shadow 150ms ease, border-color 150ms ease;
+  }
+
+  .feature-card-light:hover {
+    box-shadow: 0 30px 55px rgba(15, 23, 42, 0.18);
+    border-color: rgb(var(--color-retro-muted));
+  }
+
+  .feature-card-active {
+    background-image:
+      radial-gradient(circle at 110% -15%, rgba(var(--color-retro-cyan), 0.35), transparent 55%),
+      radial-gradient(circle at 45% 15%, rgba(var(--color-retro-pink), 0.18), transparent 60%),
+      linear-gradient(150deg, rgba(var(--color-feature-panel), 0.9) 0%, rgba(var(--color-retro-magenta), 0.2) 70%, rgb(var(--color-feature-border)) 100%);
+    border-color: rgb(var(--color-retro-cyan));
+    box-shadow: 0 0 0 1px rgb(var(--color-retro-cyan) / 0.5), 0 30px 60px rgba(var(--color-retro-cyan), 0.25);
+    position: relative;
+    z-index: 1;
+  }
+
+  .dark .feature-card-light {
+    background-image: linear-gradient(135deg, rgb(var(--color-retro-panel)) 0%, rgb(var(--color-retro-panel)) 55%, rgba(var(--color-retro-cyan), 0.05) 100%);
+    border-color: rgb(var(--color-retro-border));
+    box-shadow: none;
+    backdrop-filter: none;
+  }
+
+  .dark .feature-card-light:hover {
+    border-color: rgb(var(--color-retro-muted));
+  }
+
+  .dark .feature-card-active {
+    background-image: linear-gradient(135deg, rgba(var(--color-retro-cyan), 0.1) 0%, rgb(var(--color-retro-panel)) 60%, rgba(var(--color-retro-magenta), 0.05) 100%);
+    box-shadow: none;
+  }
+}
+
+/* Global scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-retro-black;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-retro-border rounded;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-retro-muted;
+}
+
+/* Selection */
+::selection {
+  @apply bg-retro-cyan/30 text-retro-text;
+}
+
+/* Focus indicators for accessibility */
+*:focus-visible {
+  @apply outline-none ring-2 ring-retro-cyan ring-offset-1 ring-offset-retro-black;
+}
+
+/* Remove default focus ring for mouse users, keep for keyboard */
+button:focus:not(:focus-visible),
+a:focus:not(:focus-visible),
+input:focus:not(:focus-visible),
+textarea:focus:not(:focus-visible) {
+  @apply outline-none ring-0;
+}
+
+/* Chat markdown — styles for rendered markdown inside chat messages */
+.chat-markdown {
+  line-height: 1.7;
+}
+
+.chat-markdown > *:first-child {
+  margin-top: 0;
+}
+
+.chat-markdown > *:last-child {
+  margin-bottom: 0;
+}
+
+/* Paragraphs */
+.chat-markdown p {
+  margin-top: 0.75em;
+  margin-bottom: 0.75em;
+}
+
+/* Headings */
+.chat-markdown h1,
+.chat-markdown h2,
+.chat-markdown h3,
+.chat-markdown h4,
+.chat-markdown h5,
+.chat-markdown h6 {
+  font-weight: 700;
+  margin-top: 1.25em;
+  margin-bottom: 0.5em;
+  line-height: 1.3;
+}
+
+.chat-markdown h1 {
+  font-size: 1.25em;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid rgb(var(--color-retro-border));
+}
+
+.chat-markdown h2 {
+  font-size: 1.125em;
+  padding-bottom: 0.25em;
+  border-bottom: 1px solid rgb(var(--color-retro-border) / 0.5);
+}
+
+.chat-markdown h3 {
+  font-size: 1em;
+  color: rgb(var(--color-retro-cyan));
+}
+
+.chat-markdown h4,
+.chat-markdown h5,
+.chat-markdown h6 {
+  font-size: 0.95em;
+  color: rgb(var(--color-retro-muted));
+}
+
+/* Lists */
+.chat-markdown ul,
+.chat-markdown ol {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+  padding-left: 1.75em;
+}
+
+.chat-markdown ul {
+  list-style-type: disc;
+}
+
+.chat-markdown ol {
+  list-style-type: decimal;
+}
+
+.chat-markdown li {
+  margin-top: 0.25em;
+  margin-bottom: 0.25em;
+}
+
+.chat-markdown li > ul,
+.chat-markdown li > ol {
+  margin-top: 0.125em;
+  margin-bottom: 0.125em;
+}
+
+.chat-markdown ul ul {
+  list-style-type: circle;
+}
+
+.chat-markdown ul ul ul {
+  list-style-type: square;
+}
+
+/* Code blocks */
+.chat-markdown pre {
+  background-color: rgb(var(--color-retro-panel));
+  border: 1px solid rgb(var(--color-retro-border) / 0.5);
+  border-radius: 0.375rem;
+  padding: 0.75em 1em;
+  margin-top: 0.75em;
+  margin-bottom: 0.75em;
+  overflow-x: auto;
+  line-height: 1.5;
+}
+
+.chat-markdown pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  border-radius: 0;
+  color: rgb(var(--color-retro-cyan));
+  font-size: 0.9em;
+}
+
+/* Inline code */
+.chat-markdown code {
+  background-color: rgb(var(--color-retro-panel));
+  border: 1px solid rgb(var(--color-retro-border) / 0.3);
+  border-radius: 0.25rem;
+  padding: 0.15em 0.4em;
+  font-size: 0.9em;
+  color: rgb(var(--color-retro-cyan));
+}
+
+/* Tables */
+.chat-markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.75em;
+  margin-bottom: 0.75em;
+  font-size: 0.9em;
+  display: block;
+  overflow-x: auto;
+}
+
+.chat-markdown thead {
+  border-bottom: 2px solid rgb(var(--color-retro-border));
+}
+
+.chat-markdown th {
+  background-color: rgb(var(--color-retro-panel));
+  font-weight: 700;
+  text-align: left;
+  padding: 0.5em 0.75em;
+  border: 1px solid rgb(var(--color-retro-border) / 0.5);
+  color: rgb(var(--color-retro-cyan));
+  white-space: nowrap;
+}
+
+.chat-markdown td {
+  padding: 0.4em 0.75em;
+  border: 1px solid rgb(var(--color-retro-border) / 0.3);
+}
+
+.chat-markdown tbody tr:nth-child(even) {
+  background-color: rgb(var(--color-retro-dark) / 0.5);
+}
+
+.chat-markdown tbody tr:hover {
+  background-color: rgb(var(--color-retro-panel) / 0.5);
+}
+
+/* Blockquotes */
+.chat-markdown blockquote {
+  border-left: 3px solid rgb(var(--color-retro-cyan) / 0.5);
+  padding-left: 1em;
+  margin-top: 0.75em;
+  margin-bottom: 0.75em;
+  color: rgb(var(--color-retro-muted));
+}
+
+.chat-markdown blockquote p {
+  margin-top: 0.25em;
+  margin-bottom: 0.25em;
+}
+
+/* Horizontal rules */
+.chat-markdown hr {
+  border: none;
+  border-top: 1px solid rgb(var(--color-retro-border));
+  margin-top: 1.25em;
+  margin-bottom: 1.25em;
+}
+
+/* Links */
+.chat-markdown a {
+  color: rgb(var(--color-retro-cyan));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.chat-markdown a:hover {
+  color: rgb(var(--color-retro-text));
+}
+
+/* Bold & Italic */
+.chat-markdown strong {
+  font-weight: 700;
+  color: rgb(var(--color-retro-text));
+}
+
+.chat-markdown em {
+  font-style: italic;
+}
+
+/* Images */
+.chat-markdown img {
+  max-width: 100%;
+  border-radius: 0.375rem;
+}
+
+/* Task lists (checkbox lists) */
+.chat-markdown input[type="checkbox"] {
+  margin-right: 0.5em;
+  accent-color: rgb(var(--color-retro-cyan));
+}
+
+/* Definition lists */
+.chat-markdown dl {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+
+.chat-markdown dt {
+  font-weight: 700;
+  margin-top: 0.5em;
+}
+
+.chat-markdown dd {
+  padding-left: 1.5em;
+  margin-bottom: 0.25em;
+}
+
+/* Screen reader only */
+.sr-only {
+  @apply absolute w-px h-px p-0 -m-px overflow-hidden whitespace-nowrap border-0;
+  clip: rect(0, 0, 0, 0);
+}
+
+.sr-only-focusable:focus {
+  @apply static w-auto h-auto p-2 m-0 overflow-visible whitespace-normal;
+  clip: auto;
+}

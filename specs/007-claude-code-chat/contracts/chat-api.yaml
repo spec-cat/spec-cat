@@ -1,0 +1,401 @@
+openapi: 3.0.3
+info:
+  title: Claude Code Chat API
+  description: |
+    API for chat functionality using local Claude Code CLI.
+    Chat streaming uses WebSocket (_ws route), while worktree and preview
+    operations use standard REST endpoints.
+  version: 2.0.0
+
+servers:
+  - url: /api
+    description: Nuxt server API
+
+paths:
+  /chat:
+    post:
+      summary: Start a chat session (HTTP streaming)
+      description: |
+        Spawns Claude Code CLI with --output-format stream-json and streams
+        the response back. Alternative to WebSocket for simpler use cases.
+      operationId: startChat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+      responses:
+        '200':
+          description: Streaming NDJSON response
+          content:
+            application/x-ndjson:
+              schema:
+                type: string
+
+  /chat/worktree:
+    post:
+      summary: Create an isolated worktree for a conversation
+      description: |
+        Creates a git worktree at /tmp/br-{conversationId}
+        for isolated agent execution.
+      operationId: createWorktree
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWorktreeRequest'
+      responses:
+        '200':
+          description: Worktree created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateWorktreeResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      summary: Delete a conversation worktree
+      description: Removes the isolated worktree and its branch
+      operationId: deleteWorktree
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteWorktreeRequest'
+      responses:
+        '200':
+          description: Worktree deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /chat/worktree-commit:
+    post:
+      summary: Auto-commit changes in a worktree
+      description: |
+        Stages all changes and creates an auto-commit in the conversation's
+        isolated worktree. Called automatically after each streaming turn.
+      operationId: worktreeCommit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorktreeCommitRequest'
+      responses:
+        '200':
+          description: Commit created (or no changes to commit)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorktreeCommitResponse'
+
+  /chat/preview:
+    post:
+      summary: Start preview of conversation worktree
+      description: |
+        Creates a temporary preview branch (br/p-{conversationId})
+        from the worktree HEAD and checks it out in the main worktree.
+        Only one preview can be active at a time (enforced client-side via
+        previewingConversationId in the store).
+      operationId: startPreview
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartPreviewRequest'
+      responses:
+        '200':
+          description: Preview started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StartPreviewResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      summary: End preview of conversation worktree
+      description: |
+        Checks out baseBranch in main worktree and deletes the preview branch.
+      operationId: endPreview
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EndPreviewRequest'
+      responses:
+        '200':
+          description: Preview ended
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /chat/preview-sync:
+    post:
+      summary: Sync preview to latest worktree HEAD
+      description: |
+        Updates the preview branch ref to the latest worktree HEAD commit.
+        If the main worktree is on the preview branch, resets to new HEAD.
+        Called automatically after auto-commit during streaming (FR-032).
+      operationId: syncPreview
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PreviewSyncRequest'
+      responses:
+        '200':
+          description: Preview synced
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreviewSyncResponse'
+
+  /chat/finalize:
+    post:
+      summary: Finalize conversation (squash + merge)
+      description: |
+        Squashes all worktree commits into one, rebases onto baseBranch,
+        and merges into main. Cleans up worktree and preview branch.
+      operationId: finalizeConversation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FinalizeRequest'
+      responses:
+        '200':
+          description: Finalize result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FinalizeResponse'
+
+components:
+  schemas:
+    ChatRequest:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          minLength: 1
+          description: The user's message to send to Claude
+        sessionId:
+          type: string
+          description: Optional session ID to resume conversation
+        cwd:
+          type: string
+          description: Working directory for Claude context
+
+    CreateWorktreeRequest:
+      type: object
+      required:
+        - conversationId
+      properties:
+        conversationId:
+          type: string
+          description: Conversation ID to create worktree for
+
+    CreateWorktreeResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        worktreePath:
+          type: string
+          description: Absolute path to the created worktree
+        branch:
+          type: string
+          description: Git branch name for the worktree
+        baseBranch:
+          type: string
+          description: Base branch at time of creation
+        error:
+          type: string
+
+    DeleteWorktreeRequest:
+      type: object
+      required:
+        - worktreePath
+        - branch
+      properties:
+        worktreePath:
+          type: string
+        branch:
+          type: string
+
+    WorktreeCommitRequest:
+      type: object
+      required:
+        - worktreePath
+      properties:
+        worktreePath:
+          type: string
+          description: Path to the worktree to commit in
+        message:
+          type: string
+          description: Commit message (defaults to auto-generated)
+
+    WorktreeCommitResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        commit:
+          type: string
+          description: New commit hash (if changes were committed)
+        noChanges:
+          type: boolean
+          description: True if there were no changes to commit
+
+    StartPreviewRequest:
+      type: object
+      required:
+        - conversationId
+        - worktreePath
+        - baseBranch
+      properties:
+        conversationId:
+          type: string
+        worktreePath:
+          type: string
+          description: Path to conversation worktree
+        baseBranch:
+          type: string
+          description: Base branch to return to on unpreview
+
+    StartPreviewResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        previewBranch:
+          type: string
+          description: Name of the created preview branch (br/p-{id})
+        commit:
+          type: string
+          description: Worktree HEAD commit hash
+        error:
+          type: string
+
+    EndPreviewRequest:
+      type: object
+      required:
+        - previewBranch
+        - baseBranch
+      properties:
+        previewBranch:
+          type: string
+          description: Preview branch to delete
+        baseBranch:
+          type: string
+          description: Branch to checkout in main worktree
+
+    PreviewSyncRequest:
+      type: object
+      required:
+        - previewBranch
+        - worktreePath
+      properties:
+        previewBranch:
+          type: string
+          description: Preview branch to update
+        worktreePath:
+          type: string
+          description: Worktree to get latest HEAD from
+
+    PreviewSyncResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        commit:
+          type: string
+          description: Latest commit hash synced to
+        error:
+          type: string
+
+    FinalizeRequest:
+      type: object
+      required:
+        - conversationId
+        - commitMessage
+      properties:
+        conversationId:
+          type: string
+        commitMessage:
+          type: string
+          description: Squash commit message
+
+    FinalizeResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        newCommit:
+          type: string
+          description: New squashed commit hash
+        conflictFiles:
+          type: string[]
+          description: Conflicting files if rebase fails
+        error:
+          type: string
+
+    SuccessResponse:
+      type: object
+      required:
+        - success
+      properties:
+        success:
+          type: boolean
+        error:
+          type: string
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Error message
+        code:
+          type: string
+          description: Error code for programmatic handling
+
+    # WebSocket Protocol (documented here, not a REST endpoint)
+    # Route: /_ws
+    #
+    # Client → Server messages:
+    #   { type: "chat", message: string, conversationId: string, sessionId?: string, permissionMode: string }
+    #   { type: "permission_response", allowed: boolean }
+    #   { type: "plan_approval", approved: boolean, feedback?: string }
+    #   { type: "abort" }
+    #
+    # Server → Client messages:
+    #   { type: "stream_event", event: string, data: object }
+    #   { type: "permission_request", tool: string, description?: string, ... }
+    #   { type: "plan_approval_request", allowedPrompts?: [...] }
+    #   { type: "tool_use", id: string, name: string, input?: object }
+    #   { type: "tool_result", id: string, result?: string }
+    #   { type: "complete", sessionId: string }
+    #   { type: "error", message: string }

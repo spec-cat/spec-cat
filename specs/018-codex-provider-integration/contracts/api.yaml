@@ -1,0 +1,202 @@
+openapi: 3.0.3
+info:
+  title: Codex Provider Integration Contracts
+  version: 1.0.0
+  description: Contracts for provider metadata, selection-safe runtime dispatch, and capability-guarded AI endpoints.
+
+paths:
+  /api/ai/providers:
+    get:
+      summary: List registered AI providers and capabilities
+      operationId: listAiProviders
+      responses:
+        '200':
+          description: Providers loaded from registry
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [providers]
+                properties:
+                  providers:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AIProviderMetadata'
+
+  /api/chat:
+    post:
+      summary: Stream chat response through selected provider adapter
+      operationId: streamChat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+      responses:
+        '200':
+          description: NDJSON stream with shared event envelope (`provider_json`, `done`, `error`)
+        '400':
+          description: Invalid message/request or provider capability mismatch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/rebase/ai-resolve:
+    post:
+      summary: Resolve merge conflicts using selected provider when supported
+      operationId: aiResolveConflict
+      responses:
+        '200':
+          description: Resolution result or capability-guard failure
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/AiResolveSuccess'
+                  - $ref: '#/components/schemas/CapabilityGuardFailure'
+
+  /api/chat/generate-commit-message:
+    post:
+      summary: Generate commit message if selected provider supports auto-commit workflow
+      operationId: generateCommitMessage
+      responses:
+        '200':
+          description: Commit message result or capability-guard failure
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/CommitMessageSuccess'
+                  - $ref: '#/components/schemas/CapabilityGuardFailure'
+
+  /api/chat/worktree-commit:
+    post:
+      summary: Auto-commit worktree changes when capability is supported
+      operationId: autoCommitWorktree
+      responses:
+        '200':
+          description: Auto-commit result or capability-guard failure
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/WorktreeCommitSuccess'
+                  - $ref: '#/components/schemas/CapabilityGuardFailure'
+
+components:
+  schemas:
+    AIProviderCapabilities:
+      type: object
+      required: [streaming, permissions, resume]
+      properties:
+        streaming:
+          type: boolean
+        permissions:
+          type: boolean
+        resume:
+          type: boolean
+        autoCommit:
+          type: boolean
+        conflictResolution:
+          type: boolean
+
+    AIProviderModel:
+      type: object
+      required: [key, label, description]
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        description:
+          type: string
+        default:
+          type: boolean
+
+    AIProviderMetadata:
+      type: object
+      required: [id, name, description, capabilities, models]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        capabilities:
+          $ref: '#/components/schemas/AIProviderCapabilities'
+        models:
+          type: array
+          items:
+            $ref: '#/components/schemas/AIProviderModel'
+
+    ChatRequest:
+      type: object
+      required: [message, requestId]
+      properties:
+        message:
+          type: string
+        requestId:
+          type: string
+        sessionId:
+          type: string
+        providerId:
+          type: string
+        providerModelKey:
+          type: string
+
+    CapabilityGuardFailure:
+      type: object
+      required: [success, error]
+      properties:
+        success:
+          type: boolean
+          enum: [false]
+        error:
+          type: string
+        providerId:
+          type: string
+        missingCapability:
+          type: string
+
+    AiResolveSuccess:
+      type: object
+      required: [success, resolvedContent]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        resolvedContent:
+          type: string
+
+    CommitMessageSuccess:
+      type: object
+      required: [success, message]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+
+    WorktreeCommitSuccess:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        currentBranch:
+          type: string
+
+    ErrorResponse:
+      type: object
+      properties:
+        statusCode:
+          type: integer
+        statusMessage:
+          type: string

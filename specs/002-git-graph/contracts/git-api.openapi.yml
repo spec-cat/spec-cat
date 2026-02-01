@@ -1,0 +1,1099 @@
+openapi: 3.0.3
+info:
+  title: Git Graph API
+  description: Server API for git graph visualization and repository operations (Redesign)
+  version: 2.0.0
+  contact:
+    name: Spec Cat Project
+
+servers:
+  - url: /api
+    description: Local Nuxt server API
+
+paths:
+  # ============================================================================
+  # READ OPERATIONS (existing)
+  # ============================================================================
+
+  /git/log:
+    get:
+      summary: Get commit log
+      description: Paginated commit history with branch/tag decorations
+      operationId: getGitLog
+      parameters:
+        - name: workingDirectory
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 300, minimum: 1, maximum: 1000 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0, minimum: 0 }
+        - name: branches
+          in: query
+          schema: { type: string }
+          description: Comma-separated branch filter
+      responses:
+        '200':
+          description: Commit log
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitLogResponse'
+
+  /git/graph:
+    get:
+      summary: Get commit graph data
+      description: Paginated commit history with branch relationships and layout hints
+      operationId: getGitGraph
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 300, minimum: 1, maximum: 1000 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0, minimum: 0 }
+        - name: branch
+          in: query
+          schema: { type: string }
+        - name: author
+          in: query
+          schema: { type: string }
+        - name: search
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Graph data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphResponse'
+
+  /git/show:
+    get:
+      summary: Get commit details with file changes
+      operationId: getGitShow
+      parameters:
+        - name: hash
+          in: query
+          required: true
+          schema: { type: string, pattern: '^[a-f0-9]{7,40}$' }
+        - name: workingDirectory
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Commit details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitShowResponse'
+
+  /git/commit/{id}:
+    get:
+      summary: Get specific commit
+      operationId: getCommitById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Commit data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitShowResponse'
+
+  /git/branches:
+    get:
+      summary: List all branches
+      operationId: getGitBranches
+      parameters:
+        - name: workingDirectory
+          in: query
+          schema: { type: string }
+        - name: include_remote
+          in: query
+          schema: { type: boolean, default: true }
+      responses:
+        '200':
+          description: Branch list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BranchResponse'
+
+  /git/status:
+    get:
+      summary: Get staging status
+      operationId: getGitStatus
+      parameters:
+        - name: workingDirectory
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Staged/unstaged files
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitStatusResponse'
+
+  /git/state:
+    get:
+      summary: Lightweight state for polling
+      operationId: getGitState
+      parameters:
+        - name: workingDirectory
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Repository state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitStateResponse'
+
+  # ============================================================================
+  # EXISTING WRITE OPERATIONS
+  # ============================================================================
+
+  /git/checkout:
+    post:
+      summary: Checkout branch or commit
+      operationId: gitCheckout
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckoutRequest'
+      responses:
+        '200':
+          description: Checkout successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutResponse'
+
+  /git/stage:
+    post:
+      summary: Stage files
+      operationId: gitStage
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GitStageRequest'
+      responses:
+        '200':
+          description: Files staged
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitOperationResponse'
+
+  /git/unstage:
+    post:
+      summary: Unstage files
+      operationId: gitUnstage
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GitUnstageRequest'
+      responses:
+        '200':
+          description: Files unstaged
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitOperationResponse'
+
+  /git/commit:
+    post:
+      summary: Create commit
+      operationId: gitCommit
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GitCommitRequest'
+      responses:
+        '200':
+          description: Commit created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitCommitResponse'
+
+  /git/branch:
+    delete:
+      summary: Delete branch
+      operationId: gitBranchDelete
+      parameters:
+        - name: name
+          in: query
+          required: true
+          schema: { type: string }
+        - name: force
+          in: query
+          schema: { type: boolean, default: false }
+        - name: remote
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Branch deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitOperationResponse'
+
+  # ============================================================================
+  # NEW: BRANCH OPERATIONS (FR-023 to FR-032)
+  # ============================================================================
+
+  /git/branch-rename:
+    post:
+      summary: Rename branch
+      operationId: gitBranchRename
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [oldName, newName]
+              properties:
+                oldName: { type: string }
+                newName: { type: string }
+                workingDirectory: { type: string }
+      responses:
+        '200':
+          description: Branch renamed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitOperationResponse'
+
+  /git/merge:
+    post:
+      summary: Merge branch into current
+      operationId: gitMerge
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [branch]
+              properties:
+                branch: { type: string }
+                noCommit: { type: boolean, default: false }
+                noFastForward: { type: boolean, default: false }
+                squash: { type: boolean, default: false }
+                workingDirectory: { type: string }
+      responses:
+        '200':
+          description: Merge result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitOperationResponse'
+
+  /git/rebase:
+    post:
+      summary: Rebase current branch onto target
+      operationId: gitRebase
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [onto]
+              properties:
+                onto: { type: string }
+                workingDirectory: { type: string }
+      responses:
+        '200':
+          description: Rebase result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitOperationResponse'
+
+  /git/push:
+    post:
+      summary: Push branch to remote
+      operationId: gitPush
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [branch]
+              properties:
+                branch: { type: string }
+                remote: { type: string, default: origin }
+                force: { type: boolean, default: false }
+                forceWithLease: { type: boolean, default: false }
+                workingDirectory: { type: string }
+      responses:
+        '200':
+          description: Push result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitOperationResponse'
+
+  /git/pull:
+    post:
+      summary: Pull branch from remote
+      operationId: gitPull
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                branch: { type: string }
+                remote: { type: string, default: origin }
+                noFastForward: { type: boolean, default: false }
+                squash: { type: boolean, default: false }
+                workingDirectory: { type: string }
+      responses:
+        '200':
+          description: Pull result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitOperationResponse'
+
+  /git/fetch:
+    post:
+      summary: Fetch from remote(s)
+      operationId: gitFetch
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                remote: { type: string }
+                branch: { type: string }
+                all: { type: boolean, default: false }
+                prune: { type: boolean, default: false }
+                pruneTags: { type: boolean, default: false }
+                force: { type: boolean, default: false }
+                workingDirectory: { type: string }
+      responses:
+        '200':
+          description: Fetch result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitOperationResponse'
+
+  # ============================================================================
+  # NEW: COMMIT OPERATIONS (FR-033 to FR-039)
+  # ============================================================================
+
+  /git/cherry-pick:
+    post:
+      summary: Cherry-pick a commit
+      operationId: gitCherryPick
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [hash]
+              properties:
+                hash: { type: string }
+                recordOrigin: { type: boolean, default: false }
+                noCommit: { type: boolean, default: false }
+                workingDirectory: { type: string }
+      responses:
+        '200':
+          description: Cherry-pick result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitOperationResponse'
+
+  /git/revert:
+    post:
+      summary: Revert a commit
+      operationId: gitRevert
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [hash]
+              properties:
+                hash: { type: string }
+                workingDirectory: { type: string }
+      responses:
+        '200':
+          description: Revert result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitOperationResponse'
+
+  /git/reset:
+    post:
+      summary: Reset current branch to commit
+      operationId: gitReset
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [hash, mode]
+              properties:
+                hash: { type: string }
+                mode: { type: string, enum: [soft, mixed, hard] }
+                workingDirectory: { type: string }
+      responses:
+        '200':
+          description: Reset result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitOperationResponse'
+
+  /git/diff:
+    get:
+      summary: Compare two commits
+      operationId: gitDiff
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string }
+        - name: workingDirectory
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Diff result with file changes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitShowResponse'
+
+  # ============================================================================
+  # NEW: TAG OPERATIONS (FR-040 to FR-044)
+  # ============================================================================
+
+  /git/tag:
+    post:
+      summary: Create tag
+      operationId: gitTagCreate
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, hash]
+              properties:
+                name: { type: string }
+                hash: { type: string }
+                annotated: { type: boolean, default: false }
+                message: { type: string }
+                pushToRemote: { type: string }
+                workingDirectory: { type: string }
+      responses:
+        '200':
+          description: Tag created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitOperationResponse'
+    delete:
+      summary: Delete tag
+      operationId: gitTagDelete
+      parameters:
+        - name: name
+          in: query
+          required: true
+          schema: { type: string }
+        - name: deleteFromRemote
+          in: query
+          schema: { type: string }
+        - name: workingDirectory
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Tag deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitOperationResponse'
+
+  /git/tag-push:
+    post:
+      summary: Push tag to remote
+      operationId: gitTagPush
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                remote: { type: string, default: origin }
+                workingDirectory: { type: string }
+      responses:
+        '200':
+          description: Tag pushed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitOperationResponse'
+
+  /git/tag/{name}:
+    get:
+      summary: Get tag details
+      operationId: getTagDetails
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema: { type: string }
+        - name: workingDirectory
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Tag details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitTagDetail'
+
+  # ============================================================================
+  # NEW: STASH OPERATIONS (FR-045 to FR-051)
+  # ============================================================================
+
+  /git/stash:
+    get:
+      summary: List stashes
+      operationId: getGitStashes
+      parameters:
+        - name: workingDirectory
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Stash list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stashes:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/GitStash'
+    post:
+      summary: Create stash
+      operationId: gitStashCreate
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                message: { type: string }
+                includeUntracked: { type: boolean, default: false }
+                workingDirectory: { type: string }
+      responses:
+        '200':
+          description: Stash created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitOperationResponse'
+
+  /git/stash-apply:
+    post:
+      summary: Apply stash
+      operationId: gitStashApply
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [index]
+              properties:
+                index: { type: integer }
+                reinstateIndex: { type: boolean, default: false }
+                workingDirectory: { type: string }
+      responses:
+        '200':
+          description: Stash applied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitOperationResponse'
+
+  /git/stash-pop:
+    post:
+      summary: Pop stash
+      operationId: gitStashPop
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [index]
+              properties:
+                index: { type: integer }
+                reinstateIndex: { type: boolean, default: false }
+                workingDirectory: { type: string }
+      responses:
+        '200':
+          description: Stash popped
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitOperationResponse'
+
+  /git/stash-drop:
+    post:
+      summary: Drop stash
+      operationId: gitStashDrop
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [index]
+              properties:
+                index: { type: integer }
+                workingDirectory: { type: string }
+      responses:
+        '200':
+          description: Stash dropped
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitOperationResponse'
+
+  /git/stash-branch:
+    post:
+      summary: Create branch from stash
+      operationId: gitStashBranch
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [index, branchName]
+              properties:
+                index: { type: integer }
+                branchName: { type: string }
+                workingDirectory: { type: string }
+      responses:
+        '200':
+          description: Branch created from stash
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitOperationResponse'
+
+  # ============================================================================
+  # NEW: REMOTE OPERATIONS (FR-074 to FR-076)
+  # ============================================================================
+
+  /git/remotes:
+    get:
+      summary: List remotes
+      operationId: getGitRemotes
+      parameters:
+        - name: workingDirectory
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Remote list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  remotes:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Remote'
+
+  /git/remote:
+    post:
+      summary: Add remote
+      operationId: gitRemoteAdd
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, url]
+              properties:
+                name: { type: string }
+                url: { type: string }
+                workingDirectory: { type: string }
+      responses:
+        '200':
+          description: Remote added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitOperationResponse'
+    put:
+      summary: Edit remote URL
+      operationId: gitRemoteEdit
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, newUrl]
+              properties:
+                name: { type: string }
+                newUrl: { type: string }
+                workingDirectory: { type: string }
+      responses:
+        '200':
+          description: Remote updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitOperationResponse'
+    delete:
+      summary: Delete remote
+      operationId: gitRemoteDelete
+      parameters:
+        - name: name
+          in: query
+          required: true
+          schema: { type: string }
+        - name: workingDirectory
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Remote deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitOperationResponse'
+
+components:
+  schemas:
+    # Existing schemas (unchanged)
+    GraphResponse:
+      type: object
+      required: [commits, branches, pagination, layout_hints]
+      properties:
+        commits:
+          type: array
+          items:
+            $ref: '#/components/schemas/Commit'
+        branches:
+          type: array
+          items:
+            $ref: '#/components/schemas/Branch'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+        layout_hints:
+          $ref: '#/components/schemas/LayoutHints'
+
+    GitLogResponse:
+      type: object
+      required: [commits, branches, tags, localBranches, hasMore, totalCount]
+      properties:
+        commits:
+          type: array
+          items:
+            $ref: '#/components/schemas/GitLogCommit'
+        branches: { type: array, items: { type: string } }
+        tags: { type: array, items: { type: string } }
+        localBranches: { type: array, items: { type: string } }
+        hasMore: { type: boolean }
+        totalCount: { type: integer }
+
+    GitLogCommit:
+      type: object
+      required: [hash, shortHash, author, email, timestamp, message, parents, branches, tags]
+      properties:
+        hash: { type: string }
+        shortHash: { type: string }
+        author: { type: string }
+        email: { type: string }
+        timestamp: { type: integer }
+        message: { type: string }
+        body: { type: string }
+        parents: { type: array, items: { type: string } }
+        branches: { type: array, items: { type: string } }
+        tags: { type: array, items: { type: string } }
+        isHead: { type: boolean }
+        isMerge: { type: boolean }
+        signatureStatus: { type: string, enum: [good, bad, unknown, none] }
+
+    Commit:
+      type: object
+      required: [hash, shortHash, message, subject, author, date, parents]
+      properties:
+        hash: { type: string, pattern: '^[a-f0-9]{40}$' }
+        shortHash: { type: string }
+        message: { type: string }
+        subject: { type: string }
+        author: { $ref: '#/components/schemas/CommitAuthor' }
+        committer: { $ref: '#/components/schemas/CommitAuthor' }
+        date: { type: string, format: date-time }
+        parents: { type: array, items: { type: string } }
+        branches: { type: array, items: { type: string } }
+        tags: { type: array, items: { type: string } }
+
+    CommitAuthor:
+      type: object
+      required: [name, email, date]
+      properties:
+        name: { type: string }
+        email: { type: string, format: email }
+        date: { type: string, format: date-time }
+
+    CommitStats:
+      type: object
+      required: [additions, deletions, filesChanged]
+      properties:
+        additions: { type: integer, minimum: 0 }
+        deletions: { type: integer, minimum: 0 }
+        filesChanged: { type: integer, minimum: 0 }
+
+    FileChange:
+      type: object
+      required: [path, status, additions, deletions, binary]
+      properties:
+        path: { type: string }
+        oldPath: { type: string }
+        status: { type: string, enum: [A, M, D, R, C, U] }
+        additions: { type: integer, minimum: 0 }
+        deletions: { type: integer, minimum: 0 }
+        binary: { type: boolean }
+
+    Branch:
+      type: object
+      required: [name, ref, tip, ahead, behind, color, isHead, isRemote, lastCommitDate]
+      properties:
+        name: { type: string }
+        ref: { type: string }
+        tip: { type: string }
+        upstream: { $ref: '#/components/schemas/UpstreamBranch' }
+        ahead: { type: integer }
+        behind: { type: integer }
+        color: { type: string }
+        isHead: { type: boolean }
+        isRemote: { type: boolean }
+        lastCommitDate: { type: string, format: date-time }
+
+    UpstreamBranch:
+      type: object
+      required: [remote, branch]
+      properties:
+        remote: { type: string }
+        branch: { type: string }
+        url: { type: string }
+
+    BranchResponse:
+      type: object
+      required: [branches, current]
+      properties:
+        branches: { type: array, items: { $ref: '#/components/schemas/Branch' } }
+        current: { type: string }
+
+    GitShowResponse:
+      type: object
+      required: [commit, files, stats]
+      properties:
+        commit:
+          type: object
+          properties:
+            hash: { type: string }
+            shortHash: { type: string }
+            author: { type: string }
+            email: { type: string }
+            committer: { type: string }
+            committerEmail: { type: string }
+            timestamp: { type: integer }
+            message: { type: string }
+            body: { type: string }
+            parents: { type: array, items: { type: string } }
+        files:
+          type: array
+          items: { $ref: '#/components/schemas/FileChange' }
+        stats: { $ref: '#/components/schemas/CommitStats' }
+
+    GitStatusResponse:
+      type: object
+      required: [stagedFiles, unstagedFiles, hasChanges, stagedCount, unstagedCount]
+      properties:
+        stagedFiles: { type: array, items: { $ref: '#/components/schemas/GitStatusFile' } }
+        unstagedFiles: { type: array, items: { $ref: '#/components/schemas/GitStatusFile' } }
+        hasChanges: { type: boolean }
+        stagedCount: { type: integer }
+        unstagedCount: { type: integer }
+
+    GitStatusFile:
+      type: object
+      required: [path, status, staged, unstaged]
+      properties:
+        path: { type: string }
+        oldPath: { type: string }
+        status: { type: string, enum: [A, M, D, R, C, U] }
+        staged: { type: boolean }
+        unstaged: { type: boolean }
+
+    GitStateResponse:
+      type: object
+      required: [state]
+      properties:
+        state:
+          type: object
+          properties:
+            headCommit: { type: string }
+            branchListHash: { type: string }
+            uncommittedFileCount: { type: integer }
+            timestamp: { type: integer }
+
+    # NEW schemas
+
+    GitTagDetail:
+      type: object
+      required: [name, hash, isAnnotated]
+      properties:
+        name: { type: string }
+        hash: { type: string }
+        isAnnotated: { type: boolean }
+        tagger:
+          type: object
+          properties:
+            name: { type: string }
+            email: { type: string }
+            date: { type: string, format: date-time }
+        message: { type: string }
+
+    GitStash:
+      type: object
+      required: [hash, index, message, date]
+      properties:
+        hash: { type: string }
+        index: { type: integer }
+        message: { type: string }
+        date: { type: string }
+        branchName: { type: string }
+
+    Remote:
+      type: object
+      required: [name, fetchUrl, pushUrl]
+      properties:
+        name: { type: string }
+        fetchUrl: { type: string }
+        pushUrl: { type: string }
+
+    CheckoutRequest:
+      type: object
+      required: [branchName]
+      properties:
+        branchName: { type: string }
+        workingDirectory: { type: string }
+        force: { type: boolean, default: false }
+        createBranch: { type: boolean, default: false }
+        fromCommit: { type: string }
+
+    CheckoutResponse:
+      type: object
+      required: [success, newBranch, previousBranch]
+      properties:
+        success: { type: boolean }
+        newBranch: { type: string }
+        previousBranch: { type: string }
+        warnings: { type: array, items: { type: string } }
+
+    GitStageRequest:
+      type: object
+      required: [files]
+      properties:
+        files: { type: array, items: { type: string } }
+        workingDirectory: { type: string }
+
+    GitUnstageRequest:
+      type: object
+      required: [files]
+      properties:
+        files: { type: array, items: { type: string } }
+        workingDirectory: { type: string }
+
+    GitCommitRequest:
+      type: object
+      required: [message]
+      properties:
+        message: { type: string }
+        workingDirectory: { type: string }
+
+    GitCommitResponse:
+      type: object
+      required: [success, hash, shortHash]
+      properties:
+        success: { type: boolean }
+        hash: { type: string }
+        shortHash: { type: string }
+
+    GitOperationResponse:
+      type: object
+      required: [success]
+      properties:
+        success: { type: boolean }
+        message: { type: string }
+        warnings: { type: array, items: { type: string } }
+
+    Pagination:
+      type: object
+      required: [offset, limit, total, hasMore]
+      properties:
+        offset: { type: integer }
+        limit: { type: integer }
+        total: { type: integer }
+        hasMore: { type: boolean }
+
+    LayoutHints:
+      type: object
+      required: [totalCommits, maxLanes, suggestedViewport]
+      properties:
+        totalCommits: { type: integer }
+        maxLanes: { type: integer }
+        suggestedViewport:
+          type: object
+          properties:
+            height: { type: integer }
+            commitsPerPage: { type: integer }
+
+    ErrorResponse:
+      type: object
+      required: [error, message]
+      properties:
+        error: { type: string }
+        message: { type: string }
+        details: { type: object }
+        code: { type: string }

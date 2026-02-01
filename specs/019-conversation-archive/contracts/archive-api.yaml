@@ -1,0 +1,285 @@
+openapi: 3.0.3
+info:
+  title: Conversation Archive API
+  description: API contract for archiving conversations, browsing archive, and restoring archived context
+  version: 1.0.0
+
+paths:
+  /api/conversations/archives:
+    get:
+      summary: List archived conversations
+      description: Returns archived conversations sorted by archivedAt descending. Supports text search across title and message content.
+      operationId: listArchivedConversations
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Optional case-insensitive search text for title and message content
+      responses:
+        '200':
+          description: Archived conversations list
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - archives
+                properties:
+                  archives:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ArchivedConversation'
+        '500':
+          description: Failed to read persisted archive data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/conversations/{conversationId}/archive:
+    post:
+      summary: Archive an active conversation
+      description: Moves one active conversation into immutable archive storage while preserving full context and metadata.
+      operationId: archiveConversation
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Conversation archived
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - archived
+                properties:
+                  success:
+                    type: boolean
+                  archived:
+                    $ref: '#/components/schemas/ArchivedConversation'
+                  conversations:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Conversation'
+                  archivedConversations:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ArchivedConversation'
+        '400':
+          description: Invalid request (streaming conversation, malformed id)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Active conversation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/conversations/archives/{archiveId}/restore:
+    post:
+      summary: Restore archived context into a new active conversation
+      description: Creates and selects a new active conversation from archived snapshot and consumes the source archive entry.
+      operationId: restoreArchivedConversation
+      parameters:
+        - name: archiveId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Archive restored into new active conversation
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - conversation
+                properties:
+                  success:
+                    type: boolean
+                  conversation:
+                    $ref: '#/components/schemas/Conversation'
+                  conversations:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Conversation'
+                  archivedConversations:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ArchivedConversation'
+        '409':
+          description: Restore blocked (active limit reached)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Archive not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/conversations/archives/{archiveId}:
+    delete:
+      summary: Delete archived conversation
+      description: Permanently deletes one archived conversation from archive storage.
+      operationId: deleteArchivedConversation
+      parameters:
+        - name: archiveId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Archived conversation deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                properties:
+                  success:
+                    type: boolean
+                  archivedConversations:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ArchivedConversation'
+        '404':
+          description: Archive not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    ChatMessage:
+      type: object
+      required:
+        - id
+        - role
+        - content
+        - timestamp
+      properties:
+        id:
+          type: string
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        status:
+          type: string
+          nullable: true
+
+    Conversation:
+      type: object
+      required:
+        - id
+        - title
+        - messages
+        - createdAt
+        - updatedAt
+        - cwd
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatMessage'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        cwd:
+          type: string
+        featureId:
+          type: string
+          nullable: true
+        baseBranch:
+          type: string
+          nullable: true
+        restoredFromArchiveId:
+          type: string
+          nullable: true
+        worktreePath:
+          type: string
+          nullable: true
+        worktreeBranch:
+          type: string
+          nullable: true
+        hasWorktree:
+          type: boolean
+          nullable: true
+
+    ArchivedConversation:
+      type: object
+      required:
+        - id
+        - sourceConversationId
+        - title
+        - messages
+        - createdAt
+        - updatedAt
+        - archivedAt
+        - cwd
+        - origin
+      properties:
+        id:
+          type: string
+        sourceConversationId:
+          type: string
+        title:
+          type: string
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatMessage'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        archivedAt:
+          type: string
+          format: date-time
+        cwd:
+          type: string
+        featureId:
+          type: string
+          nullable: true
+        baseBranch:
+          type: string
+          nullable: true
+
+    ErrorResponse:
+      type: object
+      properties:
+        statusCode:
+          type: integer
+        statusMessage:
+          type: string
