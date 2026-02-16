@@ -34,7 +34,7 @@ As a developer, I want to control what Claude can do so that I can balance autom
 - **FR-002**: System MUST show permission mode selector dropdown with icons and colors
 - **FR-003**: System MUST display permission request UI (tool name, description, Allow/Deny) in "ask" mode
 - **FR-004**: System MUST display plan approval UI (Approve/Reject) in "plan" mode
-- **FR-005**: System MUST persist permission mode to localStorage (`chat-permission-mode`)
+- **FR-005**: System MUST persist permission mode via settings storage (`~/.spec-cat/projects/{project-hash}/settings.json`)
 
 ### Key Entities
 

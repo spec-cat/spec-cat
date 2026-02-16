@@ -13,7 +13,8 @@ Validate that Codex is exposed in settings, selection is normalized safely, stre
 - Codex runtime prerequisites configured:
   - `codex` CLI is available in `PATH` or `CODEX_CLI_PATH` points to the binary
   - Codex CLI can run non-interactive `exec --json` commands in project working directories
-  - For bypass/auto mode runs, Codex approval mode supports `--approval-mode full-auto`
+  - For auto mode runs, Codex supports `--full-auto`
+  - For bypass mode runs, Codex supports `--dangerously-bypass-approvals-and-sandbox`
 
 ## Codex Runtime Troubleshooting
 
@@ -24,7 +25,7 @@ Validate that Codex is exposed in settings, selection is normalized safely, stre
   - Validate the selected model key exists for your CLI/runtime account.
   - Run a direct smoke check: `codex exec --json --model codex-latest "reply with ok"`
 - If session resume fails, the server retries once without resume and emits a `session_reset` event.
-- If permission mode is not `bypass` and provider lacks permissions capability, selection is rejected with an actionable guard message.
+- If permission mode is `ask` or `plan` and provider lacks permissions capability, selection is rejected with an actionable guard message.
 
 ## Manual Validation Steps
 

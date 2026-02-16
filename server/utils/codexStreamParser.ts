@@ -142,12 +142,47 @@ function withSessionFields(
   source: Record<string, unknown>,
 ): Record<string, unknown> {
   const merged = { ...event }
-  for (const key of ['thread_id', 'threadId', 'session_id', 'sessionId']) {
-    if (merged[key] === undefined && source[key] !== undefined) {
-      merged[key] = source[key]
+  const sessionFields = extractSessionFields(source)
+  for (const [key, value] of Object.entries(sessionFields)) {
+    if (merged[key] === undefined) {
+      merged[key] = value
     }
   }
   return merged
+}
+
+function extractSessionFields(source: Record<string, unknown>): Record<string, string> {
+  const out: Record<string, string> = {}
+  const keys = ['thread_id', 'threadId', 'session_id', 'sessionId', 'conversation_id', 'conversationId'] as const
+  for (const key of keys) {
+    const value = source[key]
+    if (typeof value === 'string' && value.length > 0) {
+      out[key] = value
+    }
+  }
+
+  const response = source.response
+  if (response && typeof response === 'object' && !Array.isArray(response)) {
+    const responseObj = response as Record<string, unknown>
+    for (const key of keys) {
+      const value = responseObj[key]
+      if (typeof value === 'string' && value.length > 0 && out[key] === undefined) {
+        out[key] = value
+      }
+    }
+  }
+
+  return out
+}
+
+function extractSessionId(event: Record<string, unknown>): string | undefined {
+  const fields = extractSessionFields(event)
+  return fields.session_id
+    || fields.sessionId
+    || fields.conversation_id
+    || fields.conversationId
+    || fields.thread_id
+    || fields.threadId
 }
 
 interface MappedPermissionRequest {
@@ -372,11 +407,7 @@ function extractReasoningTextFromEvent(event: Record<string, unknown>): string {
 
 export function mapCodexEventToProviderJson(event: Record<string, unknown>): Record<string, unknown>[] {
   const eventType = typeof event.type === 'string' ? event.type : ''
-  const sessionId = typeof event.thread_id === 'string'
-    ? event.thread_id
-    : typeof event.session_id === 'string'
-      ? event.session_id
-      : undefined
+  const sessionId = extractSessionId(event)
 
   const asTextStreamEvents = (text: string): Record<string, unknown>[] => ([
     {
@@ -595,7 +626,7 @@ export function mapCodexEventToProviderJson(event: Record<string, unknown>): Rec
     return toolUseEvents
   }
 
-  return [event]
+  return [sessionId ? { ...event, session_id: sessionId } : event]
 }
 
 export function processCodexJsonLine(cleanedLine: string): {

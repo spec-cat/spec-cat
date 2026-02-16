@@ -46,6 +46,24 @@ describe('codexStreamParser', () => {
     })
   })
 
+  it('propagates conversation_id from envelopes into session_id', () => {
+    const line = JSON.stringify({
+      type: 'event_msg',
+      conversation_id: 'conv-42',
+      payload: { type: 'agent_message', message: 'hello from conversation id' },
+    })
+    const result = processCodexJsonLine(line)
+    expect(result.mappedEvents).toHaveLength(2)
+    expect(result.mappedEvents[0]).toMatchObject({
+      type: 'stream_event',
+      session_id: 'conv-42',
+      event: {
+        type: 'content_block_start',
+        content_block: { type: 'text', text: 'hello from conversation id' },
+      },
+    })
+  })
+
   it('unwraps item.completed envelope for agent_message item', () => {
     const line = JSON.stringify({
       type: 'item.completed',
@@ -142,6 +160,38 @@ describe('codexStreamParser', () => {
       type: 'result',
       session_id: 'thread-13',
       subtype: 'success',
+    })
+  })
+
+  it('maps response.completed with nested response conversation_id into session_id', () => {
+    const line = JSON.stringify({
+      type: 'response.completed',
+      response: { id: 'resp_2', conversation_id: 'conv-99' },
+    })
+    const result = processCodexJsonLine(line)
+    expect(result.mappedEvents).toHaveLength(1)
+    expect(result.mappedEvents[0]).toMatchObject({
+      type: 'result',
+      session_id: 'conv-99',
+      subtype: 'success',
+    })
+  })
+
+  it('prefers session_id over thread_id when both are present', () => {
+    const mapped = mapCodexEventToProviderJson({
+      type: 'agent_message',
+      thread_id: 'thread-legacy',
+      session_id: 'session-preferred',
+      message: 'hello',
+    })
+    expect(mapped).toHaveLength(2)
+    expect(mapped[0]).toMatchObject({
+      type: 'stream_event',
+      session_id: 'session-preferred',
+      event: {
+        type: 'content_block_start',
+        content_block: { type: 'text', text: 'hello' },
+      },
     })
   })
 
@@ -349,5 +399,18 @@ describe('codexStreamParser', () => {
     const result = processCodexJsonLine('plain stderr text')
     expect(result.nonJson).toBe('plain stderr text')
     expect(result.mappedEvents).toEqual([])
+  })
+
+  it('adds canonical session_id to passthrough events like thread.started', () => {
+    const result = processCodexJsonLine(JSON.stringify({
+      type: 'thread.started',
+      thread_id: 'thread-canonical-1',
+    }))
+    expect(result.mappedEvents).toHaveLength(1)
+    expect(result.mappedEvents[0]).toMatchObject({
+      type: 'thread.started',
+      thread_id: 'thread-canonical-1',
+      session_id: 'thread-canonical-1',
+    })
   })
 })

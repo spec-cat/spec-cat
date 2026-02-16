@@ -23,7 +23,7 @@ const capabilityBadges: Array<{ key: keyof AIProviderCapabilities; label: string
   { key: 'autoCommit', label: 'Auto Commit' },
 ]
 
-const requiresPermissions = computed(() => props.permissionMode !== 'bypass')
+const requiresPermissions = computed(() => props.permissionMode === 'ask' || props.permissionMode === 'plan')
 const permissionModeLabel = computed(() => PERMISSION_MODE_LABELS[props.permissionMode])
 const requiresStreaming = computed(() => true)
 

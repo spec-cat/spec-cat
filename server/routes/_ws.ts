@@ -209,15 +209,23 @@ function handlePermissionResponse(peer: any, msg: PermissionResponse) {
     providerModelKey: state.pendingMessage?.providerModelKey,
   })
 
-  if (msg.allow && state.pendingTools.length > 0 && state.pendingMessage) {
+  if (msg.allow && state.pendingMessage) {
     // Add all pending tools to approved set
     for (const tool of state.pendingTools) {
       state.approvedTools.add(tool)
     }
     console.log('[WS] Tools approved:', state.pendingTools, '- Total approved:', Array.from(state.approvedTools))
     state.pendingTools = []
-    // Keep providerSessionId to resume the conversation
-    runProvider(peer, state, state.pendingMessage)
+    // Keep providerSessionId to resume the conversation.
+    // Codex does not support per-tool allowlists, so continue with auto permissions for this resumed turn.
+    const providerId = state.pendingMessage.providerId || 'claude'
+    const resumeMode: PermissionMode = providerId === 'codex'
+      ? 'auto'
+      : state.pendingMessage.permissionMode || 'ask'
+    runProvider(peer, state, {
+      ...state.pendingMessage,
+      permissionMode: resumeMode,
+    })
   } else {
     state.pendingTools = []
     state.pendingMessage = null
@@ -359,11 +367,11 @@ async function runProvider(peer: any, state: PeerState, msg: ChatMessage, isRetr
   const workingDirectory = msg.cwd || projectDir
   const mode = msg.permissionMode || 'ask'
 
-  if (mode !== 'bypass') {
+  if (mode === 'ask' || mode === 'plan') {
     const permissionGuard = await guardProviderCapability(
       selection,
       'permissions',
-      'Switch permission mode to bypass or choose a provider that supports permission prompts.',
+      'Use auto/bypass permission mode or choose a provider that supports permission prompts.',
     )
     if ('failure' in permissionGuard) {
       peer.send(JSON.stringify({
@@ -434,6 +442,29 @@ async function runProvider(peer: any, state: PeerState, msg: ChatMessage, isRetr
           }
           if (hasRenderableProviderContent(parsed)) {
             emittedRenderableContent = true
+          }
+
+          if (parsed.type === 'permission_request' && !permissionRequested) {
+            permissionRequested = true
+            const permission = (parsed.permission && typeof parsed.permission === 'object')
+              ? parsed.permission as Record<string, unknown>
+              : null
+            const tool = permission && typeof permission.tool === 'string'
+              ? permission.tool
+              : 'Permission'
+            const description = permission && typeof permission.description === 'string'
+              ? permission.description
+              : 'Permission required to continue execution.'
+            state.pendingTools = tool ? [tool] : []
+
+            peer.send(JSON.stringify({
+              type: 'permission_request',
+              tool,
+              tools: state.pendingTools,
+              description,
+            }))
+            state.proc?.kill()
+            return
           }
 
           if (selection.providerId === 'claude' && parsed.type === 'user' && !permissionRequested) {
@@ -570,6 +601,17 @@ function extractSessionId(message: Record<string, unknown>): string | null {
     const value = message[key]
     if (typeof value === 'string' && value.length > 0) {
       return value
+    }
+  }
+
+  const response = message.response
+  if (response && typeof response === 'object' && !Array.isArray(response)) {
+    const responseObj = response as Record<string, unknown>
+    for (const key of sessionIdKeys) {
+      const value = responseObj[key]
+      if (typeof value === 'string' && value.length > 0) {
+        return value
+      }
     }
   }
   return null

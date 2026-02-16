@@ -28,7 +28,6 @@ A single-screen layout with no route-based navigation. All features are accessib
 - **FR-001b**: Features panel (20% width)
 - **FR-001c**: Conversations panel (20% width)
 - **FR-001d**: Chat panel (30% width, rightmost)
-- **FR-001e**: Minimum viewport width 320px support
 
 ### FR-002: Git Tree Panel (30%)
 Left-most panel displaying Git history at all times.
@@ -65,7 +64,9 @@ Settings are provided as a modal overlay.
 - **FR-006c**: Includes AI provider/model selection UI
 
 ### FR-007: Header Display
-Application header with "SPEC CAT / {project-name}" title. The project name is the last segment of the current working directory path (fetched from `/api/cwd`). Settings button on the right side. The header spans across all 4 columns or is embedded per-panel as panel headers.
+Application header is embedded in the Git Tree panel header (not a global top bar).
+It must display `SPEC CAT / {project-name}`, where `{project-name}` is the last segment of the current working directory path fetched from `/api/cwd`.
+A settings button is shown on the right side of this same header.
 
 ## Non-Functional Requirements
 

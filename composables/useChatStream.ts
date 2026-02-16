@@ -104,6 +104,31 @@ interface WSResponse {
   denied?: boolean  // For done after permission denial
 }
 
+function extractProviderSessionId(msg: SDKMessage): string | null {
+  if (!msg || typeof msg !== 'object') return null
+  const record = msg as Record<string, unknown>
+  const keys = ['session_id', 'sessionId', 'conversation_id', 'conversationId', 'thread_id', 'threadId']
+  for (const key of keys) {
+    const value = record[key]
+    if (typeof value === 'string' && value.length > 0) {
+      return value
+    }
+  }
+
+  const response = record.response
+  if (response && typeof response === 'object' && !Array.isArray(response)) {
+    const responseObj = response as Record<string, unknown>
+    for (const key of keys) {
+      const value = responseObj[key]
+      if (typeof value === 'string' && value.length > 0) {
+        return value
+      }
+    }
+  }
+
+  return null
+}
+
 // Track tool info
 interface ActiveTool {
   blockId: string   // ContentBlock ID
@@ -676,8 +701,9 @@ export function useChatStream() {
       ? String((msg as { subtype: string }).subtype).toLowerCase()
       : ''
     const isErrorLike = eventType.includes('error') || eventType.includes('failed') || subtype.startsWith('error')
-    if (!isErrorLike && 'session_id' in msg && msg.session_id) {
-      chatStore.setProviderSessionId(msg.session_id, conversationId)
+    const extractedSessionId = !isErrorLike ? extractProviderSessionId(msg) : null
+    if (extractedSessionId) {
+      chatStore.setProviderSessionId(extractedSessionId, conversationId)
     }
 
     // Handle permission_request from SDK

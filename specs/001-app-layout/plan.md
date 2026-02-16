@@ -55,7 +55,7 @@ layouts/
 └── default.vue                          # Main layout: 4-column flex container
 
 components/layout/
-├── AppHeader.vue                        # Header bar ("SPEC CAT v0.1.0" + settings gear)
+├── AppHeader.vue                        # Header bar ("SPEC CAT / {project-name}" + settings gear)
 └── AppMain.vue                          # (may be removed or repurposed)
 
 components/features/
@@ -92,7 +92,6 @@ types/
 | FR-001b | Features panel (20% width) | `layouts/default.vue` (flex: 2) |
 | FR-001c | Conversations panel (20% width) | `layouts/default.vue` (flex: 2) |
 | FR-001d | Chat panel (30% width, rightmost) | `layouts/default.vue` (flex: 3) |
-| FR-001e | Minimum viewport width 320px | `layouts/default.vue` (min-w, overflow-x-auto for small screens) |
 | FR-002 | Git Tree Panel | `layouts/default.vue` (left column wrapping GitGraph) |
 | FR-002a | Header with "Git Tree" label | `layouts/default.vue` (panel header element) |
 | FR-002b | Embeds GitGraph component | `layouts/default.vue` imports `GitGraph.vue` |
@@ -116,7 +115,7 @@ types/
 | FR-006 | Settings Modal | `components/settings/SettingsModal.vue` (EXISTING) |
 | FR-006a | Gear icon opens modal | `layouts/default.vue` or `AppHeader.vue` (Cog6ToothIcon button) |
 | FR-006b | ESC/backdrop closes modal | `SettingsModal.vue` (existing behavior) |
-| FR-006c | Claude Model selection UI | `SettingsModal.vue` (existing) |
+| FR-006c | AI provider/model selection UI | `SettingsModal.vue` (existing) |
 | FR-007 | Header Display | `layouts/default.vue` or `components/layout/AppHeader.vue` |
 
 ## Post-Design Constitution Re-check

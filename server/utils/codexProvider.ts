@@ -92,10 +92,19 @@ function resolveCodexHomeForSpawn(ephemeral: boolean): string | null {
 
   const homeDir = process.env.HOME || ''
   const defaultCodexHome = join(homeDir, '.codex')
+  const codexArg0Tmp = join(defaultCodexHome, 'tmp', 'arg0')
 
   try {
     if (existsSync(defaultCodexHome)) {
       accessSync(defaultCodexHome, constants.W_OK)
+      // Some environments have partially unwritable ~/.codex (e.g. tmp/arg0).
+      // If this path is not writable, Codex can run but fail to persist/resume reliably.
+      if (existsSync(codexArg0Tmp)) {
+        accessSync(codexArg0Tmp, constants.W_OK)
+      } else {
+        mkdirSync(codexArg0Tmp, { recursive: true })
+        accessSync(codexArg0Tmp, constants.W_OK)
+      }
       return null
     }
 
@@ -162,25 +171,45 @@ const metadata = {
   },
 } satisfies AIProvider['metadata']
 
+export function buildCodexExecArgs(opts: AIProviderStreamOptions): string[] {
+  const args: string[] = opts.resumeSessionId
+    ? ['exec', 'resume', '--json', '--model', opts.selection.modelKey]
+    : ['exec', '--json', '--model', opts.selection.modelKey]
+
+  if (opts.ephemeral) {
+    args.push('--ephemeral')
+  }
+
+  const mode = opts.permissionMode || 'ask'
+  switch (mode) {
+    case 'plan':
+    case 'ask':
+      // Codex exec does not support the Claude-style --ask-for-approval flag.
+      // Leave ask/plan to the CLI default approval behavior.
+      break
+    case 'auto':
+      args.push('--full-auto')
+      break
+    case 'bypass':
+      args.push('--dangerously-bypass-approvals-and-sandbox')
+      break
+  }
+
+  if (opts.resumeSessionId) {
+    args.push(opts.resumeSessionId, opts.message)
+  } else {
+    args.push(opts.message)
+  }
+
+  return args
+}
+
 const codexProvider: AIProvider = {
   metadata,
   streamChat(opts: AIProviderStreamOptions, callbacks: AIProviderStreamCallbacks): AIProviderStreamController {
     const cliPath = getCodexCliPath()
     const fallbackCodexHome = resolveCodexHomeForSpawn(!!opts.ephemeral)
-    const args: string[] = ['exec', '--json', '--model', opts.selection.modelKey]
-    if (opts.ephemeral) {
-      args.push('--ephemeral')
-    }
-
-    if ((opts.permissionMode || 'ask') === 'bypass' || (opts.permissionMode || 'ask') === 'auto') {
-      args.push('--full-auto')
-    }
-
-    if (opts.resumeSessionId) {
-      args.push('resume', opts.resumeSessionId, opts.message)
-    } else {
-      args.push(opts.message)
-    }
+    const args = buildCodexExecArgs(opts)
 
     const proc = spawn(cliPath, args, {
       cwd: opts.cwd,
