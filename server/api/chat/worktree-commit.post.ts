@@ -6,7 +6,6 @@
 
 import { autoCommitChanges } from '~/server/utils/claudeService'
 import { logger } from '~/server/utils/logger'
-import { guardServerProviderCapability } from '~/server/utils/aiProviderSelection'
 
 export default defineEventHandler(async (event) => {
   const body = await readBody<{
@@ -22,14 +21,6 @@ export default defineEventHandler(async (event) => {
   }
 
   const { worktreePath, conversationId } = body
-
-  const providerGuard = await guardServerProviderCapability(
-    'autoCommit',
-    'Switch to a provider with auto-commit support to continue.',
-  )
-  if ('failure' in providerGuard) {
-    return providerGuard.failure
-  }
 
   try {
     const result = await autoCommitChanges(worktreePath)

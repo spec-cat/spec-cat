@@ -166,7 +166,7 @@ const metadata = {
     streaming: isCodexAvailable(),
     permissions: isCodexAvailable(),
     resume: isCodexAvailable(),
-    autoCommit: false,
+    autoCommit: true,
     conflictResolution: false,
   },
 } satisfies AIProvider['metadata']
