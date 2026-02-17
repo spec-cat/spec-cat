@@ -28,3 +28,4 @@ Build a single, stable core panel baseline after consolidating `004` and `015`.
 | FR-001 | Feature discovery/listing |
 | FR-002 | File viewer + markdown rendering |
 | FR-003 | Safe server path handling |
+| FR-004 | Task checkbox progress extraction + card metadata display placement |

@@ -44,6 +44,12 @@ function extractFeatureName(specContent: string, dirName: string): string {
     .join(' ')
 }
 
+function extractTaskProgress(tasksContent: string): { completedTasks: number; totalTasks: number } {
+  const checkboxLines = tasksContent.match(/^\s*-\s+\[(?: |x|X)\]\s+.+$/gm) ?? []
+  const completedTasks = checkboxLines.filter(line => /^\s*-\s+\[(?:x|X)\]\s+.+$/.test(line)).length
+  return { completedTasks, totalTasks: checkboxLines.length }
+}
+
 async function scanMdFiles(dir: string, prefix: string = ''): Promise<SpecFile[]> {
   const files: SpecFile[] = []
   try {
@@ -89,6 +95,8 @@ export default defineEventHandler(async () => {
     const hasSpec = files.some(f => f.filename === 'spec.md')
     const hasPlan = files.some(f => f.filename === 'plan.md')
     const hasTasks = files.some(f => f.filename === 'tasks.md')
+    let completedTasks = 0
+    let totalTasks = 0
 
     // Extract feature name from spec.md if available
     let name = dirName.replace(/^\d+-/, '').split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
@@ -101,7 +109,18 @@ export default defineEventHandler(async () => {
       }
     }
 
-    features.push({ id: dirName, name, files, hasSpec, hasPlan, hasTasks })
+    if (hasTasks) {
+      try {
+        const tasksContent = await readFile(join(dirPath, 'tasks.md'), 'utf-8')
+        const progress = extractTaskProgress(tasksContent)
+        completedTasks = progress.completedTasks
+        totalTasks = progress.totalTasks
+      } catch {
+        // Keep default 0/0
+      }
+    }
+
+    features.push({ id: dirName, name, files, hasSpec, hasPlan, hasTasks, completedTasks, totalTasks })
   }
 
   return { features }

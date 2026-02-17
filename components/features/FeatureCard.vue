@@ -115,8 +115,15 @@ const cardClass = computed(() => {
         </p>
       </div>
 
-      <!-- Status dots (top-right) -->
+      <!-- Task progress + status dots (top-right) -->
       <div class="flex items-center gap-1 flex-shrink-0">
+        <span
+          v-if="feature.hasTasks"
+          class="text-[11px] font-mono text-retro-muted mr-1"
+          title="Completed tasks / total tasks"
+        >
+          {{ feature.completedTasks }}/{{ feature.totalTasks }}
+        </span>
         <span
           v-if="feature.hasSpec"
           class="w-2 h-2 rounded-full bg-retro-green"

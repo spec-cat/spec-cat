@@ -10,6 +10,8 @@ export interface Feature {
   hasSpec: boolean
   hasPlan: boolean
   hasTasks: boolean
+  completedTasks: number
+  totalTasks: number
 }
 
 export interface FeaturesListResponse {

@@ -5,6 +5,7 @@
 - [ ] T003 [FR-001] Stabilize panel core view state in `components/features/FeaturesPanel.vue`.
 - [ ] T004 [FR-001] Stabilize card display metadata in `components/features/FeatureCard.vue`.
 - [ ] T005 [FR-002] Stabilize markdown viewer states in `components/features/SpecFileViewer.vue`.
+- [ ] T006 [FR-004] Add parsed task `completed/total` metadata to feature API/types and render it in `components/features/FeatureCard.vue` to the left of status dots.
 
 ---
 

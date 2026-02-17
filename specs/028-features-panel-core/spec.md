@@ -38,6 +38,7 @@
 - **FR-001**: System MUST list features and status metadata from `specs/`.
 - **FR-002**: System MUST support file-level markdown viewing with load/error states.
 - **FR-003**: System MUST enforce path-safe `.md` file access.
+- **FR-004**: When `tasks.md` exists, each feature card MUST display `completed/total` task counts parsed from markdown checkbox items, positioned to the left of the top-right status dots.
 
 ## Success Criteria *(mandatory)*
 
