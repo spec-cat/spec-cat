@@ -166,6 +166,25 @@ export const useChatStore = defineStore('chat', () => {
     conversationViewMode.value = mode
   }
 
+  async function syncPreviewBranchIfActive(conv: Conversation | null | undefined): Promise<void> {
+    if (!conv?.previewBranch || !conv.worktreePath) return
+
+    try {
+      await $fetch('/api/chat/preview-sync', {
+        method: 'POST',
+        body: {
+          previewBranch: conv.previewBranch,
+          worktreePath: conv.worktreePath,
+        },
+      })
+    } catch (error) {
+      console.warn('[chat] Failed to sync preview branch after worktree update', {
+        conversationId: conv.id,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
   async function archiveConversation(id: string): Promise<{ success: boolean; error?: string }> {
     if (isConversationStreaming(id)) {
       return { success: false, error: 'Cannot archive while this conversation is streaming' }
@@ -1260,6 +1279,7 @@ export const useChatStore = defineStore('chat', () => {
         // Enter conflict resolution mode (sync mode — keep worktree after)
         await startConflictResolution(id, conv.worktreePath!, rebaseBranch || 'main', '', 'sync')
       } else if (res.success) {
+        await syncPreviewBranchIfActive(conv)
         // Update conversation's baseBranch to the target branch after successful rebase
         conv.baseBranch = rebaseBranch
         saveAllConversations()
@@ -1377,6 +1397,7 @@ export const useChatStore = defineStore('chat', () => {
           // Sync mode (rebase): update baseBranch to the rebase target
           const conv = conversations.value.find(c => c.id === conversationId)
           if (conv) {
+            await syncPreviewBranchIfActive(conv)
             conv.baseBranch = baseBranch
             conv.updatedAt = new Date().toISOString()
             saveAllConversations()

@@ -6,7 +6,8 @@
 
 import { validateWorktreePath, validateFilePath } from '~/server/utils/validateWorktree'
 import { sendMessage } from '~/server/utils/claudeService'
-import { guardServerProviderCapability } from '~/server/utils/aiProviderSelection'
+import { getServerProviderSelection } from '~/server/utils/aiProviderSelection'
+import { DEFAULT_MODEL_KEY } from '~/types/aiProvider'
 import type { AiResolveRequest, AiResolveResponse } from '~/types/chat'
 
 export default defineEventHandler(async (event): Promise<AiResolveResponse> => {
@@ -19,14 +20,8 @@ export default defineEventHandler(async (event): Promise<AiResolveResponse> => {
   validateWorktreePath(body.worktreePath)
   validateFilePath(body.filePath)
 
-  const providerGuard = await guardServerProviderCapability(
-    'conflictResolution',
-    'Switch to a provider that supports AI conflict resolution.',
-  )
-  if ('failure' in providerGuard) {
-    return providerGuard.failure
-  }
-  const { selection } = providerGuard
+  const selection = await getServerProviderSelection()
+  const modelKey = selection.providerId === 'claude' ? selection.modelKey : DEFAULT_MODEL_KEY
 
   const prompt = `You are a merge conflict resolution expert. Resolve the following Git merge conflict in the file "${body.filePath}".
 
@@ -48,7 +43,7 @@ File content with conflicts:
 ${body.conflictContent}`
 
   try {
-    const result = await sendMessage(prompt, body.worktreePath, selection.modelKey)
+    const result = await sendMessage(prompt, body.worktreePath, modelKey)
 
     if (result.success && result.text) {
       // Strip any markdown code block wrappers the AI might add
