@@ -172,6 +172,7 @@ const metadata = {
 } satisfies AIProvider['metadata']
 
 export function buildCodexExecArgs(opts: AIProviderStreamOptions): string[] {
+  const prompt = buildCodexPrompt(opts)
   const args: string[] = opts.resumeSessionId
     ? ['exec', 'resume', '--json', '--model', opts.selection.modelKey]
     : ['exec', '--json', '--model', opts.selection.modelKey]
@@ -196,12 +197,28 @@ export function buildCodexExecArgs(opts: AIProviderStreamOptions): string[] {
   }
 
   if (opts.resumeSessionId) {
-    args.push(opts.resumeSessionId, opts.message)
+    args.push(opts.resumeSessionId, prompt)
   } else {
-    args.push(opts.message)
+    args.push(prompt)
   }
 
   return args
+}
+
+function buildCodexPrompt(opts: AIProviderStreamOptions): string {
+  if (!opts.systemPrompt) {
+    return opts.message
+  }
+
+  // Codex CLI does not expose a Claude-like --append-system-prompt flag,
+  // so we inline the system instructions into the initial prompt payload.
+  return [
+    'System instructions:',
+    opts.systemPrompt,
+    '',
+    'User request:',
+    opts.message,
+  ].join('\n')
 }
 
 const codexProvider: AIProvider = {

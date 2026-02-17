@@ -736,8 +736,6 @@ export function useChatStream() {
     ensureBlocks(messageId, conversationId)
     const block: TextBlock = { id: generateBlockId(), type: 'text', text }
     chatStore.appendContentBlockWithSave(messageId, block, conversationId)
-    // Also update flat content for legacy compat
-    chatStore.appendToMessage(messageId, text, conversationId)
   }
 
   function hasSessionInitBlock(messageId: string, conversationId: string): boolean {
@@ -892,8 +890,8 @@ export function useChatStream() {
             if (block.type === 'text') {
               (block as TextBlock).text += event.delta!.text!
             }
-          }, conversationId)
-          // Also sync flat content
+          }, conversationId, { syncContent: false })
+          // Keep flat content in sync incrementally during streaming deltas.
           chatStore.appendToMessage(conn.currentMessageId, event.delta.text, conversationId)
         }
 
@@ -902,7 +900,7 @@ export function useChatStream() {
             if (block.type === 'thinking') {
               (block as ThinkingBlock).thinking += event.delta!.thinking!
             }
-          }, conversationId)
+          }, conversationId, { syncContent: false })
         }
 
         if (event.delta.partial_json && event.index !== undefined) {

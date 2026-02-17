@@ -40,4 +40,15 @@ describe('buildCodexExecArgs', () => {
     expect(autoArgs).toContain('--full-auto')
     expect(bypassArgs).toContain('--dangerously-bypass-approvals-and-sandbox')
   })
+
+  it('inlines system prompt into the prompt payload when provided', () => {
+    const args = buildCodexExecArgs(makeOpts({
+      systemPrompt: 'Read specs/018/spec.md first.',
+      message: 'implement the task',
+    }))
+
+    expect(args.at(-1)).toBe(
+      'System instructions:\nRead specs/018/spec.md first.\n\nUser request:\nimplement the task',
+    )
+  })
 })

@@ -704,7 +704,13 @@ export const useChatStore = defineStore('chat', () => {
   /**
    * Update a block by ID with debounced save (for streaming deltas)
    */
-  function updateBlockWithSave(messageId: string, blockId: string, updater: (block: ContentBlock) => void, conversationId?: string) {
+  function updateBlockWithSave(
+    messageId: string,
+    blockId: string,
+    updater: (block: ContentBlock) => void,
+    conversationId?: string,
+    options?: { syncContent?: boolean },
+  ) {
     const convId = conversationId ?? activeConversationId.value
     if (!convId) return
     const conv = conversations.value.find(c => c.id === convId)
@@ -712,8 +718,10 @@ export const useChatStore = defineStore('chat', () => {
     const msg = conv.messages.find(m => m.id === messageId)
     if (!msg) return
     updateBlockById(messageId, blockId, updater, convId)
-    // Sync flat content from blocks to keep them in sync during streaming
-    syncContentFromBlocks(msg)
+    if (options?.syncContent !== false) {
+      // Keep flat content synced unless the caller is handling incremental updates.
+      syncContentFromBlocks(msg)
+    }
     saveConversation(convId, false)
   }
 

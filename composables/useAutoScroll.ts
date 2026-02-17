@@ -6,6 +6,8 @@
 export function useAutoScroll() {
   const containerRef = ref<HTMLElement | null>(null)
   const shouldAutoScroll = ref(true)
+  let pendingScrollRaf: number | null = null
+  let pendingBehavior: ScrollBehavior = 'smooth'
 
   // Threshold in pixels - if user is within this distance from bottom, auto-scroll
   const SCROLL_THRESHOLD = 50
@@ -32,14 +34,24 @@ export function useAutoScroll() {
    * Scroll to bottom of container
    */
   function scrollToBottom(behavior: ScrollBehavior = 'smooth') {
-    nextTick(() => {
-      const el = containerRef.value
-      if (el) {
-        el.scrollTo({
-          top: el.scrollHeight,
-          behavior,
-        })
-      }
+    pendingBehavior = behavior
+    if (pendingScrollRaf !== null) return
+
+    const schedule = typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function'
+      ? window.requestAnimationFrame.bind(window)
+      : (cb: FrameRequestCallback) => setTimeout(() => cb(Date.now()), 16) as unknown as number
+
+    pendingScrollRaf = schedule(() => {
+      pendingScrollRaf = null
+      nextTick(() => {
+        const el = containerRef.value
+        if (el) {
+          el.scrollTo({
+            top: el.scrollHeight,
+            behavior: pendingBehavior,
+          })
+        }
+      })
     })
   }
 
