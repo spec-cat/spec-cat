@@ -84,6 +84,7 @@ As a developer, I want to quickly open/close and resize the chat panel so that I
 - **FR-016**: System MUST support Enter to send, Shift+Enter for newline
 - **FR-016a**: System MUST provide a retry button when the last message errored
 - **FR-018**: System MUST route all AI requests through the configured `claudeModel` setting (no per-request model overrides)
+- **FR-019**: System MUST render chat history with viewport-based virtualization so DOM node count remains bounded as message count grows
 
 ### Key Entities
 
@@ -102,6 +103,7 @@ As a developer, I want to quickly open/close and resize the chat panel so that I
 - [x] New conversation starts fresh without page reload
 - [x] Error states are communicated clearly with dismissible banners
 - [x] Code blocks are displayed with proper formatting
+- [x] Long conversations keep smooth scrolling and input responsiveness via virtualized message rendering
 
 ## Technical Implementation
 
@@ -119,6 +121,7 @@ As a developer, I want to quickly open/close and resize the chat panel so that I
 - `composables/useChatStream.ts` - WebSocket streaming, message handling
 - `composables/useChatPanel.ts` - Panel toggle, resize with mouse drag
 - `composables/useAutoScroll.ts` - Auto-scroll with 50px threshold detection
+- `composables/useVirtualMessageList.ts` - Virtualized chat message rendering with measured row heights
 
 ### Types
 - `types/chat.ts` - ChatMessage, ChatSession, ChatPanelState, MessageStatus, SessionStatus

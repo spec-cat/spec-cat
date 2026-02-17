@@ -83,6 +83,7 @@ Permission, worktree, and cascade tasks are covered by specs 010, 011, 012 respe
 - [x] T020 Add chronological message display in ChatMessages.vue (timestamp, ordering)
 - [x] T021 Implement history preservation on panel close/reopen in useChatPanel.ts
 - [x] T022 Add auto-scroll on new message in ChatMessages.vue using useAutoScroll (FR-008)
+- [x] T063 Replace partial message windowing with viewport virtualization in ChatMessages (`useVirtualMessageList`, absolute-positioned visible rows, measured heights) [FR-019]
 
 **Checkpoint**: Conversation history works
 
@@ -219,6 +220,7 @@ Phase 3 (US1+US2: Chat+Toggle) ◀────── MVP COMPLETE  │
 | FR-015 | T059 |
 | FR-016 | T012 |
 | FR-017 | T053, T054 |
+| FR-019 | T063 |
 
 ---
 

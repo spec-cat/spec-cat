@@ -73,7 +73,8 @@ stores/chat.ts               # Messages, session, panel state, streaming (compos
 composables/
 ├── useChatStream.ts         # WebSocket streaming, message handling
 ├── useChatPanel.ts          # Panel toggle, resize with mouse drag
-└── useAutoScroll.ts         # Auto-scroll with 50px threshold detection
+├── useAutoScroll.ts         # Auto-scroll with 50px threshold detection
+└── useVirtualMessageList.ts # Viewport-based virtualized message rendering
 
 # Types
 types/chat.ts                # ChatMessage, ChatSession, ChatPanelState, type guards
@@ -120,6 +121,7 @@ server/utils/
 | FR-016 | Enter/Shift+Enter | `components/chat/ChatInput.vue` (keydown handler) | Done |
 | FR-016a | Retry button | `components/chat/ChatInput.vue` (shown when last message errored) | Done |
 | FR-017 | Panel resize | `composables/useChatPanel.ts` (useResize with drag), `stores/chat.ts` (setPanelWidth) | Done |
+| FR-019 | Virtualized message rendering | `components/chat/ChatMessages.vue`, `composables/useVirtualMessageList.ts` | Done |
 
 ## Complexity Tracking
 

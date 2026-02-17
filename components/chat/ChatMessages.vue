@@ -1,20 +1,19 @@
 <script setup lang="ts">
 import { useChatStore } from '~/stores/chat'
 import { useAutoScroll } from '~/composables/useAutoScroll'
-import { useMessageWindow } from '~/composables/useMessageWindow'
+import { useVirtualMessageList } from '~/composables/useVirtualMessageList'
 import ChatMessage from './ChatMessage.vue'
 import { ExclamationCircleIcon } from '@heroicons/vue/24/outline'
 
 const chatStore = useChatStore()
-const { containerRef, onScroll, maybeScrollToBottom, scrollToBottom } = useAutoScroll()
+const { containerRef, onScroll, maybeScrollToBottom, scrollToBottom, forceScrollToBottom } = useAutoScroll()
 
 const {
-  visibleMessages,
-  hasOlderMessages,
-  isLoadingMore,
-  resetWindow,
-  onScrollForLoadMore,
-} = useMessageWindow({
+  visibleItems,
+  totalHeight,
+  onVirtualScroll,
+  setItemRef,
+} = useVirtualMessageList({
   allMessages: computed(() => chatStore.messages),
   containerRef,
 })
@@ -22,11 +21,8 @@ const {
 // Combined scroll handler
 function handleScroll() {
   onScroll()
-  onScrollForLoadMore()
+  onVirtualScroll()
 }
-
-// Skip smooth scroll on initial mount / conversation switch
-let skipAnimation = true
 
 // Check if currently streaming (per-conversation)
 const isProcessing = computed(() => {
@@ -39,10 +35,10 @@ const lastMessageStatus = computed(() => {
   if (!last || last.role !== 'assistant') return null
   return last.status
 })
+const hasAppliedInitialBottom = ref(false)
 
 // On mount (panel just opened), scroll instantly — no animation
 onMounted(() => {
-  skipAnimation = true
   scrollToBottom('instant')
 })
 
@@ -50,22 +46,27 @@ onMounted(() => {
 watch(
   () => chatStore.activeConversationId,
   () => {
-    resetWindow()
-    skipAnimation = true
+    hasAppliedInitialBottom.value = false
     scrollToBottom('instant')
   }
+)
+
+// Ensure initial render after refresh lands at bottom once messages are actually present.
+watch(
+  () => [chatStore.activeConversationId, chatStore.messages.length] as const,
+  ([convId, messageCount]) => {
+    if (!convId || messageCount === 0 || hasAppliedInitialBottom.value) return
+    hasAppliedInitialBottom.value = true
+    forceScrollToBottom('instant')
+  },
+  { immediate: true }
 )
 
 // Auto-scroll when new messages arrive or content changes
 watch(
   () => chatStore.messages.length,
   () => {
-    if (skipAnimation) {
-      skipAnimation = false
-      scrollToBottom('instant')
-      return
-    }
-    maybeScrollToBottom()
+    maybeScrollToBottom('instant')
   }
 )
 
@@ -73,7 +74,7 @@ watch(
 watch(
   () => chatStore.lastMessage?.content,
   () => {
-    maybeScrollToBottom()
+    maybeScrollToBottom('instant')
   }
 )
 
@@ -81,7 +82,16 @@ watch(
 watch(
   [isProcessing, () => chatStore.lastError],
   () => {
-    maybeScrollToBottom()
+    maybeScrollToBottom('instant')
+  }
+)
+
+// Keep pinned to bottom while virtual row heights settle.
+// This prevents landing in the middle after refresh when totalHeight grows post-measurement.
+watch(
+  totalHeight,
+  () => {
+    maybeScrollToBottom('instant')
   }
 )
 </script>
@@ -106,40 +116,28 @@ watch(
     </div>
 
     <!-- Messages list -->
-    <div v-else class="divide-y divide-retro-border/30">
-      <!-- Load more indicator -->
-      <div
-        v-if="isLoadingMore"
-        class="flex justify-center py-3"
-      >
-        <div class="flex items-center gap-2">
-          <div class="flex gap-1">
-            <span class="w-1.5 h-1.5 rounded-full bg-retro-muted animate-bounce" style="animation-delay: 0ms" />
-            <span class="w-1.5 h-1.5 rounded-full bg-retro-muted animate-bounce" style="animation-delay: 150ms" />
-            <span class="w-1.5 h-1.5 rounded-full bg-retro-muted animate-bounce" style="animation-delay: 300ms" />
+    <div v-else class="relative">
+      <div class="relative" :style="{ height: `${totalHeight}px` }">
+        <div
+          v-for="item in visibleItems"
+          :key="item.message.id"
+          class="absolute left-0 right-0 border-b border-retro-border/30"
+          :style="{ transform: `translateY(${item.top}px)` }"
+        >
+          <div :ref="(el) => setItemRef(item.message.id, el)">
+            <ChatMessage
+              v-memo="[
+                item.message.id,
+                item.message.status,
+                item.message.content,
+                item.message.contentBlocks?.length || 0,
+                item.message.tools?.length || 0,
+              ]"
+              :message="item.message"
+            />
           </div>
-          <span class="text-xs font-mono text-retro-muted">Loading older messages...</span>
         </div>
       </div>
-      <div
-        v-else-if="hasOlderMessages"
-        class="flex justify-center py-2"
-      >
-        <span class="text-xs font-mono text-retro-muted/60">Scroll up for older messages</span>
-      </div>
-
-      <ChatMessage
-        v-for="message in visibleMessages"
-        :key="message.id"
-        v-memo="[
-          message.id,
-          message.status,
-          message.content,
-          message.contentBlocks?.length || 0,
-          message.tools?.length || 0,
-        ]"
-        :message="message"
-      />
     </div>
 
     <!-- Status indicator at bottom -->

@@ -94,7 +94,7 @@ This document captures research decisions for the App Layout System feature — 
 - Prevents one panel's content from pushing other panels
 
 **Alternatives Considered**:
-- Custom scroll containers with virtual scrolling - rejected (premature optimization)
+- Full panel-level custom virtualization - rejected (layout-level optimization not required; feature-level virtualization may still be applied where needed, e.g. chat message lists)
 - Position sticky headers with body scroll - rejected (doesn't give independent column scrolling)
 
 ### 7. Chat Panel Always Visible
