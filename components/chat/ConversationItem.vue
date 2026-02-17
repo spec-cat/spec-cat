@@ -95,11 +95,13 @@ const formattedDate = computed(() => {
   <div
     class="p-3 rounded border cursor-pointer transition-colors"
     :class="[
-      isPreviewing
-        ? 'border-retro-red/40 bg-retro-red/10'
-        : isActive
-          ? 'border-retro-cyan bg-retro-cyan/10'
-          : 'border-retro-border hover:border-retro-cyan/50'
+      isPreviewing && isActive
+        ? 'border-retro-red bg-retro-red/20 ring-1 ring-retro-red/60 shadow-[0_0_0_1px_rgba(248,113,113,0.35)]'
+        : isPreviewing
+          ? 'border-retro-red/40 bg-retro-red/10'
+          : isActive
+            ? 'border-retro-cyan bg-retro-cyan/10'
+            : 'border-retro-border hover:border-retro-cyan/50'
     ]"
     @click="emit('select')"
   >
@@ -140,7 +142,8 @@ const formattedDate = computed(() => {
           <!-- Previewing badge (T027: FR-012) -->
           <span
             v-else-if="isPreviewing"
-            class="text-xs font-mono text-retro-red bg-retro-red/10 px-1.5 py-0.5 rounded flex-shrink-0"
+            class="text-xs font-mono px-1.5 py-0.5 rounded flex-shrink-0"
+            :class="isActive ? 'text-retro-red bg-retro-red/20 border border-retro-red/40' : 'text-retro-red bg-retro-red/10'"
           >
             previewing
           </span>

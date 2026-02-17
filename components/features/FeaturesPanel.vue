@@ -72,7 +72,7 @@ watch(() => chatStore.activeConversationId, () => {
   nextTick(() => {
     const el = featureRefs.value[fid]
     if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      el.scrollIntoView({ behavior: 'auto', block: 'nearest' })
     }
   })
 })
