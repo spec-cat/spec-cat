@@ -18,6 +18,7 @@ if (!existsSync(serverEntry)) {
 
 const args = process.argv.slice(2)
 const env = { ...process.env }
+env.SPEC_CAT_PACKAGE_ROOT = packageRoot
 const serverArgs = []
 
 if (args.includes('--help') || args.includes('-h')) {

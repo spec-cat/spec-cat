@@ -1,23 +1,58 @@
 import { existsSync, mkdirSync, rmSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { dirname } from 'node:path'
+import { dirname, resolve } from 'node:path'
 import type { SearchMode, SearchResult, SpecChunk, SourceFile } from '~/types/specSearch'
 import { getSpecCatStorePath } from '../specCatStore'
 import { logger } from '../logger'
 
 const require = createRequire(import.meta.url)
-const projectRequire = createRequire(`${process.cwd()}/package.json`)
+const packageRootRequire = createPackageRootRequire()
+const projectRequire = createProjectRequire()
+
+function createPackageRootRequire(): NodeRequire | null {
+  const explicitRoot = process.env.SPEC_CAT_PACKAGE_ROOT
+  if (explicitRoot && existsSync(resolve(explicitRoot, 'package.json'))) {
+    return createRequire(resolve(explicitRoot, 'package.json'))
+  }
+
+  const entry = process.argv[1]
+  if (entry) {
+    const inferredRoot = resolve(dirname(entry), '..', '..')
+    if (existsSync(resolve(inferredRoot, 'package.json'))) {
+      return createRequire(resolve(inferredRoot, 'package.json'))
+    }
+  }
+
+  return null
+}
+
+function createProjectRequire(): NodeRequire | null {
+  const projectPackagePath = resolve(process.cwd(), 'package.json')
+  if (!existsSync(projectPackagePath)) return null
+  return createRequire(projectPackagePath)
+}
 
 function requireFromRuntimeOrProject(moduleName: string): any {
   try {
     return require(moduleName)
   } catch (runtimeError) {
     try {
-      return projectRequire(moduleName)
-    } catch (projectError) {
-      const runtimeMsg = runtimeError instanceof Error ? runtimeError.message : String(runtimeError)
-      const projectMsg = projectError instanceof Error ? projectError.message : String(projectError)
-      throw new Error(`Failed to load ${moduleName} (runtime: ${runtimeMsg}; project: ${projectMsg})`)
+      if (packageRootRequire) {
+        return packageRootRequire(moduleName)
+      }
+      throw new Error('package root require unavailable')
+    } catch (packageRootError) {
+      try {
+        if (projectRequire) {
+          return projectRequire(moduleName)
+        }
+        throw new Error('project require unavailable')
+      } catch (projectError) {
+        const runtimeMsg = runtimeError instanceof Error ? runtimeError.message : String(runtimeError)
+        const packageRootMsg = packageRootError instanceof Error ? packageRootError.message : String(packageRootError)
+        const projectMsg = projectError instanceof Error ? projectError.message : String(projectError)
+        throw new Error(`Failed to load ${moduleName} (runtime: ${runtimeMsg}; packageRoot: ${packageRootMsg}; project: ${projectMsg})`)
+      }
     }
   }
 }
