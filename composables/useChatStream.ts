@@ -147,6 +147,8 @@ interface ConnectionState {
   currentThinkingBlockId: string | null
   healthCheckInterval: ReturnType<typeof setInterval> | null
   lastMessageTime: number
+  lastServerError: string | null
+  lastSocketError: string | null
 }
 
 // Module-level connection pool (shared across all composable instances)
@@ -159,6 +161,62 @@ const rolloutRecoveryAttempts = new Set<string>()
 // Health check constants
 const HEALTH_CHECK_INTERVAL_MS = 30_000  // Check every 30s
 const STREAMING_TIMEOUT_MS = 180_000     // 3 min with no messages → timeout
+
+function summarizeCloseCode(code: number): string {
+  switch (code) {
+    case 1000:
+      return 'Normal closure'
+    case 1001:
+      return 'Endpoint is going away (server shutdown or page navigation)'
+    case 1002:
+      return 'Protocol error'
+    case 1003:
+      return 'Unsupported data'
+    case 1005:
+      return 'No status code received from peer (close frame had no code)'
+    case 1006:
+      return 'Abnormal closure (connection dropped without close frame)'
+    case 1007:
+      return 'Invalid payload data'
+    case 1008:
+      return 'Policy violation'
+    case 1009:
+      return 'Message too big'
+    case 1010:
+      return 'Missing required extension'
+    case 1011:
+      return 'Internal server error'
+    case 1012:
+      return 'Service restart'
+    case 1013:
+      return 'Try again later (temporary overload)'
+    case 1015:
+      return 'TLS handshake failure'
+    default:
+      if (code >= 4000 && code <= 4999) {
+        return 'Application-specific close code'
+      }
+      return 'Unknown close code'
+  }
+}
+
+function buildCloseReason(event: CloseEvent, conn?: ConnectionState): string {
+  const parts: string[] = []
+  if (event.reason) {
+    parts.push(event.reason)
+  } else {
+    parts.push(summarizeCloseCode(event.code))
+  }
+
+  if (conn?.lastServerError) {
+    parts.push(`Last server error: ${conn.lastServerError}`)
+  } else if (conn?.lastSocketError) {
+    parts.push(`Last socket error: ${conn.lastSocketError}`)
+  }
+
+  parts.push(`wasClean: ${event.wasClean ? 'yes' : 'no'}`)
+  return parts.join(' | ')
+}
 
 export function useChatStream() {
   const chatStore = useChatStore()
@@ -308,6 +366,8 @@ export function useChatStream() {
         currentThinkingBlockId: null,
         healthCheckInterval: null,
         lastMessageTime: Date.now(),
+        lastServerError: null,
+        lastSocketError: null,
       }
       connections.set(conversationId, connState)
 
@@ -318,6 +378,9 @@ export function useChatStream() {
       ws.onerror = (event) => {
         console.error(`[useChatStream] WebSocket error for conversation ${conversationId}:`, event)
         const conn = connections.get(conversationId)
+        if (conn) {
+          conn.lastSocketError = 'Browser reported a WebSocket transport error (network/proxy/server)'
+        }
         if (chatStore.isConversationStreaming(conversationId)) {
           if (conn?.currentMessageId) {
             markRunningToolBlocks(conn.currentMessageId, conversationId, 'error')
@@ -343,7 +406,7 @@ export function useChatStream() {
             markRunningToolBlocks(conn.currentMessageId, conversationId, 'error')
             chatStore.updateMessage(conn.currentMessageId, { status: 'error' }, conversationId)
           }
-          const reason = event.reason || (event.code === 1006 ? 'Network error or server unavailable' : 'Unknown reason')
+          const reason = buildCloseReason(event, conn)
           chatStore.setSessionError(`Connection closed: ${reason} (code: ${event.code})`, conversationId)
           chatStore.endSession(conversationId)
           chatStore.endConversationStreaming(conversationId)
@@ -421,6 +484,7 @@ export function useChatStream() {
       if (response.type === 'error') {
         console.error(`[useChatStream] Server error for ${conversationId}:`, response.error)
         const errorMsg = response.error || 'Unknown server error'
+        conn.lastServerError = errorMsg
         const hasCodexPermissionError = /codex cannot access session files|failed to clean up stale arg0 temp dirs: Permission denied|failed to initialize rollout recorder: Permission denied|failed to create session: Permission denied|\/\.codex\/.*permission denied/i.test(errorMsg)
         const missingRolloutPath = /state db missing rollout path for thread/i.test(errorMsg)
         if (missingRolloutPath && !hasCodexPermissionError) {

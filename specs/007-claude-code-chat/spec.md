@@ -44,7 +44,7 @@ As a developer, I want to quickly open/close and resize the chat panel so that I
 ### Edge Cases
 
 - Claude Code CLI not installed or not authenticated → Display "Claude CLI Error: {message}"
-- Network disconnection during response → Display "Connection closed: {reason} (code: {code})"
+- Network disconnection during response → Display "Connection closed: {reason} (code: {code})" with close-code meaning fallback (for example, code `1005` = "No status code received from peer")
 - Claude CLI process crashes → Display "Claude CLI exited unexpectedly (code: {exitCode}, signal: {signal})"
 - Invalid JSON from server → Display "Failed to parse server response: {error}"
 - PTY process spawn failure → Display "Failed to start Claude CLI: {error}"
@@ -74,7 +74,7 @@ As a developer, I want to quickly open/close and resize the chat panel so that I
 - **FR-013a**: System MUST display detailed error messages including the cause
 - **FR-013b**: System MUST log errors to browser console for debugging
 - **FR-013c**: System MUST allow users to dismiss error banners
-- **FR-013d**: System MUST handle WebSocket connection errors with descriptive messages
+- **FR-013d**: System MUST handle WebSocket connection errors with descriptive messages, including close code meaning fallback when `reason` is empty, `wasClean` state, and the last server error context when available
 - **FR-013e**: System MUST handle Claude CLI process failures (non-zero exit codes, spawn failures)
 - **FR-013f**: System MUST handle JSON parsing errors from server responses
 

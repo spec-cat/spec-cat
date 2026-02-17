@@ -112,7 +112,7 @@ server/utils/
 | FR-013a | Detailed error messages | `server/routes/_ws.ts` (CLI exit codes, spawn failures, non-JSON diagnostics) | Done |
 | FR-013b | Console logging | `composables/useChatStream.ts` (console.error on parse/connection failures) | Done |
 | FR-013c | Dismissible errors | `stores/chat.ts` (clearError) | Done |
-| FR-013d | WebSocket errors | `composables/useChatStream.ts` (ws.onerror, ws.onclose with code/reason) | Done |
+| FR-013d | WebSocket errors | `composables/useChatStream.ts` (ws.onerror, ws.onclose with close-code meaning fallback when reason is empty, wasClean flag, and last server-error context) | Done |
 | FR-013e | CLI process failures | `server/routes/_ws.ts` (exit code check, signal info, non-JSON output) | Done |
 | FR-013f | JSON parse errors | `composables/useChatStream.ts` (try/catch with descriptive error) | Done |
 | FR-014 | Prevent double-send | `components/chat/ChatInput.vue` (disabled during streaming) | Done |

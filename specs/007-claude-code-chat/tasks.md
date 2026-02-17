@@ -142,7 +142,7 @@ Permission, worktree, and cascade tasks are covered by specs 010, 011, 012 respe
 - [x] T055b Add console logging hint in error banner (FR-013b)
 - [x] T056 Add retry capability after errors in ChatInput.vue
 - [x] T057 Handle SSE connection errors in useChatStream.ts (reconnect logic)
-- [x] T057a Add WebSocket close code and reason to error messages (FR-013d)
+- [x] T057a Add WebSocket close diagnostics to error messages (close-code meaning fallback when reason is empty, wasClean, and last server-error context) (FR-013d)
 - [x] T057b Add JSON parsing error handling with detailed messages (FR-013f)
 - [x] T057c Add result subtype error handling (max_turns, execution errors)
 - [x] T058a Handle PTY spawn failures with detailed error messages (FR-013e)
