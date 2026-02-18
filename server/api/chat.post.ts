@@ -18,6 +18,26 @@ interface ChatRequest {
   providerModelKey?: string
 }
 
+const FEATURE_ID_PATTERN = /\b\d{3}-[a-z0-9][a-z0-9-]*\b/i
+const SEARCH_ACTION_PATTERN = /\b(find|search|look up|lookup|where is|what feature)\b/i
+const SEARCH_DOMAIN_PATTERN = /\b(spec|requirement|requirements|fr-|feature)\b/i
+const SEARCH_ACTION_KR_PATTERN = /(찾아줘|검색|어디|찾아봐|찾아봐줘)/i
+const SEARCH_DOMAIN_KR_PATTERN = /(스펙|요구사항|기능|fr-)/i
+
+function extractFeatureIdFromMessage(message: string): string | undefined {
+  const match = message.match(FEATURE_ID_PATTERN)
+  return match?.[0]
+}
+
+function shouldInjectSearchContextForChatMessage(message: string): boolean {
+  const trimmed = message.trim()
+  if (!trimmed) return false
+  if (trimmed.startsWith('/')) return false
+  const enIntent = SEARCH_ACTION_PATTERN.test(trimmed) && SEARCH_DOMAIN_PATTERN.test(trimmed)
+  const koIntent = SEARCH_ACTION_KR_PATTERN.test(trimmed) && SEARCH_DOMAIN_KR_PATTERN.test(trimmed)
+  return enIntent || koIntent
+}
+
 export default defineEventHandler(async (event) => {
   const chatRequest = await readBody<ChatRequest>(event)
 
@@ -56,6 +76,19 @@ export default defineEventHandler(async (event) => {
       }
     } catch (error) {
       console.warn('[Chat API] Failed to inject spec search context:', error)
+    }
+  } else if (shouldInjectSearchContextForChatMessage(chatRequest.message)) {
+    try {
+      const context = await buildSearchContextForImplement({
+        query: chatRequest.message,
+        featureId: extractFeatureIdFromMessage(chatRequest.message),
+        maxResults: 5,
+      })
+      if (context.injected && context.context) {
+        providerMessage = `${chatRequest.message}\n\n${context.context}`
+      }
+    } catch (error) {
+      console.warn('[Chat API] Failed to inject spec search context for chat intent:', error)
     }
   }
 
