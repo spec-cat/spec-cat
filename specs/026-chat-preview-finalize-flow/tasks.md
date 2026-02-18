@@ -6,6 +6,8 @@
 - [ ] T004 [FR-004] Lock rebase API state transition in `server/api/chat/rebase.post.ts`.
 - [ ] T005 [FR-001][FR-003] Scope panel control rendering in `components/chat/ChatPanel.vue`.
 - [ ] T006 [FR-001][FR-004] Scope preview/finalize/rebase actions in `stores/chat.ts`.
+- [ ] T007 [FR-002] Enforce preview-sync response validation in store caller path in `stores/chat.ts` (treat `success: false` as failure with contextual logs).
+- [ ] T008 [FR-002] Enforce preview-sync response validation in stream completion path in `composables/useChatStream.ts` (no silent success on sync failure).
 
 ---
 

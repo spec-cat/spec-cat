@@ -23,6 +23,7 @@
 - `server/api/chat/preview-sync.post.ts`
 - `server/api/chat/finalize.post.ts`
 - `server/api/chat/rebase.post.ts`
+- `composables/useChatStream.ts` (post-stream auto-commit + preview-sync caller)
 - `components/chat/ChatPanel.vue` (preview/finalize/rebase controls)
 - `stores/chat.ts` (preview/finalize section)
 
@@ -37,7 +38,7 @@
 ### Functional Requirements
 
 - **FR-001**: System MUST preview and unpreview a conversation safely.
-- **FR-002**: System MUST sync preview branch on new worktree commits.
+- **FR-002**: System MUST sync preview branch on new worktree commits, and client callers MUST treat preview-sync `success: false` as a failure signal (not silent success) with actionable logging/surface behavior.
 - **FR-003**: System MUST finalize conversation work with branch-target control.
 - **FR-004**: System MUST support rebase flow and surface conflict state transitions.
 

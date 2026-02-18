@@ -615,11 +615,15 @@ export function useChatStream() {
               body: { worktreePath: conv.worktreePath, conversationId },
             }).then((result: any) => {
               if (conv.previewBranch && conv.worktreePath) {
-                return fetch('/api/chat/preview-sync', {
+                return $fetch<{ success: boolean; error?: string }>('/api/chat/preview-sync', {
                   method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ previewBranch: conv.previewBranch, worktreePath: conv.worktreePath }),
-                }).then(() => result)
+                  body: { previewBranch: conv.previewBranch, worktreePath: conv.worktreePath },
+                }).then((syncResult) => {
+                  if (!syncResult.success) {
+                    throw new Error(syncResult.error || 'Unknown preview sync failure')
+                  }
+                  return result
+                })
               }
               return result
             }).then((result: any) => {

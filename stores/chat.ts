@@ -170,16 +170,21 @@ export const useChatStore = defineStore('chat', () => {
     if (!conv?.previewBranch || !conv.worktreePath) return
 
     try {
-      await $fetch('/api/chat/preview-sync', {
+      const res = await $fetch<{ success: boolean; error?: string }>('/api/chat/preview-sync', {
         method: 'POST',
         body: {
           previewBranch: conv.previewBranch,
           worktreePath: conv.worktreePath,
         },
       })
+      if (!res.success) {
+        throw new Error(res.error || 'Unknown preview sync failure')
+      }
     } catch (error) {
       console.warn('[chat] Failed to sync preview branch after worktree update', {
         conversationId: conv.id,
+        previewBranch: conv.previewBranch,
+        worktreePath: conv.worktreePath,
         error: error instanceof Error ? error.message : String(error),
       })
     }

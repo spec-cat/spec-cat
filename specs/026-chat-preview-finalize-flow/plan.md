@@ -26,6 +26,6 @@ Extract preview/finalize workflows from lifecycle/conflict concerns to run in pa
 | FR | Planned Coverage |
 |----|------------------|
 | FR-001 | Preview/unpreview API + store flow |
-| FR-002 | Preview sync flow |
+| FR-002 | Preview sync flow across API + store caller + stream-completion caller, including explicit handling of `success: false` responses |
 | FR-003 | Finalize workflow |
 | FR-004 | Rebase transition handling |
