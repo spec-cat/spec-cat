@@ -222,6 +222,42 @@ export function useChatStream() {
   const chatStore = useChatStore()
   const settingsStore = useSettingsStore()
 
+  function isPageFocused(): boolean {
+    if (typeof document === 'undefined') return false
+    if (typeof document.hasFocus !== 'function') return false
+    return document.visibilityState === 'visible' && document.hasFocus()
+  }
+
+  function createCompletionNotification(conversationId: string) {
+    const conv = chatStore.conversations.find((c: { id: string }) => c.id === conversationId)
+    const title = conv?.title?.trim() || 'Chat'
+    return new Notification('Spec Cat', {
+      body: `${title} response completed.`,
+      tag: `chat-complete-${conversationId}`,
+    })
+  }
+
+  async function notifyChatCompleted(conversationId: string) {
+    if (typeof window === 'undefined' || typeof Notification === 'undefined') return
+    if (isPageFocused()) return
+
+    if (Notification.permission === 'granted') {
+      createCompletionNotification(conversationId)
+      return
+    }
+
+    if (Notification.permission !== 'default') return
+
+    try {
+      const permission = await Notification.requestPermission()
+      if (permission === 'granted') {
+        createCompletionNotification(conversationId)
+      }
+    } catch (error) {
+      console.warn('[useChatStream] Failed to request browser notification permission:', error)
+    }
+  }
+
   /**
    * Get WebSocket URL
    */
@@ -567,6 +603,7 @@ export function useChatStream() {
         chatStore.completeMessageWithSave(conn.currentMessageId, conversationId)
         chatStore.endSession(conversationId)
         chatStore.endConversationStreaming(conversationId)
+        notifyChatCompleted(conversationId)
 
         // Find conversation with retry (store may not be synced yet)
         const conv = await findConversationWithRetry(conversationId)
