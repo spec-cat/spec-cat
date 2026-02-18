@@ -2,7 +2,7 @@
 
 **Feature Branch**: `018-codex-provider-integration`
 **Created**: 2026-02-14
-**Status**: Draft
+**Status**: Implemented (aligned to repository behavior on 2026-02-18)
 **Input**: "After adding provider abstraction, validate current state and prepare/implement Codex as an additional provider."
 
 ## Notes

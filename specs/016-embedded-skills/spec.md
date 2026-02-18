@@ -2,7 +2,7 @@
 
 **Feature Branch**: `016-embedded-skills`
 **Created**: 2026-02-08
-**Status**: Draft
+**Status**: In Review (implementation complete; regression/manual validation pending)
 **Input**: User description: "Spec Cat integrates specific agents as built-in skills executable from the features panel. First skill: better-spec (spec document quality validator based on What/How/Track separation principle)."
 
 ## User Scenarios & Testing *(mandatory)*

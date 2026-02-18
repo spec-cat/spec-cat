@@ -3,7 +3,7 @@
 **Feature Branch**: `008-spec-search`
 **Created**: 2026-02-06
 **Updated**: 2026-02-16
-**Status**: Draft
+**Status**: In Progress (implementation largely complete; manual validation pending)
 **Input**: User description: "Enable vector search by embedding specs into SQLite. `specs/*` files are the source of truth and SQLite acts only as a cache."
 
 ## User Scenarios & Testing *(mandatory)*

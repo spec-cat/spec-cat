@@ -2,7 +2,7 @@
 
 **Feature Branch**: `013-auto-mode`
 **Created**: 2026-02-08
-**Status**: Draft
+**Status**: In Review (implementation complete; final manual validation pending)
 **Input**: User description: "Auto Mode - Background scheduler that automatically runs speckit workflow per spec unit, finds discrepancies between implementation and specs, and updates specs (not implementation). Reuses existing chat UI and conversation system — each spec unit gets its own conversation with cascade pipeline. Features on/off toggle in UI, keeps constitution and .speckit files up to date, requires human review before merging to main."
 
 ## User Scenarios & Testing *(mandatory)*
