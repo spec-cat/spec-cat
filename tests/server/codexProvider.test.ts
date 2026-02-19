@@ -14,7 +14,15 @@ function makeOpts(overrides: Partial<AIProviderStreamOptions> = {}): AIProviderS
 describe('buildCodexExecArgs', () => {
   it('builds a standard exec invocation for new sessions', () => {
     const args = buildCodexExecArgs(makeOpts())
-    expect(args).toEqual(['exec', '--json', '--model', 'gpt-5.3-codex', 'hello'])
+    expect(args).toEqual([
+      'exec',
+      '--json',
+      '--model',
+      'gpt-5.3-codex',
+      '--sandbox',
+      'workspace-write',
+      'hello',
+    ])
   })
 
   it('builds resume invocation with resume subcommand before options', () => {
@@ -22,14 +30,29 @@ describe('buildCodexExecArgs', () => {
       resumeSessionId: 'thread-123',
       message: 'follow-up',
     }))
-    expect(args).toEqual(['exec', 'resume', '--json', '--model', 'gpt-5.3-codex', 'thread-123', 'follow-up'])
+    expect(args).toEqual([
+      'exec',
+      'resume',
+      '--json',
+      '--model',
+      'gpt-5.3-codex',
+      '--sandbox',
+      'workspace-write',
+      'thread-123',
+      'follow-up',
+    ])
   })
 
-  it('does not include unsupported approval flags for ask/plan modes', () => {
+  it('uses writable sandbox flags for ask/plan modes', () => {
     const askArgs = buildCodexExecArgs(makeOpts({ permissionMode: 'ask' }))
     const planArgs = buildCodexExecArgs(makeOpts({ permissionMode: 'plan' }))
 
+    expect(askArgs).toContain('--sandbox')
+    expect(askArgs).toContain('workspace-write')
     expect(askArgs).not.toContain('--ask-for-approval')
+
+    expect(planArgs).toContain('--sandbox')
+    expect(planArgs).toContain('workspace-write')
     expect(planArgs).not.toContain('--ask-for-approval')
   })
 

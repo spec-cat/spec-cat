@@ -46,6 +46,52 @@ describe('codexStreamParser', () => {
     })
   })
 
+  it('unwraps nested event envelope for approval request', () => {
+    const line = JSON.stringify({
+      type: 'notification',
+      thread_id: 'thread-event-approval-1',
+      event: {
+        type: 'approval_request',
+        tool: 'Write',
+        file_path: 'components/chat/ChatInput.vue',
+        description: 'Need permission to write file',
+      },
+    })
+    const result = processCodexJsonLine(line)
+    expect(result.mappedEvents).toHaveLength(1)
+    expect(result.mappedEvents[0]).toMatchObject({
+      type: 'permission_request',
+      session_id: 'thread-event-approval-1',
+      permission: {
+        tool: 'Write',
+        file_path: 'components/chat/ChatInput.vue',
+      },
+    })
+  })
+
+  it('unwraps nested data envelope for permission request', () => {
+    const line = JSON.stringify({
+      type: 'notification',
+      session_id: 'session-data-approval-1',
+      data: {
+        type: 'permission_request',
+        tool: 'Bash',
+        command: 'git status',
+        description: 'Permission required: Bash',
+      },
+    })
+    const result = processCodexJsonLine(line)
+    expect(result.mappedEvents).toHaveLength(1)
+    expect(result.mappedEvents[0]).toMatchObject({
+      type: 'permission_request',
+      session_id: 'session-data-approval-1',
+      permission: {
+        tool: 'Bash',
+        command: 'git status',
+      },
+    })
+  })
+
   it('propagates conversation_id from envelopes into session_id', () => {
     const line = JSON.stringify({
       type: 'event_msg',

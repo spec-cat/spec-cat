@@ -645,6 +645,18 @@ export function processCodexJsonLine(cleanedLine: string): {
         }
       }
 
+      // Some Codex builds wrap provider events under `event` or `data` envelopes.
+      // Unwrap them so downstream mapping can recognize approval/tool events.
+      const nestedEventCandidates = [parsed.event, parsed.data]
+      for (const candidate of nestedEventCandidates) {
+        if (candidate && typeof candidate === 'object' && !Array.isArray(candidate)) {
+          const candidateObj = candidate as Record<string, unknown>
+          if (typeof candidateObj.type === 'string') {
+            return [withSessionFields(candidateObj, parsed)]
+          }
+        }
+      }
+
       // Codex CLI has emitted multiple envelope styles over time. Normalize all
       // known "item-carrying" envelopes to the same inner event shape.
       const isItemEnvelope =

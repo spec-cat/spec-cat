@@ -185,8 +185,9 @@ export function buildCodexExecArgs(opts: AIProviderStreamOptions): string[] {
   switch (mode) {
     case 'plan':
     case 'ask':
-      // Codex exec does not support the Claude-style --ask-for-approval flag.
-      // Leave ask/plan to the CLI default approval behavior.
+      // Keep ask/plan interactive permission semantics, but ensure writable sandbox.
+      // Without explicit sandbox mode, some Codex builds default to read-only.
+      args.push('--sandbox', 'workspace-write')
       break
     case 'auto':
       args.push('--full-auto')

@@ -212,16 +212,16 @@ function handlePermissionResponse(peer: any, msg: PermissionResponse) {
   if (msg.allow && state.pendingMessage) {
     // Add all pending tools to approved set
     for (const tool of state.pendingTools) {
-      state.approvedTools.add(tool)
+      const normalized = normalizeToolName(tool)
+      if (normalized) {
+        state.approvedTools.add(normalized)
+      }
     }
     console.log('[WS] Tools approved:', state.pendingTools, '- Total approved:', Array.from(state.approvedTools))
     state.pendingTools = []
-    // Keep providerSessionId to resume the conversation.
-    // Codex does not support per-tool allowlists, so continue with auto permissions for this resumed turn.
-    const providerId = state.pendingMessage.providerId || 'claude'
-    const resumeMode: PermissionMode = providerId === 'codex'
-      ? 'auto'
-      : state.pendingMessage.permissionMode || 'ask'
+    // Keep providerSessionId to resume the conversation and preserve the original
+    // permission mode so ask/plan continue to gate subsequent tools.
+    const resumeMode: PermissionMode = state.pendingMessage.permissionMode || 'ask'
     runProvider(peer, state, {
       ...state.pendingMessage,
       permissionMode: resumeMode,
@@ -444,6 +444,23 @@ async function runProvider(peer: any, state: PeerState, msg: ChatMessage, isRetr
             emittedRenderableContent = true
           }
 
+          if (selection.providerId === 'codex' && (mode === 'ask' || mode === 'plan') && !permissionRequested) {
+            const requestedTool = extractToolUseNameFromProviderJson(parsed as Record<string, unknown>)
+            const normalizedTool = normalizeToolName(requestedTool || '')
+            if (normalizedTool && codexToolNeedsAskApproval(normalizedTool) && !state.approvedTools.has(normalizedTool)) {
+              permissionRequested = true
+              state.pendingTools = [normalizedTool]
+              peer.send(JSON.stringify({
+                type: 'permission_request',
+                tool: normalizedTool,
+                tools: state.pendingTools,
+                description: `Permission required: ${normalizedTool}`,
+              }))
+              state.proc?.kill()
+              return
+            }
+          }
+
           if (parsed.type === 'permission_request' && !permissionRequested) {
             permissionRequested = true
             const permission = (parsed.permission && typeof parsed.permission === 'object')
@@ -452,19 +469,36 @@ async function runProvider(peer: any, state: PeerState, msg: ChatMessage, isRetr
             const tool = permission && typeof permission.tool === 'string'
               ? permission.tool
               : 'Permission'
+            const normalizedTool = normalizeToolName(tool)
             const description = permission && typeof permission.description === 'string'
               ? permission.description
               : 'Permission required to continue execution.'
-            state.pendingTools = tool ? [tool] : []
+            state.pendingTools = normalizedTool ? [normalizedTool] : []
 
             peer.send(JSON.stringify({
               type: 'permission_request',
-              tool,
+              tool: normalizedTool || 'Permission',
               tools: state.pendingTools,
               description,
             }))
             state.proc?.kill()
             return
+          }
+
+          if ((mode === 'ask' || mode === 'plan') && !permissionRequested) {
+            const inferred = extractPermissionRequestFromToolResult(parsed as Record<string, unknown>)
+            if (inferred) {
+              permissionRequested = true
+              state.pendingTools = normalizeTools(inferred.tools)
+              peer.send(JSON.stringify({
+                type: 'permission_request',
+                tool: state.pendingTools[0] || 'Permission',
+                tools: state.pendingTools,
+                description: inferred.description,
+              }))
+              state.proc?.kill()
+              return
+            }
           }
 
           if (selection.providerId === 'claude' && parsed.type === 'user' && !permissionRequested) {
@@ -476,12 +510,12 @@ async function runProvider(peer: any, state: PeerState, msg: ChatMessage, isRetr
                   if (errorContent.includes('requested permissions') || errorContent.includes('haven\'t granted')) {
                     permissionRequested = true
                     const tools = parseToolsFromError(errorContent)
-                    state.pendingTools = tools
+                    state.pendingTools = normalizeTools(tools)
 
                     peer.send(JSON.stringify({
                       type: 'permission_request',
-                      tool: tools[0],
-                      tools,
+                      tool: state.pendingTools[0],
+                      tools: state.pendingTools,
                       description: errorContent,
                     }))
                     state.proc?.kill()
@@ -502,6 +536,22 @@ async function runProvider(peer: any, state: PeerState, msg: ChatMessage, isRetr
           try {
             if (!permissionRequested) {
               if (exitCode !== 0 && exitCode !== null) {
+                if ((mode === 'ask' || mode === 'plan')) {
+                  const inferred = extractPermissionRequestFromProcessOutput(nonJsonOutput)
+                  if (inferred) {
+                    permissionRequested = true
+                    state.pendingTools = normalizeTools(inferred.tools)
+                    peer.send(JSON.stringify({
+                      type: 'permission_request',
+                      tool: state.pendingTools[0] || 'Permission',
+                      tools: state.pendingTools,
+                      description: inferred.description,
+                    }))
+                    state.proc = null
+                    return
+                  }
+                }
+
                 const hasPermissionError = hasCodexPermissionError(nonJsonOutput)
                 const missingRolloutPath = hasCodexMissingRolloutPathError(nonJsonOutput)
                 if (missingRolloutPath && !hasPermissionError && !isRetry) {
@@ -667,4 +717,73 @@ function parseToolsFromError(errorContent: string): string[] {
 
   // Default to Write and Edit as most common permission requests
   return tools.length > 0 ? tools : ['Write', 'Edit']
+}
+
+function extractToolUseNameFromProviderJson(parsed: Record<string, unknown>): string | null {
+  if (parsed.type !== 'stream_event') return null
+  const event = parsed.event
+  if (!event || typeof event !== 'object' || Array.isArray(event)) return null
+  const eventObj = event as Record<string, unknown>
+  if (eventObj.type !== 'content_block_start') return null
+  const contentBlock = eventObj.content_block
+  if (!contentBlock || typeof contentBlock !== 'object' || Array.isArray(contentBlock)) return null
+  const blockObj = contentBlock as Record<string, unknown>
+  const blockType = typeof blockObj.type === 'string' ? blockObj.type : ''
+  if (blockType !== 'tool_use' && blockType !== 'server_tool_use') return null
+  return typeof blockObj.name === 'string' && blockObj.name.length > 0 ? blockObj.name : null
+}
+
+function normalizeToolName(tool: string): string {
+  if (!tool) return ''
+  const trimmed = tool.trim()
+  if (!trimmed) return ''
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1)
+}
+
+function normalizeTools(tools: string[]): string[] {
+  const seen = new Set<string>()
+  for (const tool of tools) {
+    const normalized = normalizeToolName(tool)
+    if (normalized) {
+      seen.add(normalized)
+    }
+  }
+  return Array.from(seen)
+}
+
+function codexToolNeedsAskApproval(tool: string): boolean {
+  const normalized = normalizeToolName(tool)
+  if (!normalized) return false
+  // Read-only tools can proceed without interruption in ask mode.
+  if (normalized === 'Read' || normalized === 'Glob' || normalized === 'Grep' || normalized === 'WebSearch') {
+    return false
+  }
+  return true
+}
+
+function isPermissionRequestText(text: string): boolean {
+  if (!text) return false
+  return /permission required|approval required|requires approval|requested permissions|haven't granted|hasn't granted|not approved|approval policy|permission denied|operation not permitted|read-only file system|cannot touch/i.test(text)
+}
+
+function extractPermissionRequestFromToolResult(parsed: Record<string, unknown>): { tools: string[]; description: string } | null {
+  if (parsed.type !== 'tool_result') return null
+  if (parsed.is_error !== true) return null
+  if (typeof parsed.content !== 'string') return null
+  const description = parsed.content
+  if (!isPermissionRequestText(description)) {
+    return null
+  }
+  const tools = parseToolsFromError(description)
+  return { tools, description }
+}
+
+function extractPermissionRequestFromProcessOutput(nonJsonOutput: string[]): { tools: string[]; description: string } | null {
+  if (!Array.isArray(nonJsonOutput) || nonJsonOutput.length === 0) return null
+  const description = nonJsonOutput.join('\n')
+  if (!isPermissionRequestText(description)) {
+    return null
+  }
+  const tools = parseToolsFromError(description)
+  return { tools, description }
 }
