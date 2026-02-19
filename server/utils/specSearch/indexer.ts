@@ -15,6 +15,7 @@ interface ScannedFile {
 }
 
 const log = logger.specSearch
+const EMBEDDING_YIELD_INTERVAL = 3
 
 function sha256(content: string): string {
   return createHash('sha256').update(content).digest('hex')
@@ -86,7 +87,14 @@ export async function reindexFile(projectDir: string, relPath: string, contentHa
     contentHash,
     chunkCount: chunks.length,
   })
-  const embeddings = await Promise.all(chunks.map(chunk => getEmbedding(chunk.content)))
+  const embeddings: number[][] = []
+  for (let i = 0; i < chunks.length; i++) {
+    embeddings.push(await getEmbedding(chunks[i].content))
+    // Yield periodically so API requests can be handled while indexing runs.
+    if ((i + 1) % EMBEDDING_YIELD_INTERVAL === 0) {
+      await new Promise<void>((resolve) => setImmediate(resolve))
+    }
+  }
 
   await db.replaceChunksForFile(relPath, chunks, embeddings)
   await db.upsertSourceFile({

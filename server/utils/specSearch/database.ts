@@ -394,13 +394,8 @@ export class SpecSearchDatabase {
 
     try {
       const existingRows = this.sqlite.prepare('SELECT id FROM chunks WHERE source_path = ?').all(sourcePath) as Array<{ id: number }>
-
-      this.sqlite.prepare('DELETE FROM chunks WHERE source_path = ?').run(sourcePath)
+      const deleteChunkRows = this.sqlite.prepare('DELETE FROM chunks WHERE source_path = ?')
       const deleteVector = this.sqlite.prepare('DELETE FROM chunk_vectors WHERE chunk_id = ?')
-      for (const row of existingRows) {
-        deleteVector.run(row.id)
-      }
-
       const insertChunk = this.sqlite.prepare(`
         INSERT INTO chunks (
           source_path, feature_id, file_type, heading_hierarchy, content,
@@ -409,29 +404,36 @@ export class SpecSearchDatabase {
       `)
       const insertFts = this.sqlite.prepare('INSERT INTO chunks_fts(rowid, content, feature_id, file_type) VALUES (?, ?, ?, ?)')
       const insertVector = this.sqlite.prepare('INSERT OR REPLACE INTO chunk_vectors(chunk_id, embedding_json) VALUES (?, ?)')
-
-      for (let i = 0; i < chunks.length; i++) {
-        const chunk = chunks[i]
-        const result = insertChunk.run(
-          chunk.sourcePath,
-          chunk.featureId,
-          chunk.fileType,
-          JSON.stringify(chunk.headingHierarchy),
-          chunk.content,
-          chunk.lineStart,
-          chunk.lineEnd,
-          JSON.stringify(chunk.frTags),
-          JSON.stringify(chunk.taskTags),
-        )
-
-        const rowId = Number(result.lastInsertRowid)
-        insertFts.run(rowId, chunk.content, chunk.featureId, chunk.fileType)
-
-        const embedding = embeddings?.[i]
-        if (embedding?.length) {
-          insertVector.run(rowId, JSON.stringify(embedding))
+      const runReplace = this.sqlite.transaction(() => {
+        deleteChunkRows.run(sourcePath)
+        for (const row of existingRows) {
+          deleteVector.run(row.id)
         }
-      }
+        for (let i = 0; i < chunks.length; i++) {
+          const chunk = chunks[i]
+          const result = insertChunk.run(
+            chunk.sourcePath,
+            chunk.featureId,
+            chunk.fileType,
+            JSON.stringify(chunk.headingHierarchy),
+            chunk.content,
+            chunk.lineStart,
+            chunk.lineEnd,
+            JSON.stringify(chunk.frTags),
+            JSON.stringify(chunk.taskTags),
+          )
+
+          const rowId = Number(result.lastInsertRowid)
+          insertFts.run(rowId, chunk.content, chunk.featureId, chunk.fileType)
+
+          const embedding = embeddings?.[i]
+          if (embedding?.length) {
+            insertVector.run(rowId, JSON.stringify(embedding))
+          }
+        }
+      })
+
+      runReplace()
 
       return chunks.length
     } catch (error) {
