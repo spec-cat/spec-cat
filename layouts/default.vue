@@ -21,6 +21,8 @@ const { isDark, toggleTheme } = useTheme()
 
 const isDiffViewerOpen = computed(() => gitGraphStore.diffViewerFile !== null)
 const isChatFullscreen = computed(() => layoutStore.isChatFullscreen)
+const rightColumnsHidden = computed(() => isChatFullscreen.value)
+const chatColumnFlex = computed(() => (isChatFullscreen.value ? 7 : 3))
 
 const showSettings = ref(false)
 const workingDirectory = ref('')
@@ -104,38 +106,48 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- Diff viewer overlay (FR-088): replaces right 3 panels when active -->
-    <div v-if="isDiffViewerOpen" class="flex flex-col overflow-hidden border-l border-retro-border" style="flex: 7">
-      <GitFileDiffViewer
-        :file="gitGraphStore.diffViewerFile!"
-        :commit-hash="gitGraphStore.diffViewerCommitHash!"
-        :content="gitGraphStore.diffViewerContent"
-        :loading="gitGraphStore.diffViewerLoading"
-        @close="gitGraphStore.closeFileDiff()"
-      />
-    </div>
-
-    <!-- Normal layout: right 3 panels -->
-    <template v-else>
+    <!-- Right 3 panels (always mounted) -->
+    <div class="relative flex min-w-0" style="flex: 7">
       <!-- Column 2: Features (flex: 2 = 20%) -->
-      <div class="flex flex-col overflow-hidden border-l border-retro-border" style="flex: 2">
+      <div
+        v-show="!rightColumnsHidden"
+        class="flex flex-col overflow-hidden border-l border-retro-border"
+        style="flex: 2"
+      >
         <FeaturesPanel />
       </div>
 
       <!-- Column 3: Conversations (flex: 2 = 20%) -->
-      <div class="flex flex-col overflow-hidden border-l border-retro-border" style="flex: 2">
+      <div
+        v-show="!rightColumnsHidden"
+        class="flex flex-col overflow-hidden border-l border-retro-border"
+        style="flex: 2"
+      >
         <ConversationsPanel />
       </div>
 
       <!-- Column 4: Chat (flex: 3 = 30%) -->
       <div
-        v-if="!isChatFullscreen"
         class="flex flex-col overflow-hidden border-l border-retro-border"
-        style="flex: 3"
+        :style="{ flex: chatColumnFlex }"
       >
         <ChatPanel />
       </div>
-    </template>
+
+      <!-- Diff viewer overlay (FR-088): overlays right panels without unmounting -->
+      <div
+        v-if="isDiffViewerOpen"
+        class="absolute inset-0 z-30 flex flex-col overflow-hidden border-l border-retro-border bg-retro-black"
+      >
+        <GitFileDiffViewer
+          :file="gitGraphStore.diffViewerFile!"
+          :commit-hash="gitGraphStore.diffViewerCommitHash!"
+          :content="gitGraphStore.diffViewerContent"
+          :loading="gitGraphStore.diffViewerLoading"
+          @close="gitGraphStore.closeFileDiff()"
+        />
+      </div>
+    </div>
 
     <!-- Settings modal -->
     <SettingsModal v-if="showSettings" @close="showSettings = false" />
@@ -143,9 +155,5 @@ onUnmounted(() => {
     <!-- Toast notifications -->
     <ToastContainer />
 
-    <!-- Fullscreen chat overlay -->
-    <div v-if="isChatFullscreen" class="fixed inset-0 z-40 flex flex-col bg-retro-black">
-      <ChatPanel />
-    </div>
   </div>
 </template>
