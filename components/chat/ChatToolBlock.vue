@@ -57,6 +57,7 @@ const toolNameLower = computed(() => props.block.name.toLowerCase())
 const isReadTool = computed(() => toolNameLower.value === 'read')
 const isWriteTool = computed(() => toolNameLower.value === 'write')
 const isEditTool = computed(() => toolNameLower.value === 'edit' || toolNameLower.value === 'multiedit')
+const isCommandTool = computed(() => ['bash', 'exec', 'execcommand', 'runcommand'].includes(toolNameLower.value))
 
 const targetPath = computed(() => pickString(props.block.input, [
   'file_path',
@@ -95,6 +96,12 @@ const editNewText = computed(() => pickString(props.block.input, [
   'new',
   'replacement',
 ]))
+const commandText = computed(() => pickString(props.block.input, [
+  'cmd',
+  'command',
+  'script',
+  'chars',
+]))
 
 const writePreview = computed(() => previewText(writeContent.value))
 const editOldPreview = computed(() => previewText(editOldText.value, 10, 1000))
@@ -111,7 +118,34 @@ const humanSummary = computed(() => {
   if (isEditTool.value) {
     if (targetPath.value) return `Edit ${targetPath.value}`
   }
+  if (isCommandTool.value && commandText.value) {
+    return `$ ${commandText.value}`
+  }
   return props.block.inputSummary
+})
+
+const statusToken = computed(() => {
+  switch (props.block.status) {
+    case 'running': return '[RUN]'
+    case 'pending': return '[WAIT]'
+    case 'complete': return '[OK]'
+    case 'error': return '[ERR]'
+  }
+})
+
+const compactArgs = computed(() => {
+  const entries = Object.entries(props.block.input)
+    .filter(([key, value]) => {
+      if (value === null || value === undefined) return false
+      if (typeof value === 'string') {
+        if (!value.trim()) return false
+        if (value.length > 90) return false
+      }
+      return !['content', 'new_content', 'text', 'old_string', 'new_string'].includes(key)
+    })
+    .slice(0, 6)
+
+  return entries.map(([key, value]) => `${key}=${typeof value === 'string' ? JSON.stringify(value) : JSON.stringify(value)}`)
 })
 
 const statusColor = computed(() => {
@@ -136,10 +170,10 @@ const isLongResult = computed(() => {
 </script>
 
 <template>
-  <div class="my-2 border border-retro-border/30 rounded">
+  <div class="my-2 border border-retro-border/40 rounded bg-retro-dark/30">
     <!-- Header row -->
     <button
-      class="flex items-center gap-2 w-full px-3 py-1.5 text-xs font-mono hover:bg-retro-dark/30 transition-colors"
+      class="flex items-center gap-2 w-full px-3 py-2 text-xs font-mono hover:bg-retro-dark/40 transition-colors text-left"
       @click="expanded = !expanded"
     >
       <!-- Status indicator -->
@@ -162,7 +196,7 @@ const isLongResult = computed(() => {
         :class="statusColor"
       />
 
-      <!-- Tool name -->
+      <span class="text-retro-muted">{{ statusToken }}</span>
       <span class="text-retro-cyan font-bold">{{ block.name }}</span>
 
       <!-- Input summary -->
@@ -175,8 +209,13 @@ const isLongResult = computed(() => {
       />
     </button>
 
-    <!-- Expanded: human-readable details + raw JSON -->
+    <!-- Expanded: CLI-like details + raw JSON -->
     <div v-if="expanded" class="px-3 pb-2 border-t border-retro-border/20">
+      <div v-if="compactArgs.length > 0" class="mt-2">
+        <div class="text-[11px] font-mono text-retro-cyan mb-1">Args</div>
+        <pre class="text-xs font-mono text-retro-muted bg-retro-panel p-2 rounded overflow-x-auto max-h-36 overflow-y-auto scrollbar-custom whitespace-pre-wrap">{{ compactArgs.join('\n') }}</pre>
+      </div>
+
       <div class="text-xs font-mono text-retro-muted space-y-2 mt-2">
         <div v-if="targetPath" class="flex items-start gap-2">
           <span class="text-retro-muted/80 min-w-12">File</span>
@@ -212,11 +251,11 @@ const isLongResult = computed(() => {
       </details>
     </div>
 
-    <!-- Tool result (shown inline below the tool header) -->
+    <!-- Tool result (CLI output style) -->
     <div v-if="result" class="px-3 pb-2 border-t border-retro-border/20">
       <div
-        class="text-xs font-mono rounded p-2 mt-1 overflow-y-auto scrollbar-custom"
-        :class="result.isError ? 'text-retro-red bg-retro-red/5' : 'text-retro-muted bg-retro-panel/50'"
+        class="text-xs font-mono rounded p-2 mt-1 overflow-y-auto scrollbar-custom border"
+        :class="result.isError ? 'text-retro-red bg-retro-red/5 border-retro-red/40' : 'text-retro-muted bg-retro-panel/60 border-retro-border/30'"
         :style="resultExpanded ? 'max-height: 20rem' : ''"
       >
         <template v-if="!resultExpanded && isLongResult">
