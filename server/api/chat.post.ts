@@ -169,10 +169,25 @@ export default defineEventHandler(async (event) => {
             }
 
             if (isUnexpectedExit(exitCode)) {
+              console.error('[Chat API] Provider process exited unexpectedly', {
+                providerId: selection.providerId,
+                modelKey: selection.modelKey,
+                requestId: chatRequest.requestId,
+                exitCode,
+                signal,
+                nonJsonOutput: nonJsonOutput.slice(-25),
+              })
               const summary = summarizeProviderProcessError(nonJsonOutput, 700)
               const details = summary ? ` — ${summary}` : ''
               writeChunk(errorEvent(`Provider process exited unexpectedly (code: ${exitCode}${signal ? `, signal: ${signal}` : ''})${details}`))
             } else if (exitCode === null && signal) {
+              console.error('[Chat API] Provider process killed by signal', {
+                providerId: selection.providerId,
+                modelKey: selection.modelKey,
+                requestId: chatRequest.requestId,
+                signal,
+                nonJsonOutput: nonJsonOutput.slice(-25),
+              })
               const summary = summarizeProviderProcessError(nonJsonOutput, 700)
               const details = summary ? ` — ${summary}` : ''
               writeChunk(errorEvent(`Provider process was killed by signal ${signal}${details}`))

@@ -536,6 +536,16 @@ async function runProvider(peer: any, state: PeerState, msg: ChatMessage, isRetr
           try {
             if (!permissionRequested) {
               if (exitCode !== 0 && exitCode !== null) {
+                console.error('[WS] Provider process exited unexpectedly', {
+                  providerId: selection.providerId,
+                  modelKey: selection.modelKey,
+                  permissionMode: mode,
+                  requestId: msg.requestId,
+                  exitCode,
+                  signal,
+                  nonJsonOutput: nonJsonOutput.slice(-25),
+                })
+
                 if ((mode === 'ask' || mode === 'plan')) {
                   const inferred = extractPermissionRequestFromProcessOutput(nonJsonOutput)
                   if (inferred) {
@@ -594,6 +604,14 @@ async function runProvider(peer: any, state: PeerState, msg: ChatMessage, isRetr
                   error: `Provider process was killed by signal ${signal}${details}`,
                   requestId: msg.requestId,
                 }))
+                console.error('[WS] Provider process killed by signal', {
+                  providerId: selection.providerId,
+                  modelKey: selection.modelKey,
+                  permissionMode: mode,
+                  requestId: msg.requestId,
+                  signal,
+                  nonJsonOutput: nonJsonOutput.slice(-25),
+                })
               } else {
                 if (!emittedRenderableContent) {
                   const summary = summarizeProviderProcessError(nonJsonOutput, 700)
