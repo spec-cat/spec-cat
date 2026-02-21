@@ -4,13 +4,20 @@
  * Called automatically after each streaming turn completes.
  */
 
+import { exec } from 'node:child_process'
+import { promisify } from 'node:util'
 import { autoCommitChanges } from '~/server/utils/claudeService'
 import { logger } from '~/server/utils/logger'
+import { getProjectDir } from '~/server/utils/projectDir'
+
+const execAsync = promisify(exec)
+const PROTECTED_BRANCHES = new Set(['main', 'master', 'develop', 'dev'])
 
 export default defineEventHandler(async (event) => {
   const body = await readBody<{
     worktreePath: string
     conversationId?: string
+    previousBranch?: string
   }>(event)
 
   if (!body?.worktreePath) {
@@ -20,16 +27,44 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const { worktreePath, conversationId } = body
+  const { worktreePath, conversationId, previousBranch } = body
 
   try {
     const result = await autoCommitChanges(worktreePath)
+    let deletedPreviousBranch = false
 
     if (result.success) {
+      const branchChanged = Boolean(
+        previousBranch &&
+        result.currentBranch &&
+        previousBranch !== result.currentBranch,
+      )
+
+      if (branchChanged && previousBranch && !PROTECTED_BRANCHES.has(previousBranch)) {
+        try {
+          await execAsync(`git branch -D "${previousBranch}"`, { cwd: getProjectDir() })
+          deletedPreviousBranch = true
+          logger.chat.info('Deleted previous worktree branch after branch switch', {
+            conversationId,
+            previousBranch,
+            currentBranch: result.currentBranch,
+          })
+        } catch (deleteError) {
+          logger.chat.warn('Failed to delete previous worktree branch after branch switch', {
+            conversationId,
+            previousBranch,
+            currentBranch: result.currentBranch,
+            error: deleteError instanceof Error ? deleteError.message : String(deleteError),
+          })
+        }
+      }
+
       logger.chat.info('Worktree auto-commit done', {
         conversationId,
         message: result.message,
         currentBranch: result.currentBranch,
+        previousBranch,
+        deletedPreviousBranch,
       })
     }
 
@@ -37,6 +72,7 @@ export default defineEventHandler(async (event) => {
       success: result.success,
       message: result.message,
       currentBranch: result.currentBranch,
+      deletedPreviousBranch,
       error: result.error,
     }
   } catch (error) {

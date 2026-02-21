@@ -612,7 +612,11 @@ export function useChatStream() {
         const commitPromise = (conv?.hasWorktree && conv.worktreePath)
           ? $fetch('/api/chat/worktree-commit', {
               method: 'POST',
-              body: { worktreePath: conv.worktreePath, conversationId },
+              body: {
+                worktreePath: conv.worktreePath,
+                conversationId,
+                previousBranch: conv.worktreeBranch,
+              },
             }).then((result: any) => {
               if (conv.previewBranch && conv.worktreePath) {
                 return $fetch<{ success: boolean; error?: string }>('/api/chat/preview-sync', {
@@ -629,11 +633,12 @@ export function useChatStream() {
             }).then((result: any) => {
               // Update UI if branch changed or commits were made
               if (result?.success && result.currentBranch !== conv.worktreeBranch) {
-                const oldBranch = conv.worktreeBranch
+                const oldBranch = conv.worktreeBranch || 'unknown'
                 chatStore.updateWorktreeBranch(conversationId, result.currentBranch)
+                const deletedText = result.deletedPreviousBranch ? ` and deleted \`${oldBranch}\`` : ''
                 appendTextBlock(
                   conn.currentMessageId,
-                  `\n\n> **Branch changed**: AI switched from \`${oldBranch}\` to \`${result.currentBranch}\`\n\n`,
+                  `\n\n> **Branch changed**: AI switched from \`${oldBranch}\` to \`${result.currentBranch}\`${deletedText}\n\n`,
                   conversationId,
                 )
               } else if (result?.success && conv.worktreeBranch) {
