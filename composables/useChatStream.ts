@@ -640,15 +640,17 @@ export function useChatStream() {
                 })
               }
               return result
-            }).then((result: any) => {
+            }).then(async (result: any) => {
               // Update UI if branch changed or commits were made
               if (result?.success && result.currentBranch !== conv.worktreeBranch) {
                 const oldBranch = conv.worktreeBranch || 'unknown'
                 chatStore.updateWorktreeBranch(conversationId, result.currentBranch)
+                const linkedFeatureId = await chatStore.syncConversationFeatureFromBranch(conversationId)
                 const deletedText = result.deletedPreviousBranch ? ` and deleted \`${oldBranch}\`` : ''
+                const linkedText = linkedFeatureId ? ` and linked to feature \`${linkedFeatureId}\`` : ''
                 appendTextBlock(
                   conn.currentMessageId,
-                  `\n\n> **Branch changed**: AI switched from \`${oldBranch}\` to \`${result.currentBranch}\`${deletedText}\n\n`,
+                  `\n\n> **Branch changed**: AI switched from \`${oldBranch}\` to \`${result.currentBranch}\`${deletedText}${linkedText}\n\n`,
                   conversationId,
                 )
               } else if (result?.success && conv.worktreeBranch) {

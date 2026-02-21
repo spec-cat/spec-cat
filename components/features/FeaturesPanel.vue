@@ -62,7 +62,13 @@ const featureRefs = ref<Record<string, HTMLElement | null>>({})
 // Active feature from conversation
 const activeFeatureId = computed(() => {
   const conv = chatStore.activeConversation
-  return conv?.featureId || null
+  if (!conv) return null
+
+  if (conv.featureId) return conv.featureId
+
+  const branch = conv.worktreeBranch?.trim()
+  if (!branch) return null
+  return features.value.some(feature => feature.id === branch) ? branch : null
 })
 
 // Auto-scroll to active feature card

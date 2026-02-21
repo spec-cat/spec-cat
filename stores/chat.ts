@@ -514,6 +514,38 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  /**
+   * If the current worktree branch name matches a spec feature ID, link it.
+   * This allows branch-first workflows to still highlight/reuse feature conversations.
+   */
+  async function syncConversationFeatureFromBranch(conversationId: string): Promise<string | null> {
+    const conv = conversations.value.find(c => c.id === conversationId)
+    if (!conv?.worktreeBranch) return null
+
+    const branchName = conv.worktreeBranch.trim()
+    if (!branchName) return null
+
+    try {
+      const data = await $fetch<{ features: Array<{ id: string }> }>('/api/specs/features')
+      const matched = data.features.find(f => f.id === branchName)
+      if (!matched) return null
+
+      if (conv.featureId !== matched.id) {
+        conv.featureId = matched.id
+        conv.updatedAt = new Date().toISOString()
+        saveAllConversations()
+      }
+      return matched.id
+    } catch (error) {
+      console.warn('[chat] Failed to map branch to feature', {
+        conversationId,
+        branchName,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      return null
+    }
+  }
+
   function setConversationProviderSelection(conversationId: string, providerId: string, providerModelKey: string) {
     const conv = conversations.value.find(c => c.id === conversationId)
     if (!conv) return
@@ -1142,6 +1174,12 @@ export const useChatStore = defineStore('chat', () => {
       cwd.value = conv.cwd
     }
 
+    // Branch-first flow: if featureId is not linked yet, backfill from an exact
+    // branch/spec directory match so feature panels can highlight correctly.
+    if (!conv.featureId && conv.worktreeBranch) {
+      void syncConversationFeatureFromBranch(id)
+    }
+
     // Save active conversation ID to settings
     if (typeof window !== 'undefined') {
       $fetch('/api/settings', {
@@ -1580,7 +1618,21 @@ export const useChatStore = defineStore('chat', () => {
    * Find an existing conversation associated with a feature ID
    */
   function findConversationByFeature(featureId: string): Conversation | null {
-    return conversations.value.find(c => c.featureId === featureId) || null
+    const normalizedFeatureId = featureId.trim()
+    if (!normalizedFeatureId) return null
+
+    const candidates = conversations.value.filter((conversation) => {
+      if (conversation.featureId === normalizedFeatureId) {
+        return true
+      }
+      return conversation.worktreeBranch?.trim() === normalizedFeatureId
+    })
+
+    if (candidates.length === 0) return null
+
+    return candidates.sort((a, b) =>
+      new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    )[0] || null
   }
 
   /**
@@ -1787,6 +1839,7 @@ export const useChatStore = defineStore('chat', () => {
     deleteArchivedConversation,
     setConversationViewMode,
     findConversationByFeature,
+    syncConversationFeatureFromBranch,
     addAutoModeConversation,
     renameConversation,
     checkStorageLimits,
