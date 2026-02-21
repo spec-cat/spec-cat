@@ -324,10 +324,10 @@ function parseSpecSearchCommand(input: string): SpecSearchCommand | null {
   return parsed
 }
 
-function compactText(input: string, maxLen = 260): string {
-  const normalized = input.replace(/\s+/g, ' ').trim()
-  if (normalized.length <= maxLen) return normalized
-  return `${normalized.slice(0, maxLen)}...`
+function truncateMarkdown(input: string, maxLen = 1400): string {
+  const text = input.trim()
+  if (text.length <= maxLen) return text
+  return `${text.slice(0, maxLen)}\n...`
 }
 
 function formatSpecSearchResponse(
@@ -355,11 +355,14 @@ function formatSpecSearchResponse(
   lines.push('')
   for (const [index, result] of response.results.entries()) {
     const chunk = result.chunk
-    lines.push(`${index + 1}. \`${chunk.sourcePath}:${chunk.lineStart}\` (${result.matchType}, score: ${result.score.toFixed(3)})`)
+    lines.push(`### ${index + 1}. \`${chunk.sourcePath}:${chunk.lineStart}\``)
+    lines.push(`- Match: \`${result.matchType}\` (score: ${result.score.toFixed(3)})`)
     if (chunk.headingHierarchy.length > 0) {
-      lines.push(`   Headings: ${chunk.headingHierarchy.join(' > ')}`)
+      lines.push(`- Headings: ${chunk.headingHierarchy.join(' > ')}`)
     }
-    lines.push(`   ${compactText(chunk.content)}`)
+    lines.push('')
+    lines.push(truncateMarkdown(chunk.content))
+    lines.push('')
   }
 
   return lines.join('\n')

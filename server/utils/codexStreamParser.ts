@@ -73,6 +73,23 @@ function stringifyUnknown(value: unknown): string {
   }
 }
 
+function joinTextChunks(chunks: string[]): string {
+  if (chunks.length <= 1) return chunks[0] || ''
+  let out = ''
+  for (const chunk of chunks) {
+    if (!chunk) continue
+    const prev = out.trimEnd()
+    const current = chunk.trimStart()
+    const prevLooksLikeTableRow = /^\|.+\|$/.test(prev.split('\n').pop() || '')
+    const currentLooksLikeTableRow = /^\|.+\|$/.test(current.split('\n')[0] || '')
+    if (out && prevLooksLikeTableRow && currentLooksLikeTableRow) {
+      out += '\n'
+    }
+    out += chunk
+  }
+  return out
+}
+
 function deriveToolNameFromEventType(eventType: string): string {
   if (!eventType) return ''
   if (eventType === 'item.started' || eventType === 'item.updated' || eventType === 'item.completed') {
@@ -392,7 +409,7 @@ function extractAgentTextFromEvent(event: Record<string, unknown>): string {
       })
       .filter(Boolean)
     if (chunks.length > 0) {
-      return chunks.join('')
+      return joinTextChunks(chunks)
     }
   }
 

@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import type { ChatMessage, ChatImageAttachment } from '~/types/chat'
+import type { ChatMessage, ChatImageAttachment, ContentBlock, TextBlock } from '~/types/chat'
 import { hasContentBlocks } from '~/types/chat'
 import { UserIcon, CpuChipIcon } from '@heroicons/vue/24/outline'
+import { useMarkdown } from '~/composables/useMarkdown'
 
 interface Props {
   message: ChatMessage
 }
 
 const props = defineProps<Props>()
+const { renderMarkdown } = useMarkdown()
 
 const isUser = computed(() => props.message.role === 'user')
 const isStreaming = computed(() => props.message.status === 'streaming')
@@ -20,7 +22,22 @@ const useBlocks = computed(() => hasContentBlocks(props.message))
 /** Blocks to render (skip tool_result — rendered inside ChatToolBlock) */
 const renderableBlocks = computed(() => {
   if (!props.message.contentBlocks) return []
-  return props.message.contentBlocks.filter(b => b.type !== 'tool_result')
+
+  const filtered = props.message.contentBlocks.filter(b => b.type !== 'tool_result')
+  const merged: ContentBlock[] = []
+
+  for (const block of filtered) {
+    const prev = merged.length > 0 ? merged[merged.length - 1] : null
+    if (prev?.type === 'text' && block.type === 'text') {
+      const prevText = (prev as TextBlock).text || ''
+      const nextText = block.text || ''
+      ;(prev as TextBlock).text = `${prevText}${nextText}`
+      continue
+    }
+    merged.push({ ...block })
+  }
+
+  return merged
 })
 
 const hasRenderableBlocks = computed(() => useBlocks.value && renderableBlocks.value.length > 0)
@@ -36,38 +53,9 @@ const formatTime = (timestamp: string): string => {
   })
 }
 
-// Simple markdown rendering for code blocks (fallback when no contentBlocks)
+// Markdown rendering for fallback flat content
 const formattedContent = computed(() => {
-  let content = props.message.content
-
-  // Escape HTML first
-  content = content
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-
-  // Code blocks (```...```)
-  content = content.replace(
-    /```(\w*)\n?([\s\S]*?)```/g,
-    '<pre class="bg-retro-panel p-3 rounded my-2 overflow-x-auto"><code class="text-retro-cyan">$2</code></pre>'
-  )
-
-  // Inline code (`...`)
-  content = content.replace(
-    /`([^`]+)`/g,
-    '<code class="bg-retro-panel px-1 rounded text-retro-cyan">$1</code>'
-  )
-
-  // Bold (**...**)
-  content = content.replace(
-    /\*\*([^*]+)\*\*/g,
-    '<strong class="text-retro-text font-bold">$1</strong>'
-  )
-
-  // Line breaks
-  content = content.replace(/\n/g, '<br>')
-
-  return content
+  return renderMarkdown(props.message.content)
 })
 </script>
 
@@ -146,7 +134,7 @@ const formattedContent = computed(() => {
       <!-- Fallback: flat content (legacy messages or non-renderable block sets) -->
       <div
         v-if="!hasRenderableBlocks && hasFlatContent"
-        class="text-sm font-mono text-retro-text break-words"
+        class="text-sm font-mono text-retro-text break-words chat-markdown"
         v-html="formattedContent"
       />
 

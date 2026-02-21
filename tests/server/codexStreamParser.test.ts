@@ -435,6 +435,31 @@ describe('codexStreamParser', () => {
     })
   })
 
+  it('inserts line breaks between table-row chunks in agent_message content array', () => {
+    const mapped = mapCodexEventToProviderJson({
+      type: 'agent_message',
+      thread_id: 'thread-table-rows-1',
+      content: [
+        { type: 'output_text', text: '| Method | Endpoint |' },
+        { type: 'output_text', text: '| ------ | -------- |' },
+        { type: 'output_text', text: '| GET | /api/v1 |' },
+      ],
+    })
+
+    expect(mapped).toHaveLength(2)
+    expect(mapped[0]).toMatchObject({
+      type: 'stream_event',
+      session_id: 'thread-table-rows-1',
+      event: {
+        type: 'content_block_start',
+        content_block: {
+          type: 'text',
+          text: '| Method | Endpoint |\n| ------ | -------- |\n| GET | /api/v1 |',
+        },
+      },
+    })
+  })
+
   it('maps task_complete with final message text into text + result events', () => {
     const mapped = mapCodexEventToProviderJson({
       type: 'task_complete',
