@@ -128,6 +128,87 @@ describe('codexStreamParser', () => {
     })
   })
 
+  it('maps item envelope phase to immediate tool_result completion', () => {
+    const started = processCodexJsonLine(JSON.stringify({
+      type: 'item.started',
+      thread_id: 'thread-tool-phase-1',
+      item: {
+        id: 'tool-item-1',
+        type: 'command_execution',
+        command: '/usr/bin/zsh -lc "rg --files"',
+      },
+    }))
+
+    expect(started.mappedEvents).toHaveLength(3)
+    expect(started.mappedEvents[0]).toMatchObject({
+      type: 'stream_event',
+      session_id: 'thread-tool-phase-1',
+      event: {
+        type: 'content_block_start',
+        content_block: { type: 'tool_use', id: 'tool-item-1' },
+      },
+    })
+
+    const completed = processCodexJsonLine(JSON.stringify({
+      type: 'item.completed',
+      thread_id: 'thread-tool-phase-1',
+      item: {
+        id: 'tool-item-1',
+        type: 'command_execution',
+        output: 'done',
+      },
+    }))
+
+    expect(completed.mappedEvents).toHaveLength(1)
+    expect(completed.mappedEvents[0]).toMatchObject({
+      type: 'tool_result',
+      session_id: 'thread-tool-phase-1',
+      tool_use_id: 'tool-item-1',
+      content: 'done',
+      is_error: false,
+    })
+  })
+
+  it('uses outer envelope item_id when inner item has no id', () => {
+    const started = processCodexJsonLine(JSON.stringify({
+      type: 'item.started',
+      thread_id: 'thread-tool-outer-id-1',
+      item_id: 'outer-item-42',
+      item: {
+        type: 'command_execution',
+        command: '/usr/bin/zsh -lc "sed -n \'1,220p\' specs/417/spec.md"',
+      },
+    }))
+
+    expect(started.mappedEvents).toHaveLength(3)
+    expect(started.mappedEvents[0]).toMatchObject({
+      type: 'stream_event',
+      session_id: 'thread-tool-outer-id-1',
+      event: {
+        type: 'content_block_start',
+        content_block: { type: 'tool_use', id: 'outer-item-42' },
+      },
+    })
+
+    const completed = processCodexJsonLine(JSON.stringify({
+      type: 'item.completed',
+      thread_id: 'thread-tool-outer-id-1',
+      item_id: 'outer-item-42',
+      item: {
+        type: 'command_execution',
+      },
+    }))
+
+    expect(completed.mappedEvents).toHaveLength(1)
+    expect(completed.mappedEvents[0]).toMatchObject({
+      type: 'tool_result',
+      session_id: 'thread-tool-outer-id-1',
+      tool_use_id: 'outer-item-42',
+      content: '',
+      is_error: false,
+    })
+  })
+
   it('unwraps response.output_item.done envelope for function_call item', () => {
     const line = JSON.stringify({
       type: 'response.output_item.done',

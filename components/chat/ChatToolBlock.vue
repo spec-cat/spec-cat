@@ -54,10 +54,66 @@ function previewText(text: string, maxLines = 14, maxChars = 1400): { text: stri
 }
 
 const toolNameLower = computed(() => props.block.name.toLowerCase())
+const toolNameCompact = computed(() => toolNameLower.value.replace(/[^a-z0-9]/g, ''))
+const isRequestUserInputTool = computed(() => (
+  toolNameCompact.value === 'requestuserinput'
+  || toolNameCompact.value === 'askuserquestion'
+))
 const isReadTool = computed(() => toolNameLower.value === 'read')
 const isWriteTool = computed(() => toolNameLower.value === 'write')
 const isEditTool = computed(() => toolNameLower.value === 'edit' || toolNameLower.value === 'multiedit')
 const isCommandTool = computed(() => ['bash', 'exec', 'execcommand', 'runcommand'].includes(toolNameLower.value))
+
+interface ClarificationOption {
+  label?: string
+  description?: string
+}
+
+interface ClarificationQuestion {
+  header?: string
+  id?: string
+  question?: string
+  prompt?: string
+  message?: string
+  options?: ClarificationOption[]
+}
+
+const clarificationQuestions = computed<ClarificationQuestion[]>(() => {
+  if (!isRequestUserInputTool.value) return []
+  const rawQuestions = props.block.input.questions
+  if (Array.isArray(rawQuestions)) {
+    return rawQuestions
+      .map((item) => (item && typeof item === 'object' ? item as ClarificationQuestion : null))
+      .filter((item): item is ClarificationQuestion => !!item)
+  }
+
+  // Fallback for single-question schemas
+  const single: ClarificationQuestion = {
+    header: pickString(props.block.input, ['header', 'title']),
+    id: pickString(props.block.input, ['id']),
+    question: pickString(props.block.input, ['question']),
+    prompt: pickString(props.block.input, ['prompt']),
+    message: pickString(props.block.input, ['message', 'text', 'description']),
+    options: Array.isArray(props.block.input.options)
+      ? (props.block.input.options as ClarificationOption[])
+      : undefined,
+  }
+
+  if (!single.question && !single.prompt && !single.message && !single.header) return []
+  return [single]
+})
+
+function previewInline(text: string, maxChars = 120): string {
+  const compact = text.replace(/\s+/g, ' ').trim()
+  if (!compact) return ''
+  return compact.length > maxChars ? `${compact.slice(0, maxChars)}...` : compact
+}
+
+const clarificationSummary = computed(() => {
+  const first = clarificationQuestions.value[0]
+  if (!first) return ''
+  return previewInline(first.question || first.prompt || first.message || first.header || '')
+})
 
 const targetPath = computed(() => pickString(props.block.input, [
   'file_path',
@@ -108,6 +164,9 @@ const editOldPreview = computed(() => previewText(editOldText.value, 10, 1000))
 const editNewPreview = computed(() => previewText(editNewText.value, 10, 1000))
 
 const humanSummary = computed(() => {
+  if (isRequestUserInputTool.value) {
+    return clarificationSummary.value || 'Prompting user for clarification'
+  }
   if (isReadTool.value) {
     if (targetPath.value && readRange.value) return `Read ${targetPath.value} (${readRange.value})`
     if (targetPath.value) return `Read ${targetPath.value}`
@@ -166,6 +225,11 @@ const resultPreview = computed(() => {
 const isLongResult = computed(() => {
   if (!props.result) return false
   return props.result.content.split('\n').length > 3 || props.result.content.length > 300
+})
+
+const hasVisibleResult = computed(() => {
+  if (!props.result) return false
+  return props.result.content.trim().length > 0
 })
 </script>
 
@@ -249,10 +313,34 @@ const isLongResult = computed(() => {
         <summary class="text-[11px] font-mono text-retro-muted cursor-pointer hover:text-retro-cyan">Raw input JSON</summary>
         <pre class="text-xs font-mono text-retro-muted bg-retro-panel p-2 rounded mt-1 overflow-x-auto max-h-40 overflow-y-auto scrollbar-custom">{{ JSON.stringify(block.input, null, 2) }}</pre>
       </details>
+
+      <div v-if="isRequestUserInputTool && clarificationQuestions.length > 0" class="mt-3">
+        <div class="text-[11px] font-mono text-retro-cyan mb-1">Clarification Prompt</div>
+        <div class="space-y-2">
+          <div
+            v-for="(q, index) in clarificationQuestions"
+            :key="`${q.id || 'q'}-${index}`"
+            class="rounded border border-retro-border/30 bg-retro-panel/40 p-2"
+          >
+            <div v-if="q.header" class="text-[11px] font-mono text-retro-yellow mb-1">{{ q.header }}</div>
+            <div v-if="q.question || q.prompt || q.message" class="text-xs font-mono text-retro-text whitespace-pre-wrap">{{ q.question || q.prompt || q.message }}</div>
+            <div v-if="Array.isArray(q.options) && q.options.length > 0" class="mt-2 space-y-1">
+              <div
+                v-for="(opt, optIndex) in q.options"
+                :key="`${q.id || 'q'}-opt-${optIndex}`"
+                class="text-xs font-mono text-retro-muted"
+              >
+                {{ opt.label || `Option ${optIndex + 1}` }}
+                <span v-if="opt.description" class="text-retro-muted/80"> - {{ opt.description }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Tool result (CLI output style) -->
-    <div v-if="result" class="px-3 pb-2 border-t border-retro-border/20">
+    <div v-if="hasVisibleResult" class="px-3 pb-2 border-t border-retro-border/20">
       <div
         class="text-xs font-mono rounded p-2 mt-1 overflow-y-auto scrollbar-custom border"
         :class="result.isError ? 'text-retro-red bg-retro-red/5 border-retro-red/40' : 'text-retro-muted bg-retro-panel/60 border-retro-border/30'"

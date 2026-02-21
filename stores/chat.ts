@@ -753,10 +753,14 @@ export const useChatStore = defineStore('chat', () => {
     if (!conv) return
     const msg = conv.messages.find(m => m.id === messageId)
     if (!msg?.contentBlocks) return
-    const block = msg.contentBlocks.find(b => b.id === blockId)
-    if (block) {
-      updater(block)
-    }
+    const blockIndex = msg.contentBlocks.findIndex(b => b.id === blockId)
+    if (blockIndex === -1) return
+
+    // Replace by reference after mutation so Vue reliably re-renders tool status changes.
+    const current = msg.contentBlocks[blockIndex]
+    const next = { ...current } as ContentBlock
+    updater(next)
+    msg.contentBlocks[blockIndex] = next
   }
 
   /**

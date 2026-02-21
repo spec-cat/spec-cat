@@ -151,6 +151,21 @@ function withSessionFields(
   return merged
 }
 
+function withEnvelopeIdentifiers(
+  event: Record<string, unknown>,
+  source: Record<string, unknown>,
+): Record<string, unknown> {
+  const merged = { ...event }
+  const idKeys = ['item_id', 'id', 'call_id', 'tool_call_id', 'tool_use_id'] as const
+  for (const key of idKeys) {
+    const sourceValue = source[key]
+    if (merged[key] === undefined && typeof sourceValue === 'string' && sourceValue.length > 0) {
+      merged[key] = sourceValue
+    }
+  }
+  return merged
+}
+
 function extractSessionFields(source: Record<string, unknown>): Record<string, string> {
   const out: Record<string, string> = {}
   const keys = ['thread_id', 'threadId', 'session_id', 'sessionId', 'conversation_id', 'conversationId'] as const
@@ -236,6 +251,8 @@ interface MappedToolUse {
 
 function extractToolUse(event: Record<string, unknown>): MappedToolUse | null {
   const eventType = getStringValue(event, ['type']).toLowerCase()
+  const envelopeType = getStringValue(event, ['envelope_type']).toLowerCase()
+  const phaseType = envelopeType || eventType
   const disallowedTypes = new Set([
     'agent_message',
     'agent_message_delta',
@@ -266,17 +283,17 @@ function extractToolUse(event: Record<string, unknown>): MappedToolUse | null {
   if (!toolName) return null
 
   const hasToolShape =
-    eventType.includes('tool')
-    || eventType.includes('function_call')
-    || eventType.includes('call.started')
-    || eventType.includes('call.start')
-    || eventType.includes('tool_call')
-    || eventType.includes('item.started')
-    || eventType.includes('item.updated')
-    || eventType.endsWith('_begin')
-    || eventType.endsWith('.begin')
-    || eventType.endsWith('_start')
-    || eventType.endsWith('.start')
+    phaseType.includes('tool')
+    || phaseType.includes('function_call')
+    || phaseType.includes('call.started')
+    || phaseType.includes('call.start')
+    || phaseType.includes('tool_call')
+    || phaseType.includes('item.started')
+    || phaseType.includes('item.updated')
+    || phaseType.endsWith('_begin')
+    || phaseType.endsWith('.begin')
+    || phaseType.endsWith('_start')
+    || phaseType.endsWith('.start')
     || !!event.tool_call_id
     || !!event.call_id
     || !!event.tool_use_id
@@ -299,6 +316,8 @@ interface MappedToolResult {
 
 function extractToolResult(event: Record<string, unknown>): MappedToolResult | null {
   const eventType = getStringValue(event, ['type']).toLowerCase()
+  const envelopeType = getStringValue(event, ['envelope_type']).toLowerCase()
+  const phaseType = envelopeType || eventType
   const resultObj = getObjectValue(event, ['result'])
 
   const toolUseId = getStringValue(event, ['tool_use_id', 'toolUseId', 'tool_call_id', 'call_id', 'item_id', 'id'])
@@ -319,26 +338,36 @@ function extractToolResult(event: Record<string, unknown>): MappedToolResult | n
     || status === 'failure'
 
   const hasResultShape =
-    eventType.includes('tool_result')
-    || eventType.includes('tool.output')
-    || eventType.includes('function_call_output')
-    || eventType.includes('call.completed')
-    || eventType.includes('tool.end')
-    || eventType.includes('tool.finish')
-    || eventType.includes('tool.result')
-    || eventType.endsWith('_end')
-    || eventType.endsWith('.end')
-    || eventType.endsWith('_done')
-    || eventType.endsWith('.done')
-    || eventType.endsWith('_completed')
-    || eventType.endsWith('.completed')
+    phaseType.includes('tool_result')
+    || phaseType.includes('tool.output')
+    || phaseType.includes('function_call_output')
+    || phaseType.includes('call.completed')
+    || phaseType.includes('tool.end')
+    || phaseType.includes('tool.finish')
+    || phaseType.includes('tool.result')
+    || phaseType.endsWith('_end')
+    || phaseType.endsWith('.end')
+    || phaseType.endsWith('_done')
+    || phaseType.endsWith('.done')
+    || phaseType.endsWith('_completed')
+    || phaseType.endsWith('.completed')
     || (toolUseId.length > 0 && content.length > 0 && !eventType.includes('message'))
 
-  if (!hasResultShape || !toolUseId || !content) {
+  if (!hasResultShape || !toolUseId) {
     return null
   }
 
-  return { toolUseId, content, isError }
+  const normalizedContent = content.trim()
+  // function_call/tool_call items without explicit output are invocation records, not result payloads.
+  if (!normalizedContent && (eventType === 'function_call' || eventType === 'tool_call')) {
+    return null
+  }
+
+  return {
+    toolUseId,
+    content: normalizedContent,
+    isError,
+  }
 }
 
 function extractAgentTextFromEvent(event: Record<string, unknown>): string {
@@ -669,7 +698,11 @@ export function processCodexJsonLine(cleanedLine: string): {
       if (isItemEnvelope) {
         const item = parsed.item
         if (item && typeof item === 'object') {
-          const itemEvent = withSessionFields(item as Record<string, unknown>, parsed)
+          const itemEvent = withEnvelopeIdentifiers(
+            withSessionFields(item as Record<string, unknown>, parsed),
+            parsed,
+          )
+          itemEvent.envelope_type = outerType
           if (typeof itemEvent.type === 'string' && itemEvent.type.toLowerCase() === 'message') {
             // Normalize message-like output items to legacy event type expected by renderer.
             itemEvent.type = 'agent_message'

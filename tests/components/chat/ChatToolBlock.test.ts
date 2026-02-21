@@ -97,4 +97,57 @@ describe('ChatToolBlock', () => {
     await wrapper.find('button.text-retro-cyan').trigger('click')
     expect(wrapper.text()).toContain('Collapse')
   })
+
+  it('shows request_user_input question text with options', async () => {
+    const block = makeToolBlock({
+      name: 'request_user_input',
+      input: {
+        questions: [
+          {
+            header: 'Clarification 1/5',
+            id: 'metric_scope',
+            question: 'Which metric scope should we ship first?',
+            options: [
+              { label: 'A', description: 'Core five metrics' },
+              { label: 'B', description: 'Core + low stock' },
+            ],
+          },
+        ],
+      },
+    })
+
+    const wrapper = await mountSuspended(ChatToolBlock, { props: { block } })
+    expect(wrapper.text()).toContain('Which metric scope should we ship first?')
+
+    await wrapper.find('button').trigger('click')
+    expect(wrapper.text()).toContain('Clarification Prompt')
+    expect(wrapper.text()).toContain('Clarification 1/5')
+    expect(wrapper.text()).toContain('Which metric scope should we ship first?')
+    expect(wrapper.text()).toContain('A')
+    expect(wrapper.text()).toContain('B')
+  })
+
+  it('shows AskUserQuestion prompt/message schema', async () => {
+    const block = makeToolBlock({
+      name: 'AskUserQuestion',
+      input: {
+        header: 'Clarification 2/5',
+        prompt: 'How should sold-out status be determined?',
+        options: [
+          { label: 'A', description: 'stock <= 0' },
+          { label: 'B', description: 'stock < safety threshold' },
+        ],
+      },
+    })
+
+    const wrapper = await mountSuspended(ChatToolBlock, { props: { block } })
+    expect(wrapper.text()).toContain('How should sold-out status be determined?')
+
+    await wrapper.find('button').trigger('click')
+    expect(wrapper.text()).toContain('Clarification Prompt')
+    expect(wrapper.text()).toContain('Clarification 2/5')
+    expect(wrapper.text()).toContain('How should sold-out status be determined?')
+    expect(wrapper.text()).toContain('A')
+    expect(wrapper.text()).toContain('stock <= 0')
+  })
 })
