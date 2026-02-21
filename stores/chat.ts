@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed, readonly } from 'vue'
 import type {
   ChatMessage,
+  ChatImageAttachment,
   ChatSession,
   SessionStatus,
   ArchivedConversation,
@@ -576,11 +577,12 @@ export const useChatStore = defineStore('chat', () => {
   /**
    * Create and add a user message
    */
-  function addUserMessage(content: string, conversationId?: string): ChatMessage {
+  function addUserMessage(content: string, conversationId?: string, attachments?: ChatImageAttachment[]): ChatMessage {
     const message: ChatMessage = {
       id: generateMessageId(),
       role: 'user',
       content,
+      attachments: attachments && attachments.length > 0 ? attachments : undefined,
       timestamp: new Date().toISOString(),
     }
     addMessage(message, conversationId)
@@ -1620,7 +1622,14 @@ export const useChatStore = defineStore('chat', () => {
     // Find first user message
     const firstUserMessage = conv.messages.find(m => m.role === 'user')
     if (firstUserMessage) {
-      conv.title = generateConversationTitle(firstUserMessage.content)
+      const hasText = firstUserMessage.content.trim().length > 0
+      if (hasText) {
+        conv.title = generateConversationTitle(firstUserMessage.content)
+      } else if (firstUserMessage.attachments && firstUserMessage.attachments.length > 0) {
+        conv.title = firstUserMessage.attachments.length === 1
+          ? '[Image] New Conversation'
+          : `[${firstUserMessage.attachments.length} Images] New Conversation`
+      }
     }
   }
 
@@ -1642,13 +1651,13 @@ export const useChatStore = defineStore('chat', () => {
   /**
    * Create and add a user message (with conversation handling) — now async
    */
-  async function addUserMessageWithConversation(content: string): Promise<ChatMessage> {
+  async function addUserMessageWithConversation(content: string, attachments?: ChatImageAttachment[]): Promise<ChatMessage> {
     // Create conversation if none active
     if (!activeConversationId.value) {
       await createConversation()
     }
 
-    const message = addUserMessage(content)
+    const message = addUserMessage(content, undefined, attachments)
 
     // Update title if needed (T047)
     updateConversationTitleIfNeeded()

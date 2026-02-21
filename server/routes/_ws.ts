@@ -18,6 +18,7 @@ type PermissionMode = 'plan' | 'ask' | 'auto' | 'bypass'
 interface ChatMessage {
   type: 'chat'
   message: string
+  attachments?: ChatImageAttachment[]
   requestId: string
   sessionId?: string
   permissionMode?: PermissionMode
@@ -26,6 +27,14 @@ interface ChatMessage {
   featureId?: string  // Associated feature ID for spec context injection
   providerId?: string
   providerModelKey?: string
+}
+
+interface ChatImageAttachment {
+  id: string
+  name: string
+  mimeType: string
+  size: number
+  dataUrl: string
 }
 
 interface PingMessage {
@@ -58,6 +67,8 @@ interface PeerState {
 }
 
 const peerStates = new Map<string, PeerState>()
+const MAX_ATTACHMENT_COUNT = 4
+const MAX_ATTACHMENT_SIZE_BYTES = 5 * 1024 * 1024
 
 function getPeerState(peerId: string): PeerState {
   let state = peerStates.get(peerId)
@@ -120,6 +131,54 @@ function hasRenderableProviderContent(message: Record<string, unknown>): boolean
   }
 
   return false
+}
+
+function normalizeImageAttachments(attachments: unknown): ChatImageAttachment[] {
+  if (!Array.isArray(attachments)) return []
+
+  return attachments
+    .slice(0, MAX_ATTACHMENT_COUNT)
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null
+      const record = item as Record<string, unknown>
+      const id = typeof record.id === 'string' ? record.id : ''
+      const name = typeof record.name === 'string' ? record.name : 'image'
+      const mimeType = typeof record.mimeType === 'string' ? record.mimeType : ''
+      const size = typeof record.size === 'number' ? record.size : 0
+      const dataUrl = typeof record.dataUrl === 'string' ? record.dataUrl : ''
+      if (
+        !id ||
+        !mimeType.startsWith('image/') ||
+        size <= 0 ||
+        size > MAX_ATTACHMENT_SIZE_BYTES ||
+        !dataUrl.startsWith('data:image/')
+      ) {
+        return null
+      }
+      return { id, name, mimeType, size, dataUrl }
+    })
+    .filter((entry): entry is ChatImageAttachment => entry !== null)
+}
+
+function buildProviderMessage(baseMessage: string, attachments: ChatImageAttachment[]): string {
+  if (attachments.length === 0) return baseMessage
+
+  const lines: string[] = []
+  if (baseMessage.trim().length > 0) {
+    lines.push(baseMessage)
+    lines.push('')
+  } else {
+    lines.push('User sent image attachments without additional text.')
+    lines.push('')
+  }
+  lines.push('Attached images (data URLs):')
+  attachments.forEach((attachment, index) => {
+    lines.push(`${index + 1}. ${attachment.name} (${attachment.mimeType}, ${attachment.size} bytes)`)
+    lines.push(attachment.dataUrl)
+    lines.push('')
+  })
+  lines.push('Use the attached images as part of your answer.')
+  return lines.join('\n')
 }
 
 function sendAssistantText(peer: any, text: string, sessionId?: string | null) {
@@ -288,14 +347,23 @@ function handleResetContext(peer: any) {
 
 async function handleChatMessage(peer: any, msg: ChatMessage) {
   const state = getPeerState(peer.id)
+  const attachments = normalizeImageAttachments(msg.attachments)
 
   // Validate message content
-  if (!msg.message || typeof msg.message !== 'string') {
+  if (typeof msg.message !== 'string') {
     console.error('[WS] Invalid chat message - missing or invalid message property:', msg)
     peer.send(JSON.stringify({ 
       type: 'error', 
       error: 'Invalid message: message property is required',
       requestId: msg.requestId 
+    }))
+    return
+  }
+  if (msg.message.trim().length === 0 && attachments.length === 0) {
+    peer.send(JSON.stringify({
+      type: 'error',
+      error: 'Invalid message: message or image attachment is required',
+      requestId: msg.requestId,
     }))
     return
   }
@@ -336,6 +404,7 @@ async function handleChatMessage(peer: any, msg: ChatMessage) {
     hasSessionId: !!msg.sessionId,
     sessionId: state.providerSessionId,
     approvedTools: Array.from(state.approvedTools),
+    attachmentCount: attachments.length,
     providerId: msg.providerId,
     providerModelKey: msg.providerModelKey,
     isSpeckitCommand,
@@ -422,10 +491,13 @@ async function runProvider(peer: any, state: PeerState, msg: ChatMessage, isRetr
   let permissionRequested = false
   let emittedRenderableContent = false
 
+  const attachments = normalizeImageAttachments(msg.attachments)
+  const providerMessage = buildProviderMessage(msg.message, attachments)
+
   try {
     state.proc = await streamChatWithProvider(
       {
-        message: msg.message,
+        message: providerMessage,
         selection,
         cwd: workingDirectory,
         permissionMode: mode,

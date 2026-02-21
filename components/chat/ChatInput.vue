@@ -3,12 +3,14 @@ import { useChatStore } from '~/stores/chat'
 import { useChatStream } from '~/composables/useChatStream'
 import { PaperAirplaneIcon, StopIcon, ArrowPathIcon, ChevronDownIcon } from '@heroicons/vue/24/solid'
 import {
+  PaperClipIcon,
+  XMarkIcon,
   ClipboardDocumentListIcon,  // plan
   QuestionMarkCircleIcon,     // ask
   BoltIcon,                   // auto
   ShieldExclamationIcon,      // bypass
 } from '@heroicons/vue/24/outline'
-import { PERMISSION_MODE_LABELS, type PermissionMode } from '~/types/chat'
+import { PERMISSION_MODE_LABELS, type PermissionMode, type ChatImageAttachment } from '~/types/chat'
 import type { SearchMode, SearchResponse } from '~/types/specSearch'
 
 const props = defineProps<{
@@ -20,8 +22,13 @@ const { sendMessage: streamMessage, sendPermissionResponse, approvePlan, rejectP
 
 const inputText = ref('')
 const inputRef = ref<HTMLTextAreaElement | null>(null)
+const fileInputRef = ref<HTMLInputElement | null>(null)
 const isSending = ref(false)
 const showModeMenu = ref(false)
+const pendingAttachments = ref<ChatImageAttachment[]>([])
+
+const MAX_IMAGE_ATTACHMENTS = 4
+const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024
 
 const modeIcons = {
   plan: ClipboardDocumentListIcon,
@@ -59,7 +66,11 @@ onUnmounted(() => {
 })
 
 const canSend = computed(() => {
-  return inputText.value.trim().length > 0 && !chatStore.isActiveConversationStreaming && !isSending.value && !chatStore.pendingPermission && !hasPendingPlanApproval.value
+  return (inputText.value.trim().length > 0 || pendingAttachments.value.length > 0) &&
+    !chatStore.isActiveConversationStreaming &&
+    !isSending.value &&
+    !chatStore.pendingPermission &&
+    !hasPendingPlanApproval.value
 })
 
 const canStop = computed(() => {
@@ -88,6 +99,82 @@ function handleApprovePlan() {
 
 function handleRejectPlan() {
   rejectPlan(chatStore.activeConversationId!)
+}
+
+function clearPendingAttachments() {
+  pendingAttachments.value = []
+  if (fileInputRef.value) {
+    fileInputRef.value.value = ''
+  }
+}
+
+function removeAttachment(id: string) {
+  pendingAttachments.value = pendingAttachments.value.filter(attachment => attachment.id !== id)
+}
+
+function formatAttachmentSize(size: number): string {
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result)
+      } else {
+        reject(new Error('Failed to read image'))
+      }
+    }
+    reader.onerror = () => reject(reader.error || new Error('Failed to read image'))
+    reader.readAsDataURL(file)
+  })
+}
+
+async function handleFilePick(event: Event) {
+  const input = event.target as HTMLInputElement
+  const files = input.files ? Array.from(input.files) : []
+  if (files.length === 0) return
+
+  const { useToast } = await import('~/composables/useToast')
+  const toast = useToast()
+
+  let capacity = MAX_IMAGE_ATTACHMENTS - pendingAttachments.value.length
+  if (capacity <= 0) {
+    toast.warning(`You can attach up to ${MAX_IMAGE_ATTACHMENTS} images per message.`)
+    input.value = ''
+    return
+  }
+
+  for (const file of files) {
+    if (capacity <= 0) break
+    if (!file.type.startsWith('image/')) {
+      toast.warning(`Skipped "${file.name}": only image files are supported.`)
+      continue
+    }
+    if (file.size > MAX_IMAGE_SIZE_BYTES) {
+      toast.warning(`Skipped "${file.name}": max size is 5 MB.`)
+      continue
+    }
+
+    try {
+      const dataUrl = await readFileAsDataUrl(file)
+      pendingAttachments.value.push({
+        id: `att-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        name: file.name,
+        mimeType: file.type,
+        size: file.size,
+        dataUrl,
+      })
+      capacity--
+    } catch {
+      toast.error(`Failed to attach "${file.name}".`)
+    }
+  }
+
+  input.value = ''
 }
 
 // T056: Check if last message had an error and can be retried
@@ -378,7 +465,8 @@ async function handleShowContext() {
 
 async function sendMessage() {
   const message = inputText.value.trim()
-  if (!message || chatStore.isActiveConversationStreaming || isSending.value || props.disabled) return
+  const attachments = [...pendingAttachments.value]
+  if ((message.length === 0 && attachments.length === 0) || chatStore.isActiveConversationStreaming || isSending.value || props.disabled) return
 
   // Check for /reset command
   if (message === '/reset' || message === '/reset-context') {
@@ -388,6 +476,7 @@ async function sendMessage() {
   if (message === '/context' || message === '/ctx') {
     await handleShowContext()
     inputText.value = ''
+    clearPendingAttachments()
     resetTextareaHeight()
     return
   }
@@ -395,17 +484,19 @@ async function sendMessage() {
   if (specSearchCommand) {
     await handleDirectSpecSearch(specSearchCommand)
     inputText.value = ''
+    clearPendingAttachments()
     resetTextareaHeight()
     return
   }
 
   isSending.value = true
   inputText.value = ''
+  clearPendingAttachments()
   resetTextareaHeight()
 
   try {
     // Add user message to store (creates conversation if needed — async for worktree)
-    await chatStore.addUserMessageWithConversation(message)
+    await chatStore.addUserMessageWithConversation(message, attachments)
 
     // Get conversation ID after potential creation
     const conversationId = chatStore.activeConversationId!
@@ -419,13 +510,16 @@ async function sendMessage() {
 
     // Pass worktree cwd and featureId so the AI provider runs in the isolated directory with spec context
     const activeConv = chatStore.activeConversation
-    const streamOpts: { cwd?: string; worktreeBranch?: string; featureId?: string } = {}
+    const streamOpts: { cwd?: string; worktreeBranch?: string; featureId?: string; attachments?: ChatImageAttachment[] } = {}
     if (activeConv?.hasWorktree && activeConv.worktreePath) {
       streamOpts.cwd = activeConv.worktreePath
       streamOpts.worktreeBranch = activeConv.worktreeBranch
     }
     if (activeConv?.featureId) {
       streamOpts.featureId = activeConv.featureId
+    }
+    if (attachments.length > 0) {
+      streamOpts.attachments = attachments
     }
     await streamMessage(message, assistantMessage.id, conversationId,
       Object.keys(streamOpts).length > 0 ? streamOpts : undefined)
@@ -462,6 +556,7 @@ async function handleResetContext() {
   if (!chatStore.activeConversationId) return
 
   inputText.value = ''
+  clearPendingAttachments()
   resetTextareaHeight()
   isSending.value = true
 
@@ -497,11 +592,14 @@ async function handleResetContext() {
 async function retryLastMessage() {
   // Find the last user message before the error
   const messages = chatStore.messages
-  let lastUserMessage: string | null = null
+  let lastUserMessage: { content: string; attachments: ChatImageAttachment[] } | null = null
 
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i].role === 'user') {
-      lastUserMessage = messages[i].content
+      lastUserMessage = {
+        content: messages[i].content,
+        attachments: messages[i].attachments ?? [],
+      }
       break
     }
   }
@@ -525,7 +623,7 @@ async function retryLastMessage() {
 
     // Pass worktree cwd and featureId so the AI provider runs in the isolated directory with spec context
     const activeConv = chatStore.activeConversation
-    const streamOpts: { cwd?: string; worktreeBranch?: string; featureId?: string } = {}
+    const streamOpts: { cwd?: string; worktreeBranch?: string; featureId?: string; attachments?: ChatImageAttachment[] } = {}
     if (activeConv?.hasWorktree && activeConv.worktreePath) {
       streamOpts.cwd = activeConv.worktreePath
       streamOpts.worktreeBranch = activeConv.worktreeBranch
@@ -533,7 +631,10 @@ async function retryLastMessage() {
     if (activeConv?.featureId) {
       streamOpts.featureId = activeConv.featureId
     }
-    await streamMessage(lastUserMessage, assistantMessage.id, conversationId,
+    if (lastUserMessage.attachments.length > 0) {
+      streamOpts.attachments = lastUserMessage.attachments
+    }
+    await streamMessage(lastUserMessage.content, assistantMessage.id, conversationId,
       Object.keys(streamOpts).length > 0 ? streamOpts : undefined)
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Failed to retry message'
@@ -600,6 +701,7 @@ watch(() => chatStore.isActiveConversationStreaming, (streaming, wasStreaming) =
 
 // Auto-focus when active conversation changes (new conversation created or switched)
 watch(() => chatStore.activeConversationId, () => {
+  clearPendingAttachments()
   focusInput()
 })
 </script>
@@ -720,7 +822,56 @@ watch(() => chatStore.activeConversationId, () => {
       </div>
     </div>
 
+    <div v-if="pendingAttachments.length > 0" class="mb-2 flex flex-wrap gap-2">
+      <div
+        v-for="attachment in pendingAttachments"
+        :key="attachment.id"
+        class="relative w-24 rounded border border-retro-border/70 bg-retro-black/80 p-1"
+      >
+        <img
+          :src="attachment.dataUrl"
+          :alt="attachment.name"
+          class="h-16 w-full rounded object-cover"
+        />
+        <div class="mt-1 truncate text-[10px] font-mono text-retro-muted">
+          {{ attachment.name }}
+        </div>
+        <div class="truncate text-[10px] font-mono text-retro-muted/80">
+          {{ formatAttachmentSize(attachment.size) }}
+        </div>
+        <button
+          class="absolute -right-2 -top-2 rounded-full border border-retro-border bg-retro-panel p-0.5 text-retro-red hover:bg-retro-red/20"
+          type="button"
+          @click="removeAttachment(attachment.id)"
+        >
+          <XMarkIcon class="h-3 w-3" />
+        </button>
+      </div>
+    </div>
+
     <div class="flex gap-2 items-end">
+      <input
+        ref="fileInputRef"
+        type="file"
+        accept="image/*"
+        multiple
+        class="hidden"
+        @change="handleFilePick"
+      >
+      <button
+        class="flex-shrink-0 p-2 rounded
+               bg-retro-panel/70 text-retro-muted
+               hover:text-retro-cyan hover:bg-retro-panel
+               disabled:opacity-50 disabled:cursor-not-allowed
+               transition-colors"
+        type="button"
+        title="Attach images"
+        :disabled="disabled || chatStore.isActiveConversationStreaming || hasPendingPermission || hasPendingPlanApproval"
+        @click="fileInputRef?.click()"
+      >
+        <PaperClipIcon class="w-5 h-5" />
+      </button>
+
       <!-- Input -->
       <div class="flex-1 relative">
         <textarea
@@ -781,7 +932,7 @@ watch(() => chatStore.activeConversationId, () => {
 
     <!-- Hint text -->
     <div class="mt-1 text-xs font-mono text-retro-muted">
-      Press Enter to send, Shift+Enter for new line. Slash commands: `/context`, `/reset`, `/spec-search`.
+      Press Enter to send, Shift+Enter for new line. Slash commands: `/context`, `/reset`, `/spec-search`. You can attach up to 4 images (5 MB each).
     </div>
   </div>
 </template>

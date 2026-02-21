@@ -172,7 +172,6 @@ const metadata = {
 } satisfies AIProvider['metadata']
 
 export function buildCodexExecArgs(opts: AIProviderStreamOptions): string[] {
-  const prompt = buildCodexPrompt(opts)
   const args: string[] = opts.resumeSessionId
     ? ['exec', 'resume', '--json', '--model', opts.selection.modelKey]
     : ['exec', '--json', '--model', opts.selection.modelKey]
@@ -197,10 +196,12 @@ export function buildCodexExecArgs(opts: AIProviderStreamOptions): string[] {
       break
   }
 
+  // Always pass prompt via stdin ("-") to avoid argv size limits (E2BIG),
+  // especially when messages include image data URLs.
   if (opts.resumeSessionId) {
-    args.push(opts.resumeSessionId, prompt)
+    args.push(opts.resumeSessionId, '-')
   } else {
-    args.push(prompt)
+    args.push('-')
   }
 
   return args
@@ -228,6 +229,7 @@ const codexProvider: AIProvider = {
     const cliPath = getCodexCliPath()
     const fallbackCodexHome = resolveCodexHomeForSpawn(!!opts.ephemeral)
     const args = buildCodexExecArgs(opts)
+    const prompt = buildCodexPrompt(opts)
 
     const proc = spawn(cliPath, args, {
       cwd: opts.cwd,
@@ -239,7 +241,13 @@ const codexProvider: AIProvider = {
         ...(fallbackCodexHome ? { CODEX_HOME: fallbackCodexHome } : {}),
       },
     })
-    proc.stdin?.end()
+    if (proc.stdin) {
+      proc.stdin.on('error', () => {
+        // Ignore pipe errors if Codex exits before consuming stdin.
+      })
+      proc.stdin.write(prompt)
+      proc.stdin.end()
+    }
 
     let stdoutBuffer = ''
     let stderrBuffer = ''

@@ -5,7 +5,17 @@
 
 import { useChatStore } from '~/stores/chat'
 import { useSettingsStore } from '~/stores/settings'
-import type { PermissionRequest, PlanApproval, TextBlock, ThinkingBlock, ToolUseBlock, ToolResultBlock, ResultSummaryBlock, SessionInitBlock } from '~/types/chat'
+import type {
+  PermissionRequest,
+  PlanApproval,
+  TextBlock,
+  ThinkingBlock,
+  ToolUseBlock,
+  ToolResultBlock,
+  ResultSummaryBlock,
+  SessionInitBlock,
+  ChatImageAttachment,
+} from '~/types/chat'
 import { DEFAULT_MODEL_KEY, DEFAULT_PROVIDER_ID } from '~/types/aiProvider'
 import { generateBlockId } from '~/types/chat'
 import {
@@ -1074,7 +1084,12 @@ export function useChatStream() {
   /**
    * Send message via WebSocket (per-conversation)
    */
-  async function sendMessage(message: string, messageId: string, conversationId: string, options?: { cwd?: string; worktreeBranch?: string; featureId?: string }) {
+  async function sendMessage(
+    message: string,
+    messageId: string,
+    conversationId: string,
+    options?: { cwd?: string; worktreeBranch?: string; featureId?: string; attachments?: ChatImageAttachment[] },
+  ) {
     if (typeof window === 'undefined') {
       return
     }
@@ -1113,6 +1128,7 @@ export function useChatStream() {
       const payload = {
         type: 'chat',
         message,
+        attachments: options?.attachments,
         requestId,
         sessionId: providerSessionId || undefined,
         permissionMode: chatStore.permissionMode,

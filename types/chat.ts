@@ -145,10 +145,22 @@ export interface ChatMessage {
   id: string                    // Unique message ID (uuid)
   role: 'user' | 'assistant'    // Message sender
   content: string               // Message text content (flat, for search/compat)
+  attachments?: ChatImageAttachment[] // Optional user-provided image attachments
   contentBlocks?: ContentBlock[] // Structured content blocks (rich UI)
   timestamp: string             // ISO 8601 timestamp
   status?: MessageStatus        // For assistant messages only
   tools?: ToolUse[]             // Tool usage information (deprecated, use contentBlocks)
+}
+
+/**
+ * User-provided image attachment
+ */
+export interface ChatImageAttachment {
+  id: string
+  name: string
+  mimeType: string
+  size: number
+  dataUrl: string
 }
 
 /**
