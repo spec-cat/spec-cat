@@ -1022,7 +1022,7 @@ export const useChatStore = defineStore('chat', () => {
     } else {
       const existingTimer = saveDebounceTimers.get(conversationId)
       if (existingTimer) {
-        clearTimeout(existingTimer)
+        return
       }
       const timer = setTimeout(() => {
         conv.updatedAt = new Date().toISOString()
