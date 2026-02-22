@@ -717,16 +717,20 @@ export const useChatStore = defineStore('chat', () => {
 
   function shouldSyncContentForBlockChange(previous: ContentBlock, next: ContentBlock): boolean {
     if (previous.type !== next.type) return true
-    if (next.type === 'text') {
-      return previous.text !== next.text
+    switch (next.type) {
+      case 'text':
+        return (previous as Extract<ContentBlock, { type: 'text' }>).text !== next.text
+      case 'tool_use': {
+        const prev = previous as Extract<ContentBlock, { type: 'tool_use' }>
+        return prev.name !== next.name || prev.inputSummary !== next.inputSummary
+      }
+      case 'tool_result': {
+        const prev = previous as Extract<ContentBlock, { type: 'tool_result' }>
+        return prev.content !== next.content || prev.isError !== next.isError
+      }
+      default:
+        return false
     }
-    if (next.type === 'tool_use') {
-      return previous.name !== next.name || previous.inputSummary !== next.inputSummary
-    }
-    if (next.type === 'tool_result') {
-      return previous.content !== next.content || previous.isError !== next.isError
-    }
-    return false
   }
 
   /**
