@@ -715,6 +715,20 @@ export const useChatStore = defineStore('chat', () => {
     message.content = buildMessageContentFromBlocks(message.contentBlocks)
   }
 
+  function shouldSyncContentForBlockChange(previous: ContentBlock, next: ContentBlock): boolean {
+    if (previous.type !== next.type) return true
+    if (next.type === 'text') {
+      return previous.text !== next.text
+    }
+    if (next.type === 'tool_use') {
+      return previous.name !== next.name || previous.inputSummary !== next.inputSummary
+    }
+    if (next.type === 'tool_result') {
+      return previous.content !== next.content || previous.isError !== next.isError
+    }
+    return false
+  }
+
   /**
    * Initialize contentBlocks array on a message
    */
@@ -779,9 +793,18 @@ export const useChatStore = defineStore('chat', () => {
     const conv = conversations.value.find(c => c.id === convId)
     if (!conv) return
     const msg = conv.messages.find(m => m.id === messageId)
-    if (!msg) return
-    updateBlockById(messageId, blockId, updater, convId)
-    if (options?.syncContent !== false) {
+    if (!msg?.contentBlocks) return
+    const blockIndex = msg.contentBlocks.findIndex(b => b.id === blockId)
+    if (blockIndex === -1) return
+
+    const previous = msg.contentBlocks[blockIndex]
+    const next = { ...previous } as ContentBlock
+    updater(next)
+    msg.contentBlocks[blockIndex] = next
+
+    const shouldSync = options?.syncContent !== false
+      && shouldSyncContentForBlockChange(previous, next)
+    if (shouldSync) {
       // Keep flat content synced unless the caller is handling incremental updates.
       syncContentFromBlocks(msg)
     }
