@@ -260,12 +260,6 @@ function handleFindSearch(query: string) {
 // Keyboard Shortcuts (FR-077 to FR-082)
 // ============================================================================
 const keyboardShortcuts = useKeyboardShortcuts({
-  onFind: () => openFindWidget(),
-  onRefresh: async () => {
-    if (props.workingDirectory) {
-      await store.loadGitGraph(props.workingDirectory);
-    }
-  },
   onScrollToHead: () => {
     // Find HEAD commit and navigate to it
     const headCommit = store.commits.find(c => c.isHead);
@@ -1130,8 +1124,8 @@ function handleNavigateToCommit(hash: string) {
           :class="showFindWidget
             ? 'border-retro-cyan text-retro-cyan bg-retro-cyan/10'
             : 'border-retro-border text-retro-muted hover:text-retro-text hover:border-retro-text'"
-          aria-label="Find (Ctrl+F)"
-          title="Find (Ctrl+F)"
+          aria-label="Find"
+          title="Find"
           @click="showFindWidget ? closeFindWidget() : openFindWidget()"
         >
           <MagnifyingGlassIcon class="w-4 h-4" />
@@ -1310,8 +1304,8 @@ function handleNavigateToCommit(hash: string) {
         <button
           class="flex items-center gap-1 px-2 py-1.5 text-sm border border-retro-border text-retro-muted rounded hover:text-retro-text hover:border-retro-text transition-colors"
           :class="{ 'animate-spin': store.isRefreshing }"
-          aria-label="Refresh (Ctrl+R)"
-          title="Refresh (Ctrl+R)"
+          aria-label="Refresh"
+          title="Refresh"
           @click="store.loadGitGraph(props.workingDirectory)"
         >
           <ArrowPathIcon class="w-4 h-4" />

@@ -71,7 +71,7 @@ defineExpose({ focus });
         ref="inputRef"
         v-model="searchInput"
         type="text"
-        placeholder="Find in commits... (Ctrl+F)"
+        placeholder="Find in commits..."
         aria-label="Search commits"
         class="w-full px-2 py-1 text-sm bg-retro-dark border border-retro-border rounded text-retro-text placeholder-retro-muted focus:outline-none focus:border-retro-cyan"
         @input="handleInput"

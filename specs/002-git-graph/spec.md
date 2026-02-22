@@ -407,9 +407,9 @@ As a developer, I want to click on a file in the commit detail's file list to se
 - **FR-094**: System MUST fetch the diff content from the server via a dedicated API endpoint that returns the unified diff output for a specific file in a specific commit
 
 #### Keyboard Shortcuts
-- **FR-077**: Ctrl/Cmd+F: Open Find Widget
+- **FR-077**: System MUST open the Find Widget via the toolbar Find button and MUST NOT override the browser's native Ctrl/Cmd+F behavior
 - **FR-078**: Ctrl/Cmd+H: Scroll to HEAD commit
-- **FR-079**: Ctrl/Cmd+R: Refresh the graph
+- **FR-079**: System MUST refresh the graph via the toolbar Refresh button and MUST NOT override the browser's native Ctrl/Cmd+R behavior
 - **FR-080**: Ctrl/Cmd+S: Scroll to first/next stash
 - **FR-081**: Escape: Close dialogs, context menus, detail views
 - **FR-082**: Enter: Submit active dialog
@@ -449,7 +449,7 @@ As a developer, I want to click on a file in the commit detail's file list to se
 - [ ] Branch filter with glob patterns and per-remote grouping
 - [ ] Commit comparison (Ctrl+click two commits) shows changed files
 - [ ] Auto-refresh detects changes within 10 seconds without disrupting interaction
-- [ ] Keyboard shortcuts work: Ctrl+F, Ctrl+H, Ctrl+R, Ctrl+S, arrows
+- [ ] Keyboard shortcuts work: Ctrl+H, Ctrl+S, arrows, Escape, Enter (without overriding browser Ctrl+F/Ctrl+R)
 - [ ] File Tree and File List toggle in commit details
 - [ ] Click file in commit detail opens unified diff viewer overlay covering right panels (Features/Conversations/Chat)
 - [ ] Diff viewer shows line numbers, green additions, red deletions, context lines

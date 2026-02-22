@@ -186,14 +186,15 @@ This document captures research decisions for the Git Graph Visualization featur
 **Implementation**:
 - `useKeyboardShortcuts` composable with `onMounted`/`onUnmounted` lifecycle
 - Platform detection for Ctrl vs Cmd
-- Action map: `{ 'ctrl+f': openFindWidget, 'ctrl+h': scrollToHead, ... }`
+- Action map: `{ 'ctrl+h': scrollToHead, 'ctrl+s': scrollToStash, ... }`
+- Keep browser-native `ctrl/cmd+f` and `ctrl/cmd+r` unbound in app-level shortcuts
 - Escape closes dialogs → context menus → detail views (priority order) (FR-081)
 - Enter submits active dialog (FR-082)
 
 **Shortcuts** (FR-077 to FR-082):
-- Ctrl/Cmd+F: Open Find Widget
+- Toolbar Find button: Open Find Widget; do not override Ctrl/Cmd+F
 - Ctrl/Cmd+H: Scroll to HEAD commit
-- Ctrl/Cmd+R: Refresh the graph
+- Toolbar Refresh button: Refresh the graph; do not override Ctrl/Cmd+R
 - Ctrl/Cmd+S: Scroll to first/next stash
 - Escape: Close (cascading priority)
 - Enter: Submit dialog
@@ -222,7 +223,7 @@ The redesign significantly expands the feature scope from basic viewing to full 
 3. **Context menu system** for 6 entity types
 4. **Dialog system** for 9+ operation types
 5. **25+ new server API endpoints** for branch/commit/tag/stash/remote operations
-6. **Keyboard shortcut system** with 8+ shortcuts
+6. **Keyboard shortcut system** with non-overriding app shortcuts and native browser find/refresh preserved
 7. **Commit message rendering** with URLs, emoji, Markdown
 
 All decisions align with constitution constraints (Nuxt 3, Vue 3, Pinia, Tailwind, no external git libraries).

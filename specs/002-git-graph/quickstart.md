@@ -152,7 +152,8 @@ The project already has a working foundation with these existing files:
 
 14. **Keyboard shortcuts** (FR-077-FR-082):
     - `useKeyboardShortcuts` composable
-    - Ctrl+F, Ctrl+H, Ctrl+R, Ctrl+S, Escape, Enter, arrows
+    - Ctrl+H, Ctrl+S, Escape, Enter, arrows
+    - Browser-native Ctrl+F / Ctrl+R remain unmodified
 
 15. **Commit message rendering** (FR-083-FR-085):
     - URL linkification
@@ -182,11 +183,11 @@ The project already has a working foundation with these existing files:
 7. **Tag operations**: Right-click tag → view details, delete, push
 8. **Stash operations**: See stash entries, right-click → apply/pop/drop/branch
 9. **Staging**: Stage/unstage files, commit with Ctrl+Enter
-10. **Search**: Ctrl+F opens find widget, searches across all fields
+10. **Search**: Find button opens find widget, searches across all fields
 11. **Branch filter**: Dropdown with glob patterns and per-remote grouping
 12. **Comparison**: Ctrl+click two commits → see diff
 13. **Auto-refresh**: External commit detected within 10s
-14. **Keyboard shortcuts**: All 8 shortcuts functional
+14. **Keyboard shortcuts**: All non-overriding shortcuts functional; browser Ctrl+F/Ctrl+R still work natively
 15. **Remote management**: View/add/edit/delete remotes in settings
 
 ## Key Files Summary
