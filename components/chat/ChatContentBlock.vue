@@ -3,8 +3,8 @@ import type { ContentBlock, ToolResultBlock } from '~/types/chat'
 
 const props = defineProps<{
   block: ContentBlock
-  /** All blocks in the message, for pairing tool_use with tool_result */
-  allBlocks: ContentBlock[]
+  /** Pre-indexed tool results by toolUseId for O(1) pairing */
+  toolResultsByUseId: ReadonlyMap<string, ToolResultBlock>
 }>()
 
 /**
@@ -12,10 +12,7 @@ const props = defineProps<{
  */
 const pairedResult = computed((): ToolResultBlock | undefined => {
   if (props.block.type !== 'tool_use') return undefined
-  const toolUseId = props.block.toolUseId
-  return props.allBlocks.find(
-    (b): b is ToolResultBlock => b.type === 'tool_result' && b.toolUseId === toolUseId
-  )
+  return props.toolResultsByUseId.get(props.block.toolUseId)
 })
 </script>
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ChatMessage, ChatImageAttachment, ContentBlock, TextBlock } from '~/types/chat'
+import type { ChatMessage, ChatImageAttachment, ContentBlock, TextBlock, ToolResultBlock } from '~/types/chat'
 import { hasContentBlocks } from '~/types/chat'
 import { UserIcon, CpuChipIcon } from '@heroicons/vue/24/outline'
 import { useMarkdown } from '~/composables/useMarkdown'
@@ -18,6 +18,16 @@ const isStopped = computed(() => props.message.status === 'stopped')
 
 /** Whether this message uses structured content blocks */
 const useBlocks = computed(() => hasContentBlocks(props.message))
+
+const toolResultsByUseId = computed(() => {
+  const map = new Map<string, ToolResultBlock>()
+  for (const block of props.message.contentBlocks ?? []) {
+    if (block.type === 'tool_result') {
+      map.set(block.toolUseId, block)
+    }
+  }
+  return map
+})
 
 /** Blocks to render (skip tool_result — rendered inside ChatToolBlock) */
 const renderableBlocks = computed(() => {
@@ -103,7 +113,7 @@ const formattedContent = computed(() => {
           v-for="block in renderableBlocks"
           :key="block.id"
           :block="block"
-          :all-blocks="message.contentBlocks!"
+          :tool-results-by-use-id="toolResultsByUseId"
         />
       </template>
 
