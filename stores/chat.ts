@@ -817,7 +817,13 @@ export const useChatStore = defineStore('chat', () => {
   function appendContentBlockWithSave(messageId: string, block: ContentBlock, conversationId?: string) {
     const convId = conversationId ?? activeConversationId.value
     if (!convId) return
-    appendContentBlock(messageId, block, convId)
+    const conv = conversations.value.find(c => c.id === convId)
+    if (!conv) return
+    const msg = conv.messages.find(m => m.id === messageId)
+    if (!msg) return
+    if (!msg.contentBlocks) msg.contentBlocks = []
+    msg.contentBlocks.push(block)
+    syncContentFromBlocks(msg)
     saveConversation(convId, false)
   }
 
