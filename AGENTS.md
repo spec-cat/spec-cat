@@ -88,6 +88,9 @@ If traceability is broken, fix planning artifacts before coding.
 ## Active Technologies
 - TypeScript 5.6+, Nuxt 3.16+, Vue 3.5+, Pinia 2.2+ + Existing repo dependencies only (`@anthropic-ai/claude-code` for Claude path, Node child process/fs APIs, Nitro server runtime) (018-codex-provider-integration)
 - Filesystem-backed settings at `~/.spec-cat/projects/{hash}/settings.json`; conversation session state in existing chat store persistence (018-codex-provider-integration)
+- TypeScript 5.6+, Vue 3.5+, Nuxt 3.16+ + Nuxt/Nitro runtime, Pinia, Tailwind CSS, `@heroicons/vue` (031-spec-search-modal)
+- Filesystem-backed spec search index/cache (existing), no new storage for this feature (031-spec-search-modal)
+- Existing filesystem-backed spec index/cache (no new persistence) (031-spec-search-modal)
 
 ## Recent Changes
 - 018-codex-provider-integration: Added TypeScript 5.6+, Nuxt 3.16+, Vue 3.5+, Pinia 2.2+ + Existing repo dependencies only (`@anthropic-ai/claude-code` for Claude path, Node child process/fs APIs, Nitro server runtime)

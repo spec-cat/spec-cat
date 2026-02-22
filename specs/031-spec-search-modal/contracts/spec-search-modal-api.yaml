@@ -1,0 +1,183 @@
+openapi: 3.0.3
+info:
+  title: Command Palette Spec Search Contract
+  version: 1.0.0
+  description: API usage contract for command palette search and feature selection integration.
+
+paths:
+  /api/specs/search:
+    get:
+      summary: Search spec content for command palette results
+      operationId: searchSpecsForCommandPalette
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+          description: User query text from command palette input.
+        - name: mode
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [keyword, semantic, hybrid]
+            default: keyword
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+        - name: featureId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Optional explicit filter. Command palette default behavior omits this for global search scope.
+        - name: fileType
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Search results and timing metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+        '400':
+          description: Invalid or missing query.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/specs/features:
+    get:
+      summary: List available features for selection validation and fallback mapping
+      operationId: listFeatures
+      responses:
+        '200':
+          description: Available feature metadata.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [features]
+                properties:
+                  features:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Feature'
+
+components:
+  schemas:
+    SearchChunk:
+      type: object
+      required: [sourcePath, featureId, fileType, headingHierarchy, content, lineStart, lineEnd, frTags, taskTags]
+      properties:
+        sourcePath:
+          type: string
+        featureId:
+          type: string
+        fileType:
+          type: string
+        headingHierarchy:
+          type: array
+          items:
+            type: string
+        content:
+          type: string
+        lineStart:
+          type: integer
+        lineEnd:
+          type: integer
+        frTags:
+          type: array
+          items:
+            type: string
+        taskTags:
+          type: array
+          items:
+            type: string
+
+    SearchResult:
+      type: object
+      required: [chunk, score, matchType]
+      properties:
+        chunk:
+          $ref: '#/components/schemas/SearchChunk'
+        score:
+          type: number
+        matchType:
+          type: string
+          enum: [keyword, semantic, hybrid]
+        ftsScore:
+          type: number
+          nullable: true
+        vectorDistance:
+          type: number
+          nullable: true
+
+    SearchResponse:
+      type: object
+      required: [results, totalCount, searchTime, mode]
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchResult'
+        totalCount:
+          type: integer
+        searchTime:
+          type: integer
+        mode:
+          type: string
+          enum: [keyword, semantic, hybrid]
+        warning:
+          type: string
+          nullable: true
+
+    FeatureFile:
+      type: object
+      required: [filename, label]
+      properties:
+        filename:
+          type: string
+        label:
+          type: string
+
+    Feature:
+      type: object
+      required: [id, name, files, hasSpec, hasPlan, hasTasks, completedTasks, totalTasks]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/FeatureFile'
+        hasSpec:
+          type: boolean
+        hasPlan:
+          type: boolean
+        hasTasks:
+          type: boolean
+        completedTasks:
+          type: integer
+        totalTasks:
+          type: integer
+
+    ErrorResponse:
+      type: object
+      properties:
+        statusCode:
+          type: integer
+        statusMessage:
+          type: string

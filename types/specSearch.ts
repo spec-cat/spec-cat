@@ -44,6 +44,27 @@ export interface SearchResponse {
   warning?: string
 }
 
+export interface SearchResultViewModel {
+  featureId: string
+  sourcePath: string
+  headingHierarchy: string[]
+  snippet: string
+  matchType: SearchMatchType
+  score: number
+  lineStart: number
+  lineEnd: number
+}
+
+export interface CommandPaletteState {
+  isOpen: boolean
+  query: string
+  debounceMs: number
+  isSearching: boolean
+  highlightedIndex: number
+  feedbackState: 'idle' | 'empty-query' | 'no-results' | 'error' | 'results'
+  errorMessage: string | null
+}
+
 export interface IndexStatus {
   fileCount: number
   chunkCount: number

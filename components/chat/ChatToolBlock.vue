@@ -216,20 +216,23 @@ const statusColor = computed(() => {
   }
 })
 
+const resultContent = computed(() => props.result?.content ?? '')
+const resultIsError = computed(() => props.result?.isError ?? false)
+const resultLength = computed(() => resultContent.value.length)
+
 const resultPreview = computed(() => {
-  if (!props.result) return ''
-  const lines = props.result.content.split('\n').slice(0, 3)
+  if (!resultContent.value) return ''
+  const lines = resultContent.value.split('\n').slice(0, 3)
   return lines.join('\n')
 })
 
 const isLongResult = computed(() => {
-  if (!props.result) return false
-  return props.result.content.split('\n').length > 3 || props.result.content.length > 300
+  if (!resultContent.value) return false
+  return resultContent.value.split('\n').length > 3 || resultContent.value.length > 300
 })
 
 const hasVisibleResult = computed(() => {
-  if (!props.result) return false
-  return props.result.content.trim().length > 0
+  return resultContent.value.trim().length > 0
 })
 </script>
 
@@ -343,7 +346,7 @@ const hasVisibleResult = computed(() => {
     <div v-if="hasVisibleResult" class="px-3 pb-2 border-t border-retro-border/20">
       <div
         class="text-xs font-mono rounded p-2 mt-1 overflow-y-auto scrollbar-custom border"
-        :class="result.isError ? 'text-retro-red bg-retro-red/5 border-retro-red/40' : 'text-retro-muted bg-retro-panel/60 border-retro-border/30'"
+        :class="resultIsError ? 'text-retro-red bg-retro-red/5 border-retro-red/40' : 'text-retro-muted bg-retro-panel/60 border-retro-border/30'"
         :style="resultExpanded ? 'max-height: 20rem' : ''"
       >
         <template v-if="!resultExpanded && isLongResult">
@@ -352,11 +355,11 @@ const hasVisibleResult = computed(() => {
             class="text-retro-cyan hover:underline mt-1 text-[10px]"
             @click.stop="resultExpanded = true"
           >
-            Show full ({{ result.content.length }} chars)
+            Show full ({{ resultLength }} chars)
           </button>
         </template>
         <template v-else>
-          <pre class="whitespace-pre-wrap">{{ result.content }}</pre>
+          <pre class="whitespace-pre-wrap">{{ resultContent }}</pre>
           <button
             v-if="isLongResult"
             class="text-retro-cyan hover:underline mt-1 text-[10px]"

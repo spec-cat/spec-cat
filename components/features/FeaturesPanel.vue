@@ -26,6 +26,7 @@ const loading = ref(false)
 // Modal state
 const showModal = ref(false)
 const modalFeature = ref<Feature | null>(null)
+const showFeatureSearchModal = ref(false)
 const showCreateModal = ref(false)
 const creatingConversation = ref(false)
 
@@ -71,9 +72,21 @@ const activeFeatureId = computed(() => {
   return features.value.some(feature => feature.id === branch) ? branch : null
 })
 
+const highlightedFeatureId = computed(() => selectedFeatureId.value || activeFeatureId.value)
+
 // Auto-scroll to active feature card
 watch(() => chatStore.activeConversationId, () => {
   const fid = activeFeatureId.value
+  if (!fid) return
+  nextTick(() => {
+    const el = featureRefs.value[fid]
+    if (el) {
+      el.scrollIntoView({ behavior: 'auto', block: 'nearest' })
+    }
+  })
+})
+
+watch(selectedFeatureId, (fid) => {
   if (!fid) return
   nextTick(() => {
     const el = featureRefs.value[fid]
@@ -110,19 +123,26 @@ async function fetchSkills() {
 onMounted(() => {
   fetchFeatures()
   fetchSkills()
+  window.addEventListener('keydown', handleGlobalShortcut)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleGlobalShortcut)
 })
 
 // Open modal on feature card click
-function handleSelectFeature(featureId: string) {
+function handleSelectFeature(featureId: string, options: { openViewer?: boolean } = {}) {
   selectedFeatureId.value = featureId
   selectedFileName.value = null
   currentView.value = 'files'
   gitGraphStore.setSelectedFeatureId(featureId)
 
-  const feature = features.value.find(f => f.id === featureId)
-  if (feature) {
-    modalFeature.value = feature
-    showModal.value = true
+  if (options.openViewer !== false) {
+    const feature = features.value.find(f => f.id === featureId)
+    if (feature) {
+      modalFeature.value = feature
+      showModal.value = true
+    }
   }
 }
 
@@ -146,6 +166,31 @@ function handleCloseModal() {
   showModal.value = false
   modalFeature.value = null
 }
+
+function handleGlobalShortcut(event: KeyboardEvent) {
+  const isOpenShortcut = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k'
+  if (!isOpenShortcut) return
+
+  event.preventDefault()
+  if (!showFeatureSearchModal.value) {
+    showFeatureSearchModal.value = true
+  }
+}
+
+function handleFeatureSearchClose() {
+  showFeatureSearchModal.value = false
+}
+
+function handleFeatureSearchSelect(featureId: string) {
+  handleSelectFeature(featureId, { openViewer: false })
+  showFeatureSearchModal.value = false
+}
+
+function openFeatureSearchModal() {
+  showFeatureSearchModal.value = true
+}
+
+const availableFeatureIds = computed(() => features.value.map(feature => feature.id))
 
 // Cascade pipeline
 const CASCADE_STEPS: Record<string, string[]> = {
@@ -356,15 +401,26 @@ async function handleCreateConfirm(baseBranch: string) {
         <AutoModeToggle />
       </div>
 
-      <!-- Refresh button -->
-      <button
-        type="button"
-        class="p-1.5 rounded text-retro-muted hover:text-retro-cyan hover:bg-retro-panel transition-colors"
-        title="Refresh"
-        @click="fetchFeatures"
-      >
-        <ArrowPathIcon class="h-4 w-4" :class="{ 'animate-spin': loading }" />
-      </button>
+      <div class="flex items-center gap-1">
+        <button
+          type="button"
+          class="p-1.5 rounded text-retro-muted hover:text-retro-cyan hover:bg-retro-panel transition-colors"
+          title="Search (Ctrl/Cmd+K)"
+          @click="openFeatureSearchModal"
+        >
+          <MagnifyingGlassIcon class="h-4 w-4" />
+        </button>
+
+        <!-- Refresh button -->
+        <button
+          type="button"
+          class="p-1.5 rounded text-retro-muted hover:text-retro-cyan hover:bg-retro-panel transition-colors"
+          title="Refresh"
+          @click="fetchFeatures"
+        >
+          <ArrowPathIcon class="h-4 w-4" :class="{ 'animate-spin': loading }" />
+        </button>
+      </div>
     </div>
 
     <!-- Search input -->
@@ -391,8 +447,8 @@ async function handleCreateConfirm(baseBranch: string) {
           <FeatureCard
             :feature="feature"
             :skills="skills"
-            :is-active="activeFeatureId === feature.id"
-            @select="handleSelectFeature"
+            :is-active="highlightedFeatureId === feature.id"
+            @select="(featureId) => handleSelectFeature(featureId, { openViewer: true })"
             @cascade="handleCascade"
             @open-chat="handleOpenChat"
             @skill="handleSkill"
@@ -435,6 +491,13 @@ async function handleCreateConfirm(baseBranch: string) {
       v-if="showModal && modalFeature"
       :feature="modalFeature"
       @close="handleCloseModal"
+    />
+
+    <FeatureSearchModal
+      v-if="showFeatureSearchModal"
+      :available-feature-ids="availableFeatureIds"
+      @close="handleFeatureSearchClose"
+      @select="handleFeatureSearchSelect"
     />
 
     <NewConversationModal
