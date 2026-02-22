@@ -70,6 +70,7 @@ export const useChatStore = defineStore('chat', () => {
 
   // Per-conversation runtime state map (not persisted)
   const conversationStreamStates = new Map<string, ConversationStreamState>()
+  const debugStreamEnabled = ref(false)
   // Reactivity trigger — increment to force computed re-evaluation when stream state changes
   const streamStateTick = ref(0)
 
@@ -880,6 +881,7 @@ export const useChatStore = defineStore('chat', () => {
     },
     conversationId?: string,
   ) {
+    if (!debugStreamEnabled.value) return
     const id = conversationId ?? activeConversationId.value
     if (!id) return
     const state = ensureConvStreamState(id)
@@ -913,6 +915,10 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     streamStateTick.value++
+  }
+
+  function setDebugStreamEnabled(enabled: boolean) {
+    debugStreamEnabled.value = enabled
   }
 
   function clearDebugEvents(conversationId?: string) {
@@ -1760,6 +1766,7 @@ export const useChatStore = defineStore('chat', () => {
     cwd: readonly(cwd),
     lastError,
     debugEvents,
+    debugStreamEnabled: readonly(debugStreamEnabled),
     providerSessionId,
 
     // Conversation state (T036)
@@ -1825,6 +1832,7 @@ export const useChatStore = defineStore('chat', () => {
     startSession,
     endSession,
     setSessionError,
+    setDebugStreamEnabled,
     pushDebugEvent,
     clearDebugEvents,
     clearMessages,

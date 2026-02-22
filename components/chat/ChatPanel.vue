@@ -43,6 +43,14 @@ const showDeleteConfirm = ref(false)
 const isChatFullscreen = computed(() => layoutStore.isChatFullscreen)
 const showDebugPanel = ref(false)
 
+watch(showDebugPanel, (enabled) => {
+  chatStore.setDebugStreamEnabled(enabled)
+})
+
+onUnmounted(() => {
+  chatStore.setDebugStreamEnabled(false)
+})
+
 function handleToggleFullscreen() {
   layoutStore.toggleChatFullscreen()
 }
