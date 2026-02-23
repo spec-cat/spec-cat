@@ -78,6 +78,14 @@ interface PeerState {
 const peerStates = new Map<string, PeerState>()
 const MAX_ATTACHMENT_COUNT = 4
 const MAX_ATTACHMENT_SIZE_BYTES = 5 * 1024 * 1024
+const SPECKIT_AUTONOMY_DIRECTIVE = [
+  'Speckit Execution Mode (MANDATORY):',
+  '- Do not ask the user for confirmation, follow-up, or permission to proceed.',
+  '- Do not end with questions like "Would you like me to..." or "Shall I...".',
+  '- For remediation and traceability gaps, directly edit the relevant spec files now (spec.md, plan.md, tasks.md) when writable.',
+  '- Prefer concrete file edits over recommendations; provide a brief change summary after edits are complete.',
+  '- Only stop without edits if blocked by a hard constraint (missing files, permission failure), and report the blocker explicitly.',
+].join('\n')
 
 function getPeerState(peerId: string): PeerState {
   let state = peerStates.get(peerId)
@@ -93,6 +101,10 @@ function getPeerState(peerId: string): PeerState {
     peerStates.set(peerId, state)
   }
   return state
+}
+
+function isSpeckitCommand(message: string): boolean {
+  return message.trim().startsWith('/speckit.')
 }
 
 function killProc(proc: AIProviderStreamController) {
@@ -336,10 +348,10 @@ async function handleChatMessage(peer: any, msg: ChatMessage) {
   }
 
   // Detect /speckit.* commands (e.g., /speckit.plan, /speckit.tasks, /speckit.implement)
-  const isSpeckitCommand = msg.message.trim().startsWith('/speckit.')
+  const speckitCommand = isSpeckitCommand(msg.message)
 
   // Auto-reset context for speckit commands to prevent context pollution between pipeline steps
-  if (isSpeckitCommand) {
+  if (speckitCommand) {
     console.log('[WS] Speckit command detected - auto-resetting context for peer:', peer.id)
     clearProviderSession(state)
     // Note: don't send context_reset event here to avoid UI noise
@@ -358,10 +370,10 @@ async function handleChatMessage(peer: any, msg: ChatMessage) {
 
   // Use existing session ID if provided (continuing conversation)
   // But for speckit commands, session was already cleared above
-  if (!isSpeckitCommand && msg.sessionId) {
+  if (!speckitCommand && msg.sessionId) {
     state.providerSessionId = msg.sessionId
     // Keep approvedTools when continuing a session
-  } else if (!isSpeckitCommand) {
+  } else if (!speckitCommand) {
     // New conversation - clear approved tools
     state.approvedTools.clear()
     state.providerSessionId = null
@@ -374,7 +386,7 @@ async function handleChatMessage(peer: any, msg: ChatMessage) {
     attachmentCount: attachments.length,
     providerId: msg.providerId,
     providerModelKey: msg.providerModelKey,
-    isSpeckitCommand,
+    isSpeckitCommand: speckitCommand,
   })
 
   runProvider(peer, state, msg)
@@ -440,6 +452,7 @@ async function runProvider(peer: any, state: PeerState, msg: ChatMessage, isRetr
 
   // Inject feature spec context via --append-system-prompt (new sessions only)
   let systemPrompt: string | undefined
+  const speckitCommand = isSpeckitCommand(msg.message)
   if (msg.featureId && !usedResumeFlag) {
     try {
       const specContext = await loadSpecContext(projectDir, msg.featureId)
@@ -450,6 +463,11 @@ async function runProvider(peer: any, state: PeerState, msg: ChatMessage, isRetr
       console.error('[WS] Failed to load spec context:', error)
       // Non-fatal: proceed without spec context
     }
+  }
+  if (speckitCommand && !usedResumeFlag) {
+    systemPrompt = systemPrompt
+      ? `${systemPrompt}\n\n${SPECKIT_AUTONOMY_DIRECTIVE}`
+      : SPECKIT_AUTONOMY_DIRECTIVE
   }
 
   console.log('[WS] Running provider stream:', selection.providerId, selection.modelKey, isRetry ? '(retry)' : '')

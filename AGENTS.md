@@ -67,7 +67,11 @@ When user asks for spec workflow commands, follow these mappings.
 2. Extract all FRs from `spec.md`
 3. Verify FR coverage in `plan.md`
 4. Verify FR-to-task mapping in `tasks.md`
-5. Report all gaps explicitly
+5. Report all gaps explicitly with severity (`critical`, `major`, `minor`)
+6. By default, directly edit `plan.md` and `tasks.md` to close traceability gaps instead of only suggesting changes
+7. For each edit, include explicit FR linkage and preserve existing intent (no requirement weakening)
+8. If ambiguity exists, choose the safest assumption, document it, and still provide concrete patch-ready text
+9. Do not ask for permission to continue (no "Would you like me to..."); perform the remediation edits immediately and then report results
 
 ### `/checklist [feature-id]`
 1. Use `lib/speckit/templates/checklist.template.md`

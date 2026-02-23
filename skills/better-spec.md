@@ -105,13 +105,29 @@ Produce a structured validation report with:
 1. Summary (documents checked, issues found, severity)
 2. Per-document validation (correct structure, violations with line references)
 3. Cross-document consistency check
-4. Remediation suggestions (what to move where)
+4. Aggressive remediation actions (what to move where, with exact replacement text)
+5. Priority-ordered fix plan that resolves `critical` issues first
 
 For each violation, include:
 - The problematic section/line
 - What the issue is
 - Where the content should go
 - Why the move is necessary
+- Exact patch-ready replacement text (not only high-level suggestions)
+
+## Enforcement Mode
+
+- Prefer direct rewrites over passive recommendations.
+- When a section violates role boundaries, provide concrete edited content for the target document.
+- If multiple fixes are possible, choose the option with highest FR traceability and lowest ambiguity.
+- Do not defer obvious fixes; produce immediately applicable edits.
+
+## Completion Rules
+
+- Never end by asking whether to proceed with fixes.
+- Do not output "Would you like me to...?" style follow-up questions.
+- If fixes are identifiable, apply them immediately with concrete patch-ready edits in the current run.
+- Finish with `Applied Changes` and `Remaining Blockers` (if any), not a permission request.
 
 **Goal**: Each document should be faithful to its role only, so anyone reading a document gets exactly the information they expect:
 - Reading spec.md → understand **what** this feature is
