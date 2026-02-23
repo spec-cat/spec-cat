@@ -186,10 +186,12 @@ export const useGitGraphStore = defineStore("gitGraph", () => {
   // Conversation branch highlight — tracks the active conversation's worktree branch
   const conversationBranch = ref<string | null>(null);
   const conversationMergeBase = ref<string | null>(null);
+  const conversationBaseBranch = ref<string | null>(null);
 
   // Preview branch highlight — tracks the previewing conversation's worktree branch (yellow)
   const previewBranch = ref<string | null>(null);
   const previewMergeBase = ref<string | null>(null);
+  const previewBaseBranch = ref<string | null>(null);
 
   // Diff viewer state (FR-087, FR-092)
   const diffViewerFile = ref<FileChange | null>(null);
@@ -841,9 +843,10 @@ export const useGitGraphStore = defineStore("gitGraph", () => {
     }
   }
 
-  async function setConversationBranch(branch: string | null) {
+  async function setConversationBranch(branch: string | null, baseBranch?: string | null) {
     conversationBranch.value = branch;
     conversationMergeBase.value = null;
+    conversationBaseBranch.value = baseBranch ?? null;
 
     if (branch && workingDirectory.value) {
       try {
@@ -851,6 +854,7 @@ export const useGitGraphStore = defineStore("gitGraph", () => {
           params: {
             workingDirectory: workingDirectory.value,
             branch,
+            baseBranch: baseBranch ?? undefined,
           }
         });
         conversationMergeBase.value = data.mergeBase;
@@ -860,9 +864,10 @@ export const useGitGraphStore = defineStore("gitGraph", () => {
     }
   }
 
-  async function setPreviewBranch(branch: string | null) {
+  async function setPreviewBranch(branch: string | null, baseBranch?: string | null) {
     previewBranch.value = branch;
     previewMergeBase.value = null;
+    previewBaseBranch.value = baseBranch ?? null;
 
     if (branch && workingDirectory.value) {
       try {
@@ -870,6 +875,7 @@ export const useGitGraphStore = defineStore("gitGraph", () => {
           params: {
             workingDirectory: workingDirectory.value,
             branch,
+            baseBranch: baseBranch ?? undefined,
           }
         });
         previewMergeBase.value = data.mergeBase;
@@ -907,6 +913,7 @@ export const useGitGraphStore = defineStore("gitGraph", () => {
             params: {
               workingDirectory: workingDirectory.value!,
               branch: conversationBranch.value!,
+              baseBranch: conversationBaseBranch.value ?? undefined,
             }
           });
           conversationMergeBase.value = data.mergeBase;
@@ -923,6 +930,7 @@ export const useGitGraphStore = defineStore("gitGraph", () => {
             params: {
               workingDirectory: workingDirectory.value!,
               branch: previewBranch.value!,
+              baseBranch: previewBaseBranch.value ?? undefined,
             }
           });
           previewMergeBase.value = data.mergeBase;
@@ -1110,8 +1118,10 @@ export const useGitGraphStore = defineStore("gitGraph", () => {
     selectedFeatureId.value = null;
     conversationBranch.value = null;
     conversationMergeBase.value = null;
+    conversationBaseBranch.value = null;
     previewBranch.value = null;
     previewMergeBase.value = null;
+    previewBaseBranch.value = null;
     diffViewerFile.value = null;
     diffViewerCommitHash.value = null;
     diffViewerContent.value = null;
@@ -1274,8 +1284,10 @@ export const useGitGraphStore = defineStore("gitGraph", () => {
     featureMergeBase: readonly(featureMergeBase),
     conversationBranch: readonly(conversationBranch),
     conversationMergeBase: readonly(conversationMergeBase),
+    conversationBaseBranch: readonly(conversationBaseBranch),
     previewBranch: readonly(previewBranch),
     previewMergeBase: readonly(previewMergeBase),
+    previewBaseBranch: readonly(previewBaseBranch),
 
     // Diff viewer state (FR-087, FR-092)
     diffViewerFile: readonly(diffViewerFile),

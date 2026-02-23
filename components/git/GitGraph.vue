@@ -52,9 +52,9 @@ const featureHighlightBranches = computed<string[]>(() => {
 
 // Sync active conversation's worktree branch to the store for merge-base computation
 watch(
-  () => chatStore.activeConversation?.worktreeBranch,
-  (branch) => {
-    store.setConversationBranch(branch ?? null);
+  () => [chatStore.activeConversation?.worktreeBranch, chatStore.activeConversation?.baseBranch] as const,
+  ([branch, baseBranch]) => {
+    store.setConversationBranch(branch ?? null, baseBranch ?? null);
   },
   { immediate: true }
 );
@@ -67,9 +67,9 @@ const previewHighlightBranches = computed<string[]>(() => {
 
 // Sync previewing conversation's worktree branch to the store
 watch(
-  () => chatStore.previewingConversation?.worktreeBranch,
-  (branch) => {
-    store.setPreviewBranch(branch ?? null);
+  () => [chatStore.previewingConversation?.worktreeBranch, chatStore.previewingConversation?.baseBranch] as const,
+  ([branch, baseBranch]) => {
+    store.setPreviewBranch(branch ?? null, baseBranch ?? null);
   },
   { immediate: true }
 );
@@ -113,11 +113,11 @@ watch(
       // After git graph loads, re-fetch merge-bases for preview/conversation branches if they exist
       const previewBranch = chatStore.previewingConversation?.worktreeBranch;
       if (previewBranch) {
-        await store.setPreviewBranch(previewBranch);
+        await store.setPreviewBranch(previewBranch, chatStore.previewingConversation?.baseBranch ?? null);
       }
       const convBranch = chatStore.activeConversation?.worktreeBranch;
       if (convBranch) {
-        await store.setConversationBranch(convBranch);
+        await store.setConversationBranch(convBranch, chatStore.activeConversation?.baseBranch ?? null);
       }
     }
   },

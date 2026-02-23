@@ -10,6 +10,7 @@ export default defineEventHandler(async (event) => {
     const query = getQuery(event);
     const workingDirectory = query.workingDirectory as string | undefined;
     const branch = query.branch as string | undefined;
+    const requestedBaseBranch = query.baseBranch as string | undefined;
 
     if (!workingDirectory) {
       throw createError({
@@ -33,10 +34,11 @@ export default defineEventHandler(async (event) => {
       });
     }
 
-    // Detect default branch
+    // Detect default branch if no explicit base branch is provided
     const defaultBranch = await detectDefaultBranch(workingDirectory);
+    const baseBranch = requestedBaseBranch?.trim() || defaultBranch;
 
-    if (!defaultBranch || defaultBranch === branch) {
+    if (!baseBranch || baseBranch === branch) {
       // Feature IS the default branch, or no default found — no fork point
       return { mergeBase: null };
     }
@@ -45,13 +47,16 @@ export default defineEventHandler(async (event) => {
     // branch-only commits to highlight.
     const [branchHead, defaultHead] = await Promise.all([
       resolveRefHead(workingDirectory, branch),
-      resolveRefHead(workingDirectory, defaultBranch),
+      resolveRefHead(workingDirectory, baseBranch),
     ]);
+    if (!defaultHead) {
+      return { mergeBase: null };
+    }
     if (branchHead && defaultHead && branchHead === defaultHead) {
       return { mergeBase: null };
     }
 
-    const mergeBase = await getMergeBase(branch, defaultBranch, workingDirectory);
+    const mergeBase = await getMergeBase(branch, baseBranch, workingDirectory);
     return { mergeBase };
   } catch (error) {
     if (error && typeof error === "object" && "statusCode" in error) {
