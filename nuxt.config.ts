@@ -1,3 +1,5 @@
+import pkg from './package.json'
+
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
   ssr: false,
@@ -8,6 +10,9 @@ export default defineNuxtConfig({
   runtimeConfig: {
     // Project directory (set by server plugin from CLI args or env var)
     projectDir: process.cwd(),
+    public: {
+      appVersion: pkg.version,
+    },
   },
 
   // Enable WebSocket support

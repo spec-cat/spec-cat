@@ -19,9 +19,11 @@ const emit = defineEmits<{
 }>()
 
 const settingsStore = useSettingsStore()
+const runtimeConfig = useRuntimeConfig()
 const toast = useToast()
 const activePage = ref<'main' | 'provider'>('main')
 const reindexPending = ref(false)
+const appVersion = computed(() => runtimeConfig.public.appVersion || 'unknown')
 
 const THEME_OPTIONS: { value: Theme; label: string; description: string }[] = [
   { value: 'dark', label: 'Dark', description: 'Retro terminal theme with dark backgrounds' },
@@ -414,6 +416,19 @@ onUnmounted(() => {
                   <div class="text-xs text-retro-muted leading-tight">Uses Claude Haiku to create meaningful commit messages. ~300-500 tokens per commit.</div>
                 </div>
               </label>
+            </div>
+          </section>
+
+          <div class="border-t border-retro-border" />
+
+          <section>
+            <h3 class="text-sm font-mono font-semibold text-retro-text mb-1">Spec-Cat</h3>
+            <p class="text-xs text-retro-muted mb-3">
+              Application version.
+            </p>
+            <div class="flex items-center justify-between px-3 py-2 rounded border border-retro-border bg-retro-panel">
+              <span class="text-sm font-mono text-retro-text">Version</span>
+              <span class="text-xs font-mono text-retro-cyan">{{ appVersion }}</span>
             </div>
           </section>
         </div>
