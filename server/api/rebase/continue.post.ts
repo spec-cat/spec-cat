@@ -31,8 +31,8 @@ export default defineEventHandler(async (event): Promise<FinalizeResponse> => {
 
   const { conversationId, commitMessage } = body
   const projectDir = getProjectDir()
-  const branchName = body.worktreeBranch || `br/${conversationId}`
-  const worktreePath = body.worktreePath || `/tmp/br-${conversationId}`
+  const branchName = body.worktreeBranch || `sc/${conversationId}`
+  const worktreePath = body.worktreePath || `/tmp/sc-${conversationId}`
 
   if (!existsSync(worktreePath)) {
     return { success: false, error: 'Worktree directory not found.' }
@@ -94,7 +94,7 @@ export default defineEventHandler(async (event): Promise<FinalizeResponse> => {
     // --- From here, same as finalize.post.ts steps 6-8 ---
 
     // 6. Checkout baseBranch in main worktree
-    const previewBranch = `br/p-${conversationId}`
+    const previewBranch = body.previewBranch
     try {
       const currentBranch = await git(projectDir, 'rev-parse --abbrev-ref HEAD')
       if (currentBranch !== baseBranch) {
@@ -133,9 +133,11 @@ export default defineEventHandler(async (event): Promise<FinalizeResponse> => {
       logger.chat.warn('Failed to delete temp branch', { branchName })
     }
 
-    try {
-      await git(projectDir, `branch -D "${previewBranch}"`)
-    } catch { /* preview branch may not exist */ }
+    if (previewBranch) {
+      try {
+        await git(projectDir, `branch -D "${previewBranch}"`)
+      } catch { /* preview branch may not exist */ }
+    }
 
     logger.chat.info('Conversation finalized after conflict resolution', { conversationId, newCommit: newHead })
 

@@ -27,7 +27,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const { conversationId } = body
-  const worktreePath = body.worktreePath || `/tmp/br-${conversationId}`
+  const worktreePath = body.worktreePath || `/tmp/sc-${conversationId}`
   const projectDir = getProjectDir()
 
   if (!existsSync(worktreePath)) {

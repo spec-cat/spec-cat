@@ -1,7 +1,7 @@
 /**
  * DELETE /api/chat/worktree
  * Removes a chat worktree and its branch.
- * Separate from [name].delete.ts because branch names like br/conv-xxx
+ * Separate from [name].delete.ts because branch names like sc/conv-xxx
  * contain "/" which breaks route params.
  */
 

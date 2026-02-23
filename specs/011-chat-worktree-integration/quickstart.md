@@ -11,7 +11,7 @@ This feature integrates git worktrees into the chat system so that each conversa
 
 | Concept | Description |
 |---------|-------------|
-| **Worktree** | Isolated git working directory at `/tmp/br-{id}/` with its own branch |
+| **Worktree** | Isolated git working directory at `/tmp/sc-{id}/` with its own branch |
 | **Auto-commit** | Changes are committed automatically after each streaming turn |
 | **Preview** | Checkout the worktree's HEAD in the main workspace for testing |
 | **Finalize** | Squash all commits, rebase onto base branch, and clean up |
@@ -43,12 +43,12 @@ This feature integrates git worktrees into the chat system so that each conversa
 │ Git                                                  │
 │                                                      │
 │  Main worktree: /home/user/project/                  │
-│  Conv worktree: /tmp/br-conv-xxx/                    │
+│  Conv worktree: /tmp/sc-conv-xxx/                    │
 │                                                      │
 │  Branches:                                           │
 │    main (base)                                       │
-│    br/conv-xxx (working branch)                      │
-│    br/p-conv-xxx (preview branch, temporary)         │
+│    sc/conv-xxx (working branch)                      │
+│    sc/preview (preview branch, temporary)            │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -60,9 +60,9 @@ This feature integrates git worktrees into the chat system so that each conversa
 User clicks "New Chat"
   → createConversation() in store
   → POST /api/chat/worktree { conversationId }
-  → git worktree add -b "br/{id}" "/tmp/br-{id}" "main"
-  → Conversation.worktreePath = "/tmp/br-{id}"
-  → Conversation.worktreeBranch = "br/{id}"
+  → git worktree add -b "sc/{id}" "/tmp/sc-{id}" "main"
+  → Conversation.worktreePath = "/tmp/sc-{id}"
+  → Conversation.worktreeBranch = "sc/{id}"
   → Conversation.baseBranch = "main"
 ```
 
@@ -71,10 +71,10 @@ User clicks "New Chat"
 ```
 User sends message → Claude streams response → Turn completes
   → POST /api/chat/worktree-commit { worktreePath }
-  → git -C /tmp/br-{id} add -A
-  → git -C /tmp/br-{id} commit -m "feat: AI-generated message"
+  → git -C /tmp/sc-{id} add -A
+  → git -C /tmp/sc-{id} commit -m "feat: AI-generated message"
   → If previewing: POST /api/chat/preview-sync
-    → git update-ref refs/heads/br/p-{id} {newHead}
+    → git update-ref refs/heads/sc/preview {newHead}
     → git reset --hard {newHead}  (in main worktree)
 ```
 
@@ -85,8 +85,8 @@ User clicks Eye icon on conversation
   → togglePreview(conversationId) in store
   → POST /api/chat/preview { conversationId, worktreePath, baseBranch }
   → Validates main worktree is clean
-  → git branch br/p-{id} {worktreeHead}
-  → git checkout br/p-{id}
+  → git branch sc/preview {worktreeHead}
+  → git checkout sc/preview
   → previewingConversationId = conversationId
   → Eye icon highlighted in conversation list
 ```
@@ -97,9 +97,9 @@ User clicks Eye icon on conversation
 User clicks CheckCircle → FinalizeConfirm dialog → User enters message
   → finalizeConversation(id, message) in store
   → POST /api/chat/finalize { conversationId, commitMessage, ... }
-  → git -C /tmp/br-{id} reset --soft {mergeBase}
-  → git -C /tmp/br-{id} commit -m "{message}"
-  → git -C /tmp/br-{id} rebase main
+  → git -C /tmp/sc-{id} reset --soft {mergeBase}
+  → git -C /tmp/sc-{id} commit -m "{message}"
+  → git -C /tmp/sc-{id} rebase main
   → git update-ref refs/heads/main {newHead}
   → Cleanup: remove worktree, delete branches
   → Conversation.finalized = true (read-only)
@@ -123,10 +123,10 @@ Finalize detects rebase conflict
 System restarts, /tmp cleared
   → WebSocket reconnects for conversation
   → ensureChatWorktree(projectDir, worktreePath, branch)
-  → Detects /tmp/br-{id} missing
+  → Detects /tmp/sc-{id} missing
   → git worktree prune
-  → git rev-parse --verify br/{id}  (branch still exists)
-  → git worktree add /tmp/br-{id} br/{id}
+  → git rev-parse --verify sc/{id}  (branch still exists)
+  → git worktree add /tmp/sc-{id} sc/{id}
   → Sends worktree_recovered event to client
 ```
 

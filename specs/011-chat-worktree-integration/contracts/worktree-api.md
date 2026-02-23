@@ -26,8 +26,8 @@ interface CreateWorktreeRequest {
 // 200 OK
 interface CreateWorktreeResponse {
   success: true
-  worktreePath: string            // e.g., /tmp/br-conv-1234567890-x7k9m2
-  branch: string                  // e.g., br/conv-1234567890-x7k9m2 or 001-auth
+  worktreePath: string            // e.g., /tmp/sc-conv-8f3k2m9p0a
+  branch: string                  // e.g., sc/conv-8f3k2m9p0a or 001-auth
   baseBranch: string              // Selected base branch (e.g., main)
 }
 
@@ -52,10 +52,10 @@ interface CreateWorktreeError {
 2. If `featureId` provided:
    - Check if branch `{featureId}` already exists → return 409
    - Branch name = `{featureId}`
-   - Worktree path = `/tmp/br-{featureId}-{conversationId}`
+   - Worktree path = `/tmp/sc-{featureId}-{conversationId}`
 3. If no `featureId`:
-   - Branch name = `br/{conversationId}`
-   - Worktree path = `/tmp/br-{conversationId}`
+   - Branch name = `sc/{conversationId}`
+   - Worktree path = `/tmp/sc-{conversationId}`
 4. Resolve base commit from selected base branch HEAD
 5. Execute: `git worktree add -b "{branch}" "{worktreePath}" "{baseCommit}"`
 
@@ -162,7 +162,7 @@ interface CreatePreviewRequest {
 // 200 OK
 interface CreatePreviewResponse {
   success: true
-  previewBranch: string           // e.g., br/p-conv-1234567890-x7k9m2
+  previewBranch: string           // e.g., sc/preview
 }
 
 // 409 Conflict (main worktree has uncommitted changes)
@@ -185,9 +185,9 @@ interface CreatePreviewError {
 3. Get worktree HEAD: `git -C "{worktreePath}" rev-parse HEAD`
 4. Check main worktree status: `git status --porcelain`
    - If dirty → return 409 with "Commit or stash changes first"
-5. Delete old preview branch if exists: `git branch -D "br/p-{conversationId}"`
-6. Create preview branch: `git branch "br/p-{conversationId}" {worktreeHead}`
-7. Checkout in main worktree: `git checkout "br/p-{conversationId}"`
+5. Delete old preview branch if exists: `git branch -D "sc/preview"`
+6. Create preview branch: `git branch "sc/preview" {worktreeHead}`
+7. Checkout in main worktree: `git checkout "sc/preview"`
 
 ---
 
@@ -272,7 +272,7 @@ interface PreviewSyncError {
 ```typescript
 interface GenerateCommitMessageRequest {
   conversationId: string          // Conversation ID to locate worktree
-  worktreePath?: string           // Defaults to /tmp/br-{conversationId}; feature-originated: /tmp/br-{featureId}-{conversationId}
+  worktreePath?: string           // Defaults to /tmp/sc-{conversationId}; feature-originated: /tmp/sc-{featureId}-{conversationId}
 }
 ```
 
@@ -301,7 +301,7 @@ interface GenerateCommitMessageError {
 
 ### Behavior
 
-1. Locate worktree at `worktreePath` (fallback: `/tmp/br-{conversationId}`)
+1. Locate worktree at `worktreePath` (fallback: `/tmp/sc-{conversationId}`)
 2. Detect base branch (main/master)
 3. Get commit log: `git log --oneline {baseBranch}..HEAD`
 4. If no commits → return `{ success: false, error: "No commits to summarize" }`
@@ -322,8 +322,9 @@ interface FinalizeRequest {
   conversationId: string
   commitMessage: string           // User-provided squash commit message
   baseBranch?: string             // Auto-detected from main/master if not provided
-  worktreePath?: string           // Defaults to /tmp/br-{conversationId}; feature-originated: /tmp/br-{featureId}-{conversationId}
-  worktreeBranch?: string         // Defaults to br/{conversationId}; feature-originated: {featureId}
+  worktreePath?: string           // Defaults to /tmp/sc-{conversationId}; feature-originated: /tmp/sc-{featureId}-{conversationId}
+  worktreeBranch?: string         // Defaults to sc/{conversationId}; feature-originated: {featureId}
+  previewBranch?: string          // Optional: sc/preview when previewing this conversation
 }
 ```
 
@@ -381,7 +382,7 @@ interface FinalizeError {
 interface RebaseSyncRequest {
   conversationId: string
   baseBranch?: string             // Auto-detected from main/master if not provided
-  worktreePath?: string           // Defaults to /tmp/br-{conversationId}; feature-originated: /tmp/br-{featureId}-{conversationId}
+  worktreePath?: string           // Defaults to /tmp/sc-{conversationId}; feature-originated: /tmp/sc-{featureId}-{conversationId}
 }
 ```
 
@@ -468,8 +469,9 @@ interface RebaseContinueRequest {
   conversationId: string
   commitMessage: string
   baseBranch?: string             // Auto-detected from main/master if not provided
-  worktreePath?: string           // Defaults to /tmp/br-{conversationId}; feature-originated: /tmp/br-{featureId}-{conversationId}
-  worktreeBranch?: string         // Defaults to br/{conversationId}; feature-originated: {featureId}
+  worktreePath?: string           // Defaults to /tmp/sc-{conversationId}; feature-originated: /tmp/sc-{featureId}-{conversationId}
+  worktreeBranch?: string         // Defaults to sc/{conversationId}; feature-originated: {featureId}
+  previewBranch?: string          // Optional: sc/preview when previewing this conversation
 }
 
 // Response: Same as FinalizeResponse (may encounter more conflicts)
@@ -484,7 +486,7 @@ interface RebaseContinueRequest {
 interface RebaseSyncRequest {
   conversationId: string
   baseBranch?: string             // Auto-detected from main/master if not provided
-  worktreePath?: string           // Defaults to /tmp/br-{conversationId}; feature-originated: /tmp/br-{featureId}-{conversationId}
+  worktreePath?: string           // Defaults to /tmp/sc-{conversationId}; feature-originated: /tmp/sc-{featureId}-{conversationId}
 }
 
 // Response

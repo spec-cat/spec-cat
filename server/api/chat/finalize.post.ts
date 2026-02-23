@@ -55,8 +55,8 @@ export default defineEventHandler(async (event): Promise<FinalizeResponse> => {
   }
 
   const projectDir = getProjectDir()
-  const branchName = body.worktreeBranch || `br/${conversationId}`
-  const worktreePath = body.worktreePath || `/tmp/br-${conversationId}`
+  const branchName = body.worktreeBranch || `sc/${conversationId}`
+  const worktreePath = body.worktreePath || `/tmp/sc-${conversationId}`
 
   logger.chat.info('Finalizing conversation', { conversationId, branchName })
 
@@ -75,7 +75,7 @@ export default defineEventHandler(async (event): Promise<FinalizeResponse> => {
     try {
       await git(projectDir, `rev-parse --verify "${baseBranch}"`)
     } catch {
-      // Requested branch doesn't exist (e.g. a stale br/conv-xxx branch) — fallback
+      // Requested branch doesn't exist (e.g. a stale sc/conv-xxx branch) — fallback
       logger.chat.warn('Requested baseBranch not found, falling back', { requested: baseBranch })
       try {
         await git(projectDir, 'rev-parse --verify main')
@@ -152,7 +152,7 @@ export default defineEventHandler(async (event): Promise<FinalizeResponse> => {
     //    If a preview branch is still checked out, update-ref will fail or leave
     //    the working directory in a dirty state. Switching to baseBranch first
     //    ensures a clean slate, and the preview branch can be deleted afterwards.
-    const previewBranch = `br/p-${conversationId}`
+    const previewBranch = body.previewBranch
     try {
       const currentBranch = await git(projectDir, 'rev-parse --abbrev-ref HEAD')
       if (currentBranch !== baseBranch) {
@@ -195,9 +195,11 @@ export default defineEventHandler(async (event): Promise<FinalizeResponse> => {
     }
 
     // Delete preview branch if it exists
-    try {
-      await git(projectDir, `branch -D "${previewBranch}"`)
-    } catch { /* preview branch may not exist — fine */ }
+    if (previewBranch) {
+      try {
+        await git(projectDir, `branch -D "${previewBranch}"`)
+      } catch { /* preview branch may not exist — fine */ }
+    }
 
     logger.chat.info('Conversation finalized', { conversationId, newCommit: newHead })
 

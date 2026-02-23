@@ -315,7 +315,7 @@ export interface Conversation {
 }
 
 export function generateConversationId(): string {
-  return `conv-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  return `conv-${Math.random().toString(36).slice(2, 12)}`
 }
 
 export function generateTitle(firstMessage: string): string {

@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 
 export function validateWorktreePath(worktreePath: string): void {
-  if (!worktreePath.startsWith('/tmp/br-')) {
+  if (!worktreePath.startsWith('/tmp/sc-')) {
     throw createError({ statusCode: 403, message: 'Invalid worktree path' })
   }
   if (!existsSync(worktreePath)) {

@@ -1311,6 +1311,7 @@ export const useChatStore = defineStore('chat', () => {
           baseBranch,
           worktreePath: conv.worktreePath,
           worktreeBranch: conv.worktreeBranch,
+          previewBranch: conv.previewBranch,
         },
       })
 
@@ -1461,7 +1462,14 @@ export const useChatStore = defineStore('chat', () => {
       const conv = conversations.value.find(c => c.id === conversationId)
       const res = await $fetch<FinalizeResponse>(endpoint, {
         method: 'POST',
-        body: { conversationId, commitMessage, baseBranch, worktreePath, worktreeBranch: conv?.worktreeBranch },
+        body: {
+          conversationId,
+          commitMessage,
+          baseBranch,
+          worktreePath,
+          worktreeBranch: conv?.worktreeBranch,
+          previewBranch: conv?.previewBranch,
+        },
       })
 
       if (res.success) {

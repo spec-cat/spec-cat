@@ -37,7 +37,7 @@ paths:
     post:
       summary: Create an isolated worktree for a conversation
       description: |
-        Creates a git worktree at /tmp/br-{conversationId}
+        Creates a git worktree at /tmp/sc-{conversationId}
         for isolated agent execution.
       operationId: createWorktree
       requestBody:
@@ -102,7 +102,7 @@ paths:
     post:
       summary: Start preview of conversation worktree
       description: |
-        Creates a temporary preview branch (br/p-{conversationId})
+        Creates a temporary preview branch (sc/preview)
         from the worktree HEAD and checks it out in the main worktree.
         Only one preview can be active at a time (enforced client-side via
         previewingConversationId in the store).
@@ -290,7 +290,7 @@ components:
           type: boolean
         previewBranch:
           type: string
-          description: Name of the created preview branch (br/p-{id})
+          description: Name of the created preview branch (sc/preview)
         commit:
           type: string
           description: Worktree HEAD commit hash

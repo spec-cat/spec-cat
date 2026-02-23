@@ -44,10 +44,10 @@ onMounted(async () => {
     try {
       const res = await $fetch<{ branches: Array<{ name: string; isRemote: boolean }> }>('/api/git/branches')
       branches.value = res.branches
-        .filter(b => !b.isRemote && !b.name.startsWith('br/') && !b.name.startsWith('br/p-'))
+        .filter(b => !b.isRemote && !b.name.startsWith('sc/'))
         .map(b => b.name)
 
-      // If the stored baseBranch was filtered out (e.g. a br/conv-xxx branch),
+      // If the stored baseBranch was filtered out (e.g. a sc/conv-xxx branch),
       // reset targetBranch to a valid branch from the list
       if (branches.value.length > 0 && !branches.value.includes(targetBranch.value)) {
         targetBranch.value = branches.value.includes('main')

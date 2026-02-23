@@ -3,7 +3,7 @@
  * Create a temporary preview branch from the worktree HEAD and
  * checkout it in the main worktree so the user can test locally.
  *
- * Naming convention: br/p-{conversationId}
+ * Naming convention: sc/preview
  * This branch is cleaned up on finalize or explicit unpreview.
  */
 
@@ -36,7 +36,7 @@ export default defineEventHandler(async (event) => {
 
   const { conversationId, worktreePath, baseBranch } = body
   const projectDir = getProjectDir()
-  const previewBranch = `br/p-${conversationId}`
+  const previewBranch = 'sc/preview'
 
   logger.chat.info('Creating preview branch', { conversationId, previewBranch })
 

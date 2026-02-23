@@ -12,12 +12,12 @@ Chat Worktree Integration provides per-conversation git worktree isolation, enab
 
 **Language/Version**: TypeScript 5.6+ with Nuxt 3 (v3.16+), Vue 3 (v3.5+)
 **Primary Dependencies**: Pinia (v2.2+), @heroicons/vue, git CLI (child_process), chokidar
-**Storage**: localStorage (`spec-cat-conversations` key for conversation persistence including worktree fields), git branches/worktrees on filesystem (`/tmp/br-*`)
+**Storage**: localStorage (`spec-cat-conversations` key for conversation persistence including worktree fields), git branches/worktrees on filesystem (`/tmp/sc-*`)
 **Testing**: Manual testing (per constitution)
 **Target Platform**: Linux (local development server)
 **Project Type**: Web application (Nuxt 3 full-stack — SSR frontend + Nitro server)
 **Performance Goals**: Git operations < 2s for typical repos; auto-commit and preview-sync must complete before next turn starts
-**Constraints**: `/tmp` directory must be writable; git must be available on PATH; worktree paths restricted to `/tmp/br-*` for safety
+**Constraints**: `/tmp` directory must be writable; git must be available on PATH; worktree paths restricted to `/tmp/sc-*` for safety
 **Scale/Scope**: Single-developer tool, up to 100 concurrent conversations (MAX_CONVERSATIONS), each with its own worktree
 
 ## Constitution Check
@@ -112,7 +112,7 @@ types/
 | FR-001 | Auto-create worktree per conversation | data-model.md §Conversation, contracts/worktree-api.md §POST /api/chat/worktree | server/api/chat/worktree.post.ts |
 | FR-001a | Feature-originated branch naming | contracts/worktree-api.md §POST /api/chat/worktree | server/api/chat/worktree.post.ts |
 | FR-001b | Feature branch uniqueness validation | contracts/worktree-api.md §POST /api/chat/worktree | server/api/chat/worktree.post.ts, stores/chat.ts |
-| FR-002 | Branch naming `br/{conversationId}` | data-model.md §Branch Naming | server/api/chat/worktree.post.ts |
+| FR-002 | Branch naming `sc/{conversationId}` | data-model.md §Branch Naming | server/api/chat/worktree.post.ts |
 | FR-003 | Auto-commit after streaming turn | contracts/worktree-api.md §POST /api/chat/worktree-commit | composables/useChatStream.ts, server/api/chat/worktree-commit.post.ts |
 | FR-004 | Preview mode (Eye icon) | contracts/worktree-api.md §POST /api/chat/preview | components/chat/ChatPanel.vue, stores/chat.ts |
 | FR-005 | Auto-sync preview to latest HEAD | contracts/worktree-api.md §POST /api/chat/preview-sync | composables/useChatStream.ts, server/api/chat/preview-sync.post.ts |

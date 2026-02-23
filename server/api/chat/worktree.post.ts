@@ -28,11 +28,11 @@ export default defineEventHandler(async (event) => {
   const providerSessionId = featureId ? specState[featureId]?.sessionId : undefined
 
   // Feature-originated conversations use the featureId as branch name (e.g. "001-auth")
-  // New chat conversations keep the original br/conv-xxx pattern
-  const branchName = featureId || `br/${conversationId}`
+  // New chat conversations use sc/conv-xxx branches
+  const branchName = featureId || `sc/${conversationId}`
   const worktreePath = featureId
-    ? `/tmp/br-${featureId}-${conversationId}`
-    : `/tmp/br-${conversationId}`
+    ? `/tmp/sc-${featureId}-${conversationId}`
+    : `/tmp/sc-${conversationId}`
 
   logger.chat.info('Creating chat worktree', { conversationId, branchName, worktreePath })
 
@@ -43,7 +43,7 @@ export default defineEventHandler(async (event) => {
       const { stdout: baseBranchRaw } = await execAsync('git rev-parse --abbrev-ref HEAD', { cwd: projectDir })
       baseBranch = baseBranchRaw.trim()
     }
-    if (baseBranch.startsWith('br/') || baseBranch.startsWith('br/p-')) {
+    if (baseBranch.startsWith('sc/')) {
       return {
         success: false,
         error: `Invalid base branch "${baseBranch}"`,

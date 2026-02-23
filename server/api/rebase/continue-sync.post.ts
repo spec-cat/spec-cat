@@ -28,7 +28,7 @@ export default defineEventHandler(async (event): Promise<FinalizeResponse> => {
   }
 
   const { conversationId } = body
-  const worktreePath = body.worktreePath || `/tmp/br-${conversationId}`
+  const worktreePath = body.worktreePath || `/tmp/sc-${conversationId}`
 
   if (!existsSync(worktreePath)) {
     return { success: false, error: 'Worktree directory not found.' }

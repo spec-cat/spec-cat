@@ -74,7 +74,7 @@ interface Conversation {
 
 // Example
 const conversation: Conversation = {
-  id: 'conv-1706871234567-x7k9m2',
+  id: 'conv-8f3k2m9p0a',
   title: 'Help me refactor the authentication module',
   messages: [/* ChatMessage[] */],
   createdAt: '2026-02-02T10:00:00.000Z',
@@ -94,7 +94,7 @@ const conversation: Conversation = {
 **ID Generation**:
 ```typescript
 function generateConversationId(): string {
-  return `conv-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  return `conv-${Math.random().toString(36).slice(2, 12)}`
 }
 ```
 
@@ -218,7 +218,7 @@ const storedData: StoredConversations = {
   version: 1,
   conversations: [
     {
-      id: 'conv-1706871234567-x7k9m2',
+      id: 'conv-8f3k2m9p0a',
       title: 'Refactor authentication module',
       messages: [
         { id: 'msg-1', role: 'user', content: 'Help me refactor...', timestamp: '...' },

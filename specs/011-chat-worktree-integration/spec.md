@@ -26,7 +26,7 @@ As a developer, I want each conversation to have its own isolated worktree so th
 
 **Acceptance Scenarios**:
 
-1. **Given** I start a new conversation, **When** Claude makes its first change, **Then** an isolated worktree is created at `/tmp/br-{conversationId}`.
+1. **Given** I start a new conversation, **When** Claude makes its first change, **Then** an isolated worktree is created at `/tmp/sc-{conversationId}`.
 2. **Given** a conversation has a worktree, **When** I click the Preview button (Eye icon), **Then** the worktree's changes are checked out in my main workspace for testing.
 3. **Given** preview is active, **When** Claude makes more changes, **Then** the preview branch auto-syncs to the latest.
 4. **Given** I'm satisfied, **When** I click Finalize, **Then** a confirmation dialog shows with a branch selector (defaulting to the conversation's base branch) where I can choose a different target branch, all commits are squashed, rebased onto the selected target branch, the worktree is cleaned up, and the conversation is marked as "finalized" (read-only).
@@ -71,10 +71,10 @@ As a developer, I want to see which conversation (worktree) is currently being p
 ### Functional Requirements
 
 #### Worktree Lifecycle
-- **FR-001**: System MUST auto-create isolated worktree per conversation — regular: `/tmp/br-{conversationId}`, feature-originated: `/tmp/br-{featureId}-{conversationId}`
+- **FR-001**: System MUST auto-create isolated worktree per conversation — regular: `/tmp/sc-{conversationId}`, feature-originated: `/tmp/sc-{featureId}-{conversationId}`
 - **FR-001a**: Feature-originated conversations MUST use featureId as branch name (e.g., `001-auth`)
 - **FR-001b**: Feature-originated conversations MUST validate branch uniqueness BEFORE creating the conversation — if the feature branch already exists, the conversation MUST NOT be created and the user MUST see an error toast
-- **FR-002**: System MUST use branch naming — regular: `br/{conversationId}`, feature-originated: `{featureId}`
+- **FR-002**: System MUST use branch naming — regular: `sc/{conversationId}`, feature-originated: `{featureId}`
 - **FR-024**: System MUST provide a base-branch selector when creating a new conversation. The selected branch MUST be passed to worktree creation and stored as the conversation's `baseBranch`.
 - **FR-003**: System MUST auto-commit changes in worktree after each streaming turn (using `git add -A` to capture all changes including new files, respecting `.gitignore`)
 - **FR-004**: System MUST provide Preview mode — checkout worktree HEAD in main worktree for testing. Preview toggle is available via the Eye/EyeSlash icon in the chat panel header. In the conversation list, previewing conversations are indicated by a red-tinted background (no separate eye icon button).
@@ -84,10 +84,10 @@ As a developer, I want to see which conversation (worktree) is currently being p
 - **FR-006b**: Finalize MUST detect conflicts and return conflicting file list (preserving worktree)
 - **FR-006c**: After a failed finalize (conflicts), the user MUST be able to retry finalize — the system re-attempts squash/rebase against the current base branch HEAD
 - **FR-006d**: Finalize confirmation dialog MUST provide a generate button (SparklesIcon) on the right side of the commit message textarea — clicking it calls AI (Claude Haiku) to summarize the worktree's commit history and diff into a conventional commit message, which is filled into the textarea for user editing
-- **FR-006e**: Finalize confirmation dialog MUST allow the user to change the target base branch — a dropdown (select) populated with all local branches (fetched from `/api/git/branches`), defaulting to the conversation's current `baseBranch`. The selected branch is used as the finalize target (squash+rebase destination). Worktree branches (`br/` prefix) and preview branches (`br/p-` prefix) MUST be excluded from the dropdown.
+- **FR-006e**: Finalize confirmation dialog MUST allow the user to change the target base branch — a dropdown (select) populated with all local branches (fetched from `/api/git/branches`), defaulting to the conversation's current `baseBranch`. The selected branch is used as the finalize target (squash+rebase destination). Worktree branches (`sc/` prefix) and the preview branch (`sc/preview`) MUST be excluded from the dropdown.
 - **FR-006f**: If the conversation worktree HEAD equals the base branch HEAD (ahead=0, behind=0), the Finalize and Rebase buttons MUST be hidden.
 - **FR-022**: System MUST provide a Rebase confirmation dialog when the Rebase button (ArrowPathIcon) is clicked
-- **FR-022a**: Rebase confirmation dialog MUST display a target base branch dropdown populated with all local branches (fetched from `/api/git/branches`), excluding worktree branches (`br/` prefix) and preview branches (`br/p-` prefix)
+- **FR-022a**: Rebase confirmation dialog MUST display a target base branch dropdown populated with all local branches (fetched from `/api/git/branches`), excluding worktree branches (`sc/` prefix) and the preview branch (`sc/preview`)
 - **FR-022b**: Rebase confirmation dialog MUST default the dropdown selection to the conversation's current `baseBranch`
 - **FR-022c**: Rebase confirmation dialog MUST display the worktree branch name and commit count summary
 - **FR-022d**: When the user changes the selected target branch, the commit count MUST update to reflect the ahead/behind status against the newly selected branch

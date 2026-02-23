@@ -7,7 +7,7 @@
 
 ### 1. Git Worktree Isolation for Per-Conversation Branches
 
-**Decision**: Use `git worktree add -b <branch> <path> <start-point>` to create isolated worktrees in `/tmp/br-*`.
+**Decision**: Use `git worktree add -b <branch> <path> <start-point>` to create isolated worktrees in `/tmp/sc-*`.
 
 **Rationale**:
 - Git worktrees provide true filesystem isolation — each conversation has its own working directory with independent staging area and HEAD.
@@ -24,16 +24,16 @@
 
 ### 2. Branch Naming Convention
 
-**Decision**: `br/{conversationId}` for regular conversations; `{featureId}` (e.g., `001-auth`) for feature-originated conversations.
+**Decision**: `sc/{conversationId}` for regular conversations; `{featureId}` (e.g., `001-auth`) for feature-originated conversations.
 
 **Rationale**:
-- The `br/` prefix namespaces conversation branches, avoiding collision with feature branches or user branches.
+- The `sc/` prefix namespaces conversation branches, avoiding collision with feature branches or user branches.
 - Feature-originated conversations use the featureId directly because the branch represents the feature itself and may be pushed upstream.
-- Preview branches use `br/p-{conversationId}` — the `p-` prefix distinguishes preview from working branches.
+- Preview uses a single shared branch: `sc/preview`.
 
 **Alternatives considered**:
 - **Flat naming (no prefix)**: Rejected — risk of collision with existing branches.
-- **`conv/` prefix**: Rejected — `br/` is shorter and already established in the codebase.
+- **`conv/` prefix**: Rejected — `sc/` is shorter and already established in the codebase.
 
 ---
 
@@ -56,7 +56,7 @@
 
 ### 4. Preview Mechanism (Temporary Branch + update-ref)
 
-**Decision**: Create a temporary preview branch `br/p-{conversationId}` in the main worktree, then use `git update-ref` to sync it to the worktree's HEAD after each turn.
+**Decision**: Create a temporary preview branch `sc/preview` in the main worktree, then use `git update-ref` to sync it to the worktree's HEAD after each turn.
 
 **Rationale**:
 - Checking out a branch in the main worktree (vs. the isolated worktree) lets the user test changes with their local dev tools, IDE, and browser.
@@ -138,10 +138,10 @@
 
 ### 9. Path Security (validateWorktree.ts)
 
-**Decision**: All worktree paths must start with `/tmp/br-`. File paths within worktrees are validated against path traversal attacks.
+**Decision**: All worktree paths must start with `/tmp/sc-`. File paths within worktrees are validated against path traversal attacks.
 
 **Rationale**:
-- Restricting to `/tmp/br-*` prevents accidental deletion or modification of non-worktree directories.
+- Restricting to `/tmp/sc-*` prevents accidental deletion or modification of non-worktree directories.
 - Path traversal validation (rejecting `..`, absolute paths outside worktree) prevents reading/writing files outside the worktree.
 - These checks run server-side before any git or filesystem operation.
 

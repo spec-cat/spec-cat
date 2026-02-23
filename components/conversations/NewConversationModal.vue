@@ -31,7 +31,7 @@ async function loadBranches() {
   try {
     const res = await $fetch<BranchResponse>('/api/git/branches')
     const localBranches = res.branches
-      .filter(b => !b.isRemote && !b.name.startsWith('br/') && !b.name.startsWith('br/p-'))
+      .filter(b => !b.isRemote && !b.name.startsWith('sc/'))
       .map(b => b.name)
 
     branches.value = localBranches

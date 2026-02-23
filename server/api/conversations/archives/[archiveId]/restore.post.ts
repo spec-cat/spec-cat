@@ -16,10 +16,6 @@ const MAX_CONVERSATIONS = 100
 const DEFAULTS: StoredConversations = { version: 2, conversations: [], archivedConversations: [] }
 const execAsync = promisify(exec)
 
-function randomSuffix(length = 6): string {
-  return Math.random().toString(36).slice(2, 2 + length)
-}
-
 export default defineEventHandler(async (event) => {
   const archiveId = getRouterParam(event, 'archiveId')
   const body: { baseBranch?: string } =
@@ -55,16 +51,15 @@ export default defineEventHandler(async (event) => {
   const now = new Date().toISOString()
   const projectDir = getProjectDir()
   const restoredId = generateConversationId()
-  const suffix = randomSuffix()
-  const worktreeBranch = `br/${restoredId}-${suffix}`
-  const worktreePath = `/tmp/br-${restoredId}-${suffix}`
+  const worktreeBranch = `sc/${restoredId}`
+  const worktreePath = `/tmp/sc-${restoredId}`
 
   let baseBranch = body.baseBranch?.trim() || ''
   if (!baseBranch) {
     const { stdout: baseBranchRaw } = await execAsync('git rev-parse --abbrev-ref HEAD', { cwd: projectDir })
     baseBranch = baseBranchRaw.trim()
   }
-  if (baseBranch.startsWith('br/') || baseBranch.startsWith('br/p-')) {
+  if (baseBranch.startsWith('sc/')) {
     throw createError({ statusCode: 400, message: `Invalid base branch "${baseBranch}"` })
   }
 

@@ -45,7 +45,7 @@ export default defineEventHandler(async (event): Promise<FinalizeResponse> => {
 
   const { conversationId } = body
   const projectDir = getProjectDir()
-  const worktreePath = body.worktreePath || `/tmp/br-${conversationId}`
+  const worktreePath = body.worktreePath || `/tmp/sc-${conversationId}`
 
   // Resolve base branch
   let baseBranch = body.baseBranch

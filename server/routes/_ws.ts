@@ -453,7 +453,7 @@ async function runProvider(peer: any, state: PeerState, msg: ChatMessage, isRetr
   }
 
   // Recover worktree if /tmp was wiped (e.g. after reboot)
-  if (workingDirectory.startsWith('/tmp/br-') && !existsSync(workingDirectory)) {
+  if (workingDirectory.startsWith('/tmp/sc-') && !existsSync(workingDirectory)) {
     const result = await ensureChatWorktree(projectDir, workingDirectory, msg.worktreeBranch)
     if (result.recovered) {
       peer.send(JSON.stringify({ type: 'worktree_recovered' }))

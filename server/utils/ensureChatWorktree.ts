@@ -10,7 +10,7 @@ import { existsSync } from 'node:fs'
 
 const execAsync = promisify(exec)
 
-const WORKTREE_PREFIX = '/tmp/br-'
+const WORKTREE_PREFIX = '/tmp/sc-'
 
 interface RecoveryResult {
   recovered: boolean
@@ -22,9 +22,9 @@ interface RecoveryResult {
  * git branch if the directory was deleted (e.g. after reboot).
  *
  * @param projectDir - The main project git repo directory
- * @param worktreePath - The expected worktree path (e.g. /tmp/br-abc123)
+ * @param worktreePath - The expected worktree path (e.g. /tmp/sc-abc123)
  * @param knownBranch - Optional branch name when it can't be derived from path
- *                      (e.g. feature-based paths like /tmp/br-001-feature-conv-xxx)
+ *                      (e.g. feature-based paths like /tmp/sc-001-feature-conv-xxx)
  * @returns Whether recovery was performed or an error occurred
  */
 export async function ensureChatWorktree(
@@ -43,16 +43,16 @@ export async function ensureChatWorktree(
   }
 
   // Use known branch if provided, otherwise derive from path:
-  // /tmp/br-{convId} → br/{convId}
+  // /tmp/sc-{convId} → sc/{convId}
   let branchName: string
   if (knownBranch) {
     branchName = knownBranch
   } else {
-    const convId = worktreePath.slice(WORKTREE_PREFIX.length) // e.g. "conv-1234567890"
+    const convId = worktreePath.slice(WORKTREE_PREFIX.length) // e.g. "conv-abc123xyz"
     if (!convId) {
       return { recovered: false, error: `Cannot derive branch name from worktree path: ${worktreePath}` }
     }
-    branchName = `br/${convId}`
+    branchName = `sc/${convId}`
   }
 
   try {

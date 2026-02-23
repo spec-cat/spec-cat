@@ -343,7 +343,7 @@ export const WARN_CONVERSATIONS_THRESHOLD = 80
  * Utility function to generate unique conversation ID (T035)
  */
 export function generateConversationId(): string {
-  return `conv-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
+  return `conv-${Math.random().toString(36).slice(2, 12)}`
 }
 
 export function generateArchivedConversationId(): string {
@@ -435,6 +435,7 @@ export interface FinalizeRequest {
   baseBranch?: string
   worktreePath?: string
   worktreeBranch?: string
+  previewBranch?: string
 }
 
 /**
@@ -484,6 +485,7 @@ export interface RebaseContinueRequest {
   baseBranch?: string
   worktreePath?: string
   worktreeBranch?: string
+  previewBranch?: string
 }
 
 export interface RebaseSyncRequest {

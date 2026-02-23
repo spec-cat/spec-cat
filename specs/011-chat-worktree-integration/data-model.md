@@ -32,12 +32,12 @@
 
 Filesystem
 ┌──────────────────────────────────────────────┐
-│ /tmp/br-{conversationId}/                     │  ← Worktree directory
+│ /tmp/sc-{conversationId}/                     │  ← Worktree directory
 │   (full git working tree with own .git link)  │
 │                                               │
 │ Git refs:                                     │
-│   br/{conversationId}     ← Working branch    │
-│   br/p-{conversationId}   ← Preview branch    │
+│   sc/{conversationId}     ← Working branch    │
+│   sc/preview   ← Preview branch    │
 │   {featureId}             ← Feature branch    │
 └──────────────────────────────────────────────┘
 ```
@@ -64,11 +64,11 @@ interface Conversation {
   providerSessionId?: string      // For session resumption
 
   // --- Worktree fields (011-chat-worktree-integration) ---
-  worktreePath?: string           // e.g., /tmp/br-conv-1234567890-x7k9m2
-  worktreeBranch?: string         // e.g., br/conv-1234567890-x7k9m2 or 001-auth
+  worktreePath?: string           // e.g., /tmp/sc-conv-8f3k2m9p0a
+  worktreeBranch?: string         // e.g., sc/conv-8f3k2m9p0a or 001-auth
   hasWorktree?: boolean           // Whether worktree has been created
   baseBranch?: string             // Branch at worktree creation time (e.g., main)
-  previewBranch?: string          // Preview branch name (e.g., br/p-conv-1234567890-x7k9m2)
+  previewBranch?: string          // Preview branch name (e.g., sc/preview)
   featureId?: string              // Associated feature ID (e.g., "001-auth")
   finalized?: boolean             // True after successful finalize (read-only)
   autoMode?: boolean              // Created by Auto Mode (013-auto-mode)
@@ -76,11 +76,11 @@ interface Conversation {
 ```
 
 **Validation Rules**:
-- `worktreePath`: Must start with `/tmp/br-` if present. Auto-set by server on worktree creation.
-- `worktreeBranch`: Set by server. For feature conversations: `{featureId}`. For regular: `br/{conversationId}`.
+- `worktreePath`: Must start with `/tmp/sc-` if present. Auto-set by server on worktree creation.
+- `worktreeBranch`: Set by server. For feature conversations: `{featureId}`. For regular: `sc/{conversationId}`.
 - `hasWorktree`: Set to `true` after successful worktree creation. Never set back to `false` (worktree may be recoverable).
 - `baseBranch`: Captured at worktree creation time. Used for rebase and finalize operations.
-- `previewBranch`: Set when preview is created (`br/p-{conversationId}`). Cleared when preview ends.
+- `previewBranch`: Set when preview is created (`sc/preview`). Cleared when preview ends.
 - `featureId`: Set at conversation creation time for feature-originated conversations.
 - `finalized`: Set to `true` after successful finalize. Makes conversation read-only (no further messages).
 
@@ -94,16 +94,16 @@ interface Conversation {
 // Branch naming patterns
 
 // Regular conversation worktree branch
-const worktreeBranch = `br/${conversationId}`
-// Example: br/conv-1706871234567-x7k9m2
+const worktreeBranch = `sc/${conversationId}`
+// Example: sc/conv-8f3k2m9p0a
 
 // Feature-originated worktree branch
 const worktreeBranch = featureId
 // Example: 001-auth
 
 // Preview branch (temporary)
-const previewBranch = `br/p-${conversationId}`
-// Example: br/p-conv-1706871234567-x7k9m2
+const previewBranch = `sc/preview`
+// Example: sc/preview
 ```
 
 ---
@@ -114,12 +114,12 @@ const previewBranch = `br/p-${conversationId}`
 // Worktree directory paths
 
 // Regular conversation
-const worktreePath = `/tmp/br-${conversationId}`
-// Example: /tmp/br-conv-1706871234567-x7k9m2
+const worktreePath = `/tmp/sc-${conversationId}`
+// Example: /tmp/sc-conv-8f3k2m9p0a
 
 // Feature-originated conversation
-const worktreePath = `/tmp/br-${featureId}-${conversationId}`
-// Example: /tmp/br-001-auth-conv-1706871234567-x7k9m2
+const worktreePath = `/tmp/sc-${featureId}-${conversationId}`
+// Example: /tmp/sc-001-auth-conv-8f3k2m9p0a
 ```
 
 ---
@@ -193,8 +193,8 @@ interface FinalizeRequest {
   conversationId: string
   commitMessage: string
   baseBranch?: string             // Auto-detected from main/master if not provided
-  worktreePath?: string           // Defaults to /tmp/br-{conversationId}; feature-originated: /tmp/br-{featureId}-{conversationId}
-  worktreeBranch?: string         // Defaults to br/{conversationId}; feature-originated: {featureId}
+  worktreePath?: string           // Defaults to /tmp/sc-{conversationId}; feature-originated: /tmp/sc-{featureId}-{conversationId}
+  worktreeBranch?: string         // Defaults to sc/{conversationId}; feature-originated: {featureId}
 }
 
 interface FinalizeResponse {
@@ -241,7 +241,7 @@ async function ensureChatWorktree(
 ```
 
 **Recovery Flow**:
-1. Check if `worktreePath` starts with `/tmp/br-`
+1. Check if `worktreePath` starts with `/tmp/sc-`
 2. If directory exists → no recovery needed, return
 3. Derive branch name from path (or use `knownBranch`)
 4. Run `git worktree prune` to clear stale entries
@@ -324,12 +324,12 @@ localStorage                  Git Repository (filesystem)
      ▼                              ▼
 ┌────────────────┐          ┌───────────────────┐
 │ Conversation   │──────────│ Worktree          │
-│ (client state) │ creates/ │ /tmp/br-{id}/     │
+│ (client state) │ creates/ │ /tmp/sc-{id}/     │
 │                │ recovers │                   │
 │ .worktreePath ─┤──────────│ .git (link)       │
-│ .worktreeBranch├──────────│ branch: br/{id}   │
+│ .worktreeBranch├──────────│ branch: sc/{id}   │
 │ .baseBranch   ─┤──────────│ base: main        │
-│ .previewBranch ├──────────│ preview: br/p-{id}│
+│ .previewBranch ├──────────│ preview: sc/preview│
 └────────────────┘          └───────────────────┘
         │                           │
         │ references                │ checkout in
@@ -338,7 +338,7 @@ localStorage                  Git Repository (filesystem)
 │ PreviewState   │──────────│ Main Worktree     │
 │ (runtime)      │ checks   │ (user's workspace)│
 │                │ out in   │                   │
-│ .previewingId  │          │ HEAD → br/p-{id}  │
+│ .previewingId  │          │ HEAD → sc/preview  │
 └────────────────┘          └───────────────────┘
         │
         │ drives UI
