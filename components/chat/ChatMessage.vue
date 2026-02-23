@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import type { ChatMessage, ChatImageAttachment, ContentBlock, TextBlock, ToolResultBlock } from '~/types/chat'
+import type {
+  ChatMessage,
+  ChatImageAttachment,
+  ContentBlock,
+  TextBlock,
+  ThinkingBlock,
+  ToolResultBlock,
+} from '~/types/chat'
 import { hasContentBlocks } from '~/types/chat'
 import { UserIcon, CpuChipIcon } from '@heroicons/vue/24/outline'
 import { useMarkdown } from '~/composables/useMarkdown'
@@ -42,6 +49,12 @@ const renderableBlocks = computed(() => {
       const prevText = (prev as TextBlock).text || ''
       const nextText = block.text || ''
       ;(prev as TextBlock).text = `${prevText}${nextText}`
+      continue
+    }
+    if (prev?.type === 'thinking' && block.type === 'thinking') {
+      const prevThinking = (prev as ThinkingBlock).thinking || ''
+      const nextThinking = block.thinking || ''
+      ;(prev as ThinkingBlock).thinking = `${prevThinking}${nextThinking}`
       continue
     }
     merged.push({ ...block })

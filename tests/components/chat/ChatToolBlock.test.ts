@@ -1,6 +1,7 @@
 // @vitest-environment nuxt
 import { describe, it, expect } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
+import type { VueWrapper } from '@vue/test-utils'
 import ChatToolBlock from '~/components/chat/ChatToolBlock.vue'
 import type { ToolUseBlock, ToolResultBlock } from '~/types/chat'
 
@@ -15,6 +16,11 @@ function makeToolBlock(overrides: Partial<ToolUseBlock> = {}): ToolUseBlock {
     status: 'complete',
     ...overrides,
   }
+}
+
+async function ensureExpanded(wrapper: VueWrapper<any>, mustContain: string) {
+  if (wrapper.text().includes(mustContain)) return
+  await wrapper.find('button').trigger('click')
 }
 
 describe('ChatToolBlock', () => {
@@ -44,7 +50,7 @@ describe('ChatToolBlock', () => {
     const wrapper = await mountSuspended(ChatToolBlock, { props: { block } })
     expect(wrapper.text()).toContain('Write notes.md')
 
-    await wrapper.find('button').trigger('click')
+    await ensureExpanded(wrapper, 'New Content')
     expect(wrapper.text()).toContain('New Content')
     expect(wrapper.text()).toContain('Truncated preview')
   })
@@ -62,7 +68,7 @@ describe('ChatToolBlock', () => {
     const wrapper = await mountSuspended(ChatToolBlock, { props: { block } })
     expect(wrapper.text()).toContain('Edit server/api.ts')
 
-    await wrapper.find('button').trigger('click')
+    await ensureExpanded(wrapper, 'Before')
     expect(wrapper.text()).toContain('Before')
     expect(wrapper.text()).toContain('const a = 1')
     expect(wrapper.text()).toContain('After')
@@ -88,7 +94,7 @@ describe('ChatToolBlock', () => {
       type: 'tool_result',
       toolUseId: 'tool-1',
       isError: false,
-      content: 'a\nb\nc\nd\n',
+      content: 'a\nb\nc\nd\ne\nf\ng\n',
     }
 
     const wrapper = await mountSuspended(ChatToolBlock, { props: { block, result } })
@@ -119,7 +125,7 @@ describe('ChatToolBlock', () => {
     const wrapper = await mountSuspended(ChatToolBlock, { props: { block } })
     expect(wrapper.text()).toContain('Which metric scope should we ship first?')
 
-    await wrapper.find('button').trigger('click')
+    await ensureExpanded(wrapper, 'Clarification Prompt')
     expect(wrapper.text()).toContain('Clarification Prompt')
     expect(wrapper.text()).toContain('Clarification 1/5')
     expect(wrapper.text()).toContain('Which metric scope should we ship first?')
@@ -143,11 +149,39 @@ describe('ChatToolBlock', () => {
     const wrapper = await mountSuspended(ChatToolBlock, { props: { block } })
     expect(wrapper.text()).toContain('How should sold-out status be determined?')
 
-    await wrapper.find('button').trigger('click')
+    await ensureExpanded(wrapper, 'Clarification Prompt')
     expect(wrapper.text()).toContain('Clarification Prompt')
     expect(wrapper.text()).toContain('Clarification 2/5')
     expect(wrapper.text()).toContain('How should sold-out status be determined?')
     expect(wrapper.text()).toContain('A')
     expect(wrapper.text()).toContain('stock <= 0')
+  })
+
+  it('renders unified diff output with change stats', async () => {
+    const block = makeToolBlock({ name: 'Edit', input: { file_path: 'src/main.ts' } })
+    const result: ToolResultBlock = {
+      id: 'res-2',
+      type: 'tool_result',
+      toolUseId: 'tool-1',
+      isError: false,
+      content: [
+        'diff --git a/src/main.ts b/src/main.ts',
+        'index 123..456 100644',
+        '--- a/src/main.ts',
+        '+++ b/src/main.ts',
+        '@@ -1,2 +1,2 @@',
+        '-const x = 1',
+        '+const x = 2',
+        ' console.log(x)',
+      ].join('\n'),
+    }
+
+    const wrapper = await mountSuspended(ChatToolBlock, { props: { block, result } })
+    expect(wrapper.text()).toContain('Diff')
+    expect(wrapper.text()).toContain('+1')
+    expect(wrapper.text()).toContain('-1')
+
+    await wrapper.find('button.text-retro-cyan').trigger('click')
+    expect(wrapper.text()).toContain('const x = 2')
   })
 })

@@ -4,6 +4,7 @@ import { useAutoScroll } from '~/composables/useAutoScroll'
 import { useVirtualMessageList } from '~/composables/useVirtualMessageList'
 import ChatMessage from './ChatMessage.vue'
 import { ExclamationCircleIcon } from '@heroicons/vue/24/outline'
+import type { ChatMessage as ChatMessageType, ContentBlock } from '~/types/chat'
 
 const chatStore = useChatStore()
 const { containerRef, onScroll, maybeScrollToBottom, scrollToBottom, forceScrollToBottom } = useAutoScroll()
@@ -36,6 +37,32 @@ const lastMessageStatus = computed(() => {
   return last.status
 })
 const hasAppliedInitialBottom = ref(false)
+
+function contentBlockRenderSignature(message: ChatMessageType): string {
+  const blocks = message.contentBlocks
+  if (!blocks || blocks.length === 0) return ''
+
+  return blocks
+    .map((block: ContentBlock) => {
+      switch (block.type) {
+        case 'tool_use':
+          return `u:${block.id}:${block.status}:${block.inputSummary}`
+        case 'tool_result':
+          return `r:${block.id}:${block.toolUseId}:${block.isError ? 1 : 0}:${block.content.length}`
+        case 'text':
+          return `t:${block.id}:${block.text.length}`
+        case 'thinking':
+          return `k:${block.id}:${block.thinking.length}`
+        case 'result_summary':
+          return `s:${block.id}:${block.numTurns}:${block.durationMs}`
+        case 'session_init':
+          return `i:${block.id}:${block.model}:${block.tools.length}`
+        default:
+          return `${block.type}:${block.id}`
+      }
+    })
+    .join('|')
+}
 
 // On mount (panel just opened), scroll instantly — no animation
 onMounted(() => {
@@ -131,6 +158,7 @@ watch(
                 item.message.status,
                 item.message.content,
                 item.message.contentBlocks?.length || 0,
+                contentBlockRenderSignature(item.message),
                 item.message.tools?.length || 0,
               ]"
               :message="item.message"

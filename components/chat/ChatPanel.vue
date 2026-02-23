@@ -14,7 +14,6 @@ import {
   CheckCircleIcon,
   EyeIcon,
   EyeSlashIcon,
-  ArrowPathIcon,
   ArrowsPointingOutIcon,
   ArrowsPointingInIcon,
   BugAntIcon,
@@ -257,7 +256,38 @@ function handleRebaseCancel() {
           title="Rebase: sync worktree onto target base branch"
           @click="handleRebaseClick"
         >
-          <ArrowPathIcon class="w-4 h-4 text-retro-purple" />
+          <svg
+            class="w-4 h-4 text-retro-purple"
+            viewBox="0 0 24 24"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            aria-hidden="true"
+          >
+            <circle cx="7" cy="4.5" r="1.5" fill="currentColor" />
+            <circle cx="18" cy="20" r="1.5" fill="currentColor" />
+            <circle cx="12" cy="7" r="1.4" fill="currentColor" opacity="0.9" />
+            <path
+              d="M7 6V16M7 16L4.5 13.5M7 16L9.5 13.5"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+            <path
+              d="M8.4 7H12.5C15.5376 7 18 9.46243 18 12.5V18.5"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+            <path
+              d="M15.5 16L18 18.5L20.5 16"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
         </button>
 
         <!-- Finalize button -->

@@ -2,8 +2,29 @@
 import type { ThinkingBlock } from '~/types/chat'
 import { ChevronRightIcon } from '@heroicons/vue/24/outline'
 
-defineProps<{ block: ThinkingBlock }>()
+const props = defineProps<{ block: ThinkingBlock }>()
 const expanded = ref(false)
+
+const lineCount = computed(() => props.block.thinking.split('\n').length)
+const shouldStartExpanded = computed(() => (
+  props.block.thinking.length > 0
+  && props.block.thinking.length <= 240
+  && lineCount.value <= 6
+))
+
+const preview = computed(() => {
+  const compact = props.block.thinking.replace(/\s+/g, ' ').trim()
+  if (!compact) return ''
+  return compact.length > 140 ? `${compact.slice(0, 140)}...` : compact
+})
+
+watch(
+  () => props.block.id,
+  () => {
+    expanded.value = shouldStartExpanded.value
+  },
+  { immediate: true }
+)
 </script>
 
 <template>
@@ -17,8 +38,14 @@ const expanded = ref(false)
         :class="{ 'rotate-90': expanded }"
       />
       <span class="text-retro-yellow">Thinking</span>
+      <span
+        v-if="!expanded && preview"
+        class="text-retro-muted/80 truncate min-w-0"
+      >
+        {{ preview }}
+      </span>
       <span class="ml-auto text-retro-muted/60 text-[10px]">
-        {{ block.thinking.length }} chars
+        {{ lineCount }} lines · {{ block.thinking.length }} chars
       </span>
     </button>
     <div

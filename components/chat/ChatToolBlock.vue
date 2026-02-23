@@ -63,6 +63,13 @@ const isReadTool = computed(() => toolNameLower.value === 'read')
 const isWriteTool = computed(() => toolNameLower.value === 'write')
 const isEditTool = computed(() => toolNameLower.value === 'edit' || toolNameLower.value === 'multiedit')
 const isCommandTool = computed(() => ['bash', 'exec', 'execcommand', 'runcommand'].includes(toolNameLower.value))
+const shouldAutoExpand = computed(() => (
+  props.block.status === 'running'
+  || props.block.status === 'error'
+  || isWriteTool.value
+  || isEditTool.value
+  || isRequestUserInputTool.value
+))
 
 interface ClarificationOption {
   label?: string
@@ -219,6 +226,28 @@ const statusColor = computed(() => {
 const resultContent = computed(() => props.result?.content ?? '')
 const resultIsError = computed(() => props.result?.isError ?? false)
 const resultLength = computed(() => resultContent.value.length)
+const resultLines = computed(() => resultContent.value.split('\n'))
+const visibleResultLines = computed(() => resultExpanded.value ? resultLines.value : resultLines.value.slice(0, 6))
+
+const resultLooksLikeDiff = computed(() => {
+  if (!resultContent.value) return false
+  const hasDiffMarkers = /^diff --git\s|\+\+\+\s|---\s|@@\s/m.test(resultContent.value)
+  if (!hasDiffMarkers) return false
+  return /^[+\- ]/.test(resultLines.value.find(line => line.length > 0) || '')
+    || resultLines.value.some(line => line.startsWith('@@'))
+})
+
+const diffStats = computed(() => {
+  if (!resultLooksLikeDiff.value) return { added: 0, removed: 0 }
+  let added = 0
+  let removed = 0
+  for (const line of resultLines.value) {
+    if (line.startsWith('+++') || line.startsWith('---')) continue
+    if (line.startsWith('+')) added += 1
+    if (line.startsWith('-')) removed += 1
+  }
+  return { added, removed }
+})
 
 const resultPreview = computed(() => {
   if (!resultContent.value) return ''
@@ -228,12 +257,38 @@ const resultPreview = computed(() => {
 
 const isLongResult = computed(() => {
   if (!resultContent.value) return false
-  return resultContent.value.split('\n').length > 3 || resultContent.value.length > 300
+  return resultLines.value.length > 6 || resultContent.value.length > 320
 })
 
 const hasVisibleResult = computed(() => {
   return resultContent.value.trim().length > 0
 })
+
+function resultLineClass(line: string): string {
+  if (line.startsWith('@@')) return 'text-retro-cyan bg-retro-cyan/10'
+  if (line.startsWith('+') && !line.startsWith('+++')) return 'text-retro-green bg-retro-green/10'
+  if (line.startsWith('-') && !line.startsWith('---')) return 'text-retro-red bg-retro-red/10'
+  if (line.startsWith('diff --git') || line.startsWith('index ') || line.startsWith('---') || line.startsWith('+++')) {
+    return 'text-retro-yellow'
+  }
+  return 'text-retro-muted'
+}
+
+watch(
+  () => props.block.id,
+  () => {
+    expanded.value = shouldAutoExpand.value
+    resultExpanded.value = false
+  },
+  { immediate: true }
+)
+
+watch(
+  () => props.block.status,
+  (status) => {
+    if (status === 'running' || status === 'error') expanded.value = true
+  }
+)
 </script>
 
 <template>
@@ -287,6 +342,10 @@ const hasVisibleResult = computed(() => {
         <div v-if="targetPath" class="flex items-start gap-2">
           <span class="text-retro-muted/80 min-w-12">File</span>
           <code class="text-retro-cyan break-all">{{ targetPath }}</code>
+        </div>
+        <div v-if="isCommandTool && commandText" class="flex items-start gap-2">
+          <span class="text-retro-muted/80 min-w-12">Cmd</span>
+          <code class="text-retro-cyan break-all whitespace-pre-wrap">{{ commandText }}</code>
         </div>
         <div v-if="isReadTool && readRange" class="flex items-start gap-2">
           <span class="text-retro-muted/80 min-w-12">Range</span>
@@ -349,7 +408,36 @@ const hasVisibleResult = computed(() => {
         :class="resultIsError ? 'text-retro-red bg-retro-red/5 border-retro-red/40' : 'text-retro-muted bg-retro-panel/60 border-retro-border/30'"
         :style="resultExpanded ? 'max-height: 20rem' : ''"
       >
-        <template v-if="!resultExpanded && isLongResult">
+        <template v-if="resultLooksLikeDiff">
+          <div class="mb-1 text-[10px] text-retro-muted">
+            Diff · <span class="text-retro-green">+{{ diffStats.added }}</span> / <span class="text-retro-red">-{{ diffStats.removed }}</span>
+          </div>
+          <div class="space-y-0.5">
+            <div
+              v-for="(line, index) in visibleResultLines"
+              :key="`diff-${index}`"
+              class="px-1 rounded whitespace-pre-wrap break-all"
+              :class="resultLineClass(line)"
+            >
+              {{ line || ' ' }}
+            </div>
+          </div>
+          <button
+            v-if="!resultExpanded && isLongResult"
+            class="text-retro-cyan hover:underline mt-1 text-[10px]"
+            @click.stop="resultExpanded = true"
+          >
+            Show full diff ({{ resultLength }} chars)
+          </button>
+          <button
+            v-else-if="isLongResult"
+            class="text-retro-cyan hover:underline mt-1 text-[10px]"
+            @click.stop="resultExpanded = false"
+          >
+            Collapse diff
+          </button>
+        </template>
+        <template v-else-if="!resultExpanded && isLongResult">
           <pre class="whitespace-pre-wrap">{{ resultPreview }}</pre>
           <button
             class="text-retro-cyan hover:underline mt-1 text-[10px]"
