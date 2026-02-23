@@ -12,7 +12,7 @@ onMounted(() => {
 <template>
   <button
     type="button"
-    class="flex items-center gap-1.5 px-2 py-1 rounded text-xs font-mono transition-colors"
+    class="relative p-1.5 rounded transition-colors"
     :class="autoModeStore.enabled
       ? 'bg-retro-yellow/20 text-retro-yellow hover:bg-retro-yellow/30'
       : 'text-retro-muted hover:text-retro-text hover:bg-retro-panel'"
@@ -24,10 +24,9 @@ onMounted(() => {
       class="h-4 w-4"
       :class="{ 'animate-pulse': autoModeStore.isActive }"
     />
-    <span>Auto</span>
     <span
       v-if="autoModeStore.enabled"
-      class="inline-block w-1.5 h-1.5 rounded-full bg-retro-yellow"
+      class="absolute right-0.5 top-0.5 inline-block w-1.5 h-1.5 rounded-full bg-retro-yellow"
       :class="{ 'animate-pulse': autoModeStore.isActive }"
     />
   </button>

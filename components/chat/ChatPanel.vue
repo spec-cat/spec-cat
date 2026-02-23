@@ -241,23 +241,23 @@ function handleRebaseCancel() {
         <button
           v-if="canPreview"
           :disabled="previewLoading"
-          class="p-1.5 rounded hover:bg-retro-panel transition-colors disabled:opacity-40"
+          class="p-1.5 rounded text-retro-muted hover:text-retro-cyan hover:bg-retro-panel transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           :title="isPreviewActive ? 'End preview: switch back to base branch' : 'Preview: test worktree changes in main worktree'"
           @click="handlePreviewToggle"
         >
-          <EyeSlashIcon v-if="isPreviewActive" class="w-4 h-4 text-retro-orange" />
-          <EyeIcon v-else class="w-4 h-4 text-retro-cyan" />
+          <EyeSlashIcon v-if="isPreviewActive" class="w-4 h-4 text-retro-cyan" />
+          <EyeIcon v-else class="w-4 h-4" />
         </button>
 
         <!-- Rebase onto base button -->
         <button
           v-if="canFinalize"
-          class="p-1.5 rounded hover:bg-retro-panel transition-colors"
+          class="p-1.5 rounded text-retro-muted hover:text-retro-cyan hover:bg-retro-panel transition-colors"
           title="Rebase: sync worktree onto target base branch"
           @click="handleRebaseClick"
         >
           <svg
-            class="w-4 h-4 text-retro-purple"
+            class="w-4 h-4"
             viewBox="0 0 24 24"
             fill="none"
             xmlns="http://www.w3.org/2000/svg"
@@ -293,39 +293,39 @@ function handleRebaseCancel() {
         <!-- Finalize button -->
         <button
           v-if="canFinalize"
-          class="p-1.5 rounded hover:bg-retro-panel transition-colors"
+          class="p-1.5 rounded text-retro-muted hover:text-retro-cyan hover:bg-retro-panel transition-colors"
           title="Finalize: squash & merge to base branch"
           @click="handleFinalizeClick"
         >
-          <CheckCircleIcon class="w-4 h-4 text-retro-green" />
+          <CheckCircleIcon class="w-4 h-4" />
         </button>
 
         <!-- Fullscreen toggle button -->
         <button
-          class="p-1.5 rounded hover:bg-retro-panel transition-colors"
+          class="p-1.5 rounded text-retro-muted hover:text-retro-cyan hover:bg-retro-panel transition-colors"
           :title="isChatFullscreen ? 'Exit fullscreen chat' : 'Fullscreen chat'"
           @click="handleToggleFullscreen"
         >
-          <ArrowsPointingInIcon v-if="isChatFullscreen" class="w-4 h-4 text-retro-muted" />
-          <ArrowsPointingOutIcon v-else class="w-4 h-4 text-retro-muted" />
+          <ArrowsPointingInIcon v-if="isChatFullscreen" class="w-4 h-4" />
+          <ArrowsPointingOutIcon v-else class="w-4 h-4" />
         </button>
 
         <button
-          class="p-1.5 rounded hover:bg-retro-panel transition-colors"
+          class="p-1.5 rounded text-retro-muted hover:text-retro-cyan hover:bg-retro-panel transition-colors"
           :title="showDebugPanel ? 'Hide debug stream' : 'Show debug stream'"
           @click="showDebugPanel = !showDebugPanel"
         >
-          <BugAntIcon class="w-4 h-4" :class="showDebugPanel ? 'text-retro-yellow' : 'text-retro-muted'" />
+          <BugAntIcon class="w-4 h-4" :class="showDebugPanel ? 'text-retro-cyan' : ''" />
         </button>
 
         <!-- New conversation button -->
         <button
           :disabled="!chatStore.hasMessages"
-          class="p-1.5 rounded hover:bg-retro-panel disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          class="p-1.5 rounded text-retro-muted hover:text-retro-cyan hover:bg-retro-panel disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
           title="New conversation"
           @click="handleDeleteClick"
         >
-          <TrashIcon class="w-4 h-4 text-retro-muted" />
+          <TrashIcon class="w-4 h-4" />
         </button>
       </div>
     </div>

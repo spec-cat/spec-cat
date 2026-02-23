@@ -267,34 +267,31 @@ function getArchivePreview(messages: Array<{ content?: string }>) {
       <div class="flex items-center justify-between gap-2">
         <button
           @click="handleCreate"
-          class="flex items-center gap-1 px-2 py-1 text-xs font-mono bg-retro-cyan/10 text-retro-cyan border border-retro-cyan/30 rounded hover:bg-retro-cyan/20 transition-colors"
+          class="p-1.5 rounded text-retro-muted hover:text-retro-cyan hover:bg-retro-panel transition-colors"
+          title="New conversation"
+          aria-label="New conversation"
         >
-          <PlusIcon class="w-3.5 h-3.5" />
-          New
+          <PlusIcon class="w-4 h-4" />
         </button>
 
         <div class="flex items-center gap-1">
           <button
             @click="chatStore.setConversationViewMode('active')"
-            class="px-2 py-1 text-xs font-mono rounded border transition-colors"
-            :class="isArchiveMode ? 'border-retro-border text-retro-muted hover:text-retro-cyan' : 'border-retro-cyan text-retro-cyan bg-retro-cyan/10'"
+            class="p-1.5 rounded transition-colors"
+            :class="isArchiveMode ? 'text-retro-muted hover:text-retro-cyan hover:bg-retro-panel' : 'text-retro-cyan bg-retro-cyan/10'"
             title="Active conversations"
+            aria-label="Active conversations"
           >
-            <span class="inline-flex items-center gap-1">
-              <ChatBubbleLeftRightIcon class="w-3.5 h-3.5" />
-              Active
-            </span>
+            <ChatBubbleLeftRightIcon class="w-4 h-4" />
           </button>
           <button
             @click="chatStore.setConversationViewMode('archive')"
-            class="px-2 py-1 text-xs font-mono rounded border transition-colors"
-            :class="isArchiveMode ? 'border-retro-cyan text-retro-cyan bg-retro-cyan/10' : 'border-retro-border text-retro-muted hover:text-retro-cyan'"
+            class="p-1.5 rounded transition-colors"
+            :class="isArchiveMode ? 'text-retro-cyan bg-retro-cyan/10' : 'text-retro-muted hover:text-retro-cyan hover:bg-retro-panel'"
             title="Archived conversations"
+            aria-label="Archived conversations"
           >
-            <span class="inline-flex items-center gap-1">
-              <ArchiveBoxIcon class="w-3.5 h-3.5" />
-              Archive
-            </span>
+            <ArchiveBoxIcon class="w-4 h-4" />
           </button>
         </div>
       </div>

@@ -1065,7 +1065,7 @@ watch(() => chatStore.activeConversationId, () => {
       </div>
     </div>
 
-    <div class="flex gap-2 items-end">
+    <div class="flex gap-2 items-center">
       <input
         ref="fileInputRef"
         type="file"
@@ -1075,7 +1075,7 @@ watch(() => chatStore.activeConversationId, () => {
         @change="handleFilePick"
       >
       <button
-        class="flex-shrink-0 p-2 rounded
+        class="flex-shrink-0 h-10 w-10 inline-flex items-center justify-center p-0 rounded
                bg-retro-panel/70 text-retro-muted
                hover:text-retro-cyan hover:bg-retro-panel
                disabled:opacity-50 disabled:cursor-not-allowed
@@ -1089,7 +1089,7 @@ watch(() => chatStore.activeConversationId, () => {
       </button>
 
       <!-- Input -->
-      <div class="flex-1 relative">
+      <div class="flex-1 relative h-10">
         <textarea
           ref="inputRef"
           v-model="inputText"
@@ -1098,7 +1098,7 @@ watch(() => chatStore.activeConversationId, () => {
             ? 'This conversation is finalized (read-only)'
             : 'Type a message...'"
           rows="1"
-          class="w-full px-3 py-2 bg-retro-black border border-retro-border rounded
+          class="w-full h-full min-h-0 px-3 py-2 bg-retro-black border border-retro-border rounded
                  text-sm font-mono text-retro-text placeholder-retro-muted
                  focus:outline-none focus:border-retro-cyan
                  disabled:opacity-50 disabled:cursor-not-allowed
@@ -1110,7 +1110,7 @@ watch(() => chatStore.activeConversationId, () => {
       <!-- Retry button (shows when last message errored) -->
       <button
         v-if="canRetry"
-        class="flex-shrink-0 p-2 rounded
+        class="flex-shrink-0 h-10 w-10 inline-flex items-center justify-center p-0 rounded
                bg-retro-yellow/20 text-retro-yellow
                hover:bg-retro-yellow/30
                transition-colors"
@@ -1124,7 +1124,7 @@ watch(() => chatStore.activeConversationId, () => {
       <button
         v-if="!canStop && !hasPendingPermission"
         :disabled="!canSend"
-        class="flex-shrink-0 p-2 rounded
+        class="flex-shrink-0 h-10 w-10 inline-flex items-center justify-center p-0 rounded
                bg-retro-cyan/20 text-retro-cyan
                hover:bg-retro-cyan/30
                disabled:opacity-50 disabled:cursor-not-allowed
@@ -1136,7 +1136,7 @@ watch(() => chatStore.activeConversationId, () => {
 
       <button
         v-else-if="canStop"
-        class="flex-shrink-0 p-2 rounded
+        class="flex-shrink-0 h-10 w-10 inline-flex items-center justify-center p-0 rounded
                bg-retro-red/20 text-retro-red
                hover:bg-retro-red/30
                transition-colors"
