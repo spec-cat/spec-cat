@@ -26,6 +26,7 @@ const fileInputRef = ref<HTMLInputElement | null>(null)
 const isSending = ref(false)
 const showModeMenu = ref(false)
 const pendingAttachments = ref<ChatImageAttachment[]>([])
+let pendingResizeRaf: number | null = null
 
 const MAX_IMAGE_ATTACHMENTS = 4
 const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024
@@ -63,6 +64,10 @@ onMounted(() => {
 
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
+  if (pendingResizeRaf !== null && typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
+    window.cancelAnimationFrame(pendingResizeRaf)
+    pendingResizeRaf = null
+  }
 })
 
 const canSend = computed(() => {
@@ -678,6 +683,17 @@ function autoResize() {
   }
 }
 
+function scheduleAutoResize() {
+  if (pendingResizeRaf !== null) return
+  const schedule = typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function'
+    ? window.requestAnimationFrame.bind(window)
+    : (cb: FrameRequestCallback) => setTimeout(() => cb(Date.now()), 16) as unknown as number
+  pendingResizeRaf = schedule(() => {
+    pendingResizeRaf = null
+    autoResize()
+  })
+}
+
 // Reset textarea height to default
 function resetTextareaHeight() {
   const textarea = inputRef.value
@@ -693,7 +709,7 @@ function focusInput() {
   })
 }
 
-watch(inputText, autoResize)
+watch(inputText, scheduleAutoResize)
 
 // Auto-focus when streaming ends (input becomes enabled)
 watch(() => chatStore.isActiveConversationStreaming, (streaming, wasStreaming) => {

@@ -34,6 +34,7 @@ import { DEFAULT_MODEL_KEY, DEFAULT_PROVIDER_ID } from '~/types/aiProvider'
 import {
   loadConversations as loadFromStorage,
   saveConversations as saveToStorage,
+  saveConversation as saveConversationToStorage,
 } from '~/utils/conversationStorage'
 import { buildMessageContentFromBlocks } from '~/utils/contentBlocks'
 
@@ -1051,7 +1052,7 @@ export const useChatStore = defineStore('chat', () => {
         saveDebounceTimers.delete(conversationId)
       }
       conv.updatedAt = new Date().toISOString()
-      saveAllConversations()
+      saveConversationToStorage(conv)
     } else {
       const existingTimer = saveDebounceTimers.get(conversationId)
       if (existingTimer) {
@@ -1059,7 +1060,7 @@ export const useChatStore = defineStore('chat', () => {
       }
       const timer = setTimeout(() => {
         conv.updatedAt = new Date().toISOString()
-        saveAllConversations()
+        saveConversationToStorage(conv)
         saveDebounceTimers.delete(conversationId)
       }, STREAM_SAVE_DEBOUNCE_MS)
       saveDebounceTimers.set(conversationId, timer)

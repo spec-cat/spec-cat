@@ -127,6 +127,27 @@ export async function saveConversations(
 }
 
 /**
+ * Save a single conversation to server-side storage (patch/merge on server)
+ */
+export async function saveConversation(conversation: Conversation): Promise<boolean> {
+  if (typeof window === 'undefined') return false
+
+  try {
+    await $fetch('/api/conversations/update', {
+      method: 'POST',
+      body: {
+        version: STORAGE_VERSION,
+        conversation,
+      },
+    })
+    return true
+  } catch (error) {
+    console.error('Failed to save conversation:', error)
+    return false
+  }
+}
+
+/**
  * Clear all conversations
  */
 export async function clearConversations(): Promise<boolean> {
