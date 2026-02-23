@@ -116,6 +116,7 @@ export const PERMISSION_MODE_DESCRIPTIONS: Record<PermissionMode, string> = {
 export interface PermissionRequest {
   tool: string
   description?: string
+  tools?: string[]
   filePath?: string
   command?: string
   input?: Record<string, unknown>
@@ -181,7 +182,7 @@ export interface DebugEvent {
   id: string
   timestamp: string
   direction: 'in' | 'out' | 'system'
-  channel: 'ws' | 'provider' | 'client'
+  channel: 'ws' | 'provider' | 'client' | 'ui'
   eventType: string
   payload: string
 }
@@ -226,6 +227,113 @@ export interface SSEErrorEvent {
 }
 
 export type SSEEvent = SSEMessageEvent | SSECompleteEvent | SSEErrorEvent
+
+/**
+ * Canonical UI Stream Events
+ * Explicit contract for both server-to-client WebSocket events and provider-to-server adapter output.
+ */
+
+export type UIStreamEventType =
+  | 'session_init'
+  | 'block_start'
+  | 'block_delta'
+  | 'block_end'
+  | 'tool_result'
+  | 'permission_request'
+  | 'turn_result'
+  | 'error'
+  | 'done'
+
+export interface UIStreamEventBase {
+  type: UIStreamEventType
+  sessionId?: string
+}
+
+export interface UIStreamSessionInitEvent extends UIStreamEventBase {
+  type: 'session_init'
+  model: string
+  tools: string[]
+  permissionMode: string
+  cwd: string
+}
+
+export interface UIStreamBlockStartEvent extends UIStreamEventBase {
+  type: 'block_start'
+  blockId: string
+  blockType: ContentBlockType
+  index?: number
+  name?: string
+  toolUseId?: string
+  text?: string
+  thinking?: string
+}
+
+export interface UIStreamBlockDeltaEvent extends UIStreamEventBase {
+  type: 'block_delta'
+  blockId: string
+  index?: number
+  text?: string
+  thinking?: string
+  partialJson?: string
+}
+
+export interface UIStreamBlockEndEvent extends UIStreamEventBase {
+  type: 'block_end'
+  blockId: string
+  index?: number
+}
+
+export interface UIStreamToolResultEvent extends UIStreamEventBase {
+  type: 'tool_result'
+  toolUseId: string
+  content: string
+  isError: boolean
+}
+
+export interface UIStreamPermissionRequestEvent extends UIStreamEventBase {
+  type: 'permission_request'
+  tool: string
+  description?: string
+  tools?: string[]
+  input?: Record<string, unknown>
+}
+
+export interface UIStreamTurnResultEvent extends UIStreamEventBase {
+  type: 'turn_result'
+  subtype: 'success' | 'error' | 'max_turns'
+  totalCostUsd?: number
+  durationMs?: number
+  numTurns?: number
+  usage?: {
+    inputTokens: number
+    outputTokens: number
+    cacheCreationInputTokens: number
+    cacheReadInputTokens: number
+  }
+}
+
+export interface UIStreamErrorEvent extends UIStreamEventBase {
+  type: 'error'
+  error: string
+  requestId?: string
+}
+
+export interface UIStreamDoneEvent extends UIStreamEventBase {
+  type: 'done'
+  requestId?: string
+  denied?: boolean
+}
+
+export type UIStreamEvent =
+  | UIStreamSessionInitEvent
+  | UIStreamBlockStartEvent
+  | UIStreamBlockDeltaEvent
+  | UIStreamBlockEndEvent
+  | UIStreamToolResultEvent
+  | UIStreamPermissionRequestEvent
+  | UIStreamTurnResultEvent
+  | UIStreamErrorEvent
+  | UIStreamDoneEvent
 
 /**
  * API Request/Response Types

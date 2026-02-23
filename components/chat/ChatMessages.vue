@@ -58,7 +58,7 @@ function contentBlockRenderSignature(message: ChatMessageType): string {
         case 'session_init':
           return `i:${block.id}:${block.model}:${block.tools.length}`
         default:
-          return `${block.type}:${block.id}`
+          return ''
       }
     })
     .join('|')

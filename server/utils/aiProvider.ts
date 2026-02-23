@@ -2,6 +2,7 @@ import { DEFAULT_PROVIDER_ID, DEFAULT_MODEL_KEY, type AIProviderMetadata, type A
 import type { ClaudeModel } from '~/types/claude'
 import { CLAUDE_MODELS } from '~/types/claude'
 import { ensureProvidersInitialized, getProvider } from '~/server/utils/aiProviderRegistry'
+import type { UIStreamEvent } from '~/types/chat'
 
 export interface AIProviderStartOptions {
   conversationId: string
@@ -30,7 +31,7 @@ export interface AIProviderStreamCloseEvent {
 }
 
 export interface AIProviderStreamCallbacks {
-  onProviderJson: (data: Record<string, unknown>) => void
+  onProviderJson: (data: Record<string, unknown> | UIStreamEvent) => void
   onClose: (event: AIProviderStreamCloseEvent) => void
   onError: (error: Error) => void
 }

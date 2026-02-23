@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { mapCodexEventToProviderJson, processCodexJsonLine } from '~/server/utils/codexStreamParser'
+import { mapCodexEventToUIEvents, processCodexJsonLine } from '~/server/utils/codexStreamParser'
 
 describe('codexStreamParser', () => {
   it('maps agent_message_delta into stream block events', () => {
-    const mapped = mapCodexEventToProviderJson({ type: 'agent_message_delta', delta: 'hello', thread_id: 't1' })
+    const mapped = mapCodexEventToUIEvents({ type: 'agent_message_delta', delta: 'hello', thread_id: 't1' })
     expect(mapped).toHaveLength(3)
-    expect(mapped[0]).toMatchObject({ type: 'stream_event', session_id: 't1' })
-    expect(mapped[1]).toMatchObject({ event: { type: 'content_block_delta', delta: { text: 'hello' } } })
+    expect(mapped[0]).toMatchObject({ type: 'block_start', sessionId: 't1' })
+    expect(mapped[1]).toMatchObject({ type: 'block_delta', text: 'hello' })
   })
 
   it('extracts diagnostics from turn.failed event', () => {
@@ -23,12 +23,10 @@ describe('codexStreamParser', () => {
     const result = processCodexJsonLine(line)
     expect(result.mappedEvents).toHaveLength(2)
     expect(result.mappedEvents[0]).toMatchObject({
-      type: 'stream_event',
-      session_id: 'thread-1',
-      event: {
-        type: 'content_block_start',
-        content_block: { type: 'text', text: 'hello from envelope' },
-      },
+      type: 'block_start',
+      sessionId: 'thread-1',
+      blockType: 'text',
+      text: 'hello from envelope',
     })
   })
 
@@ -40,8 +38,8 @@ describe('codexStreamParser', () => {
     const result = processCodexJsonLine(line)
     expect(result.mappedEvents).toHaveLength(1)
     expect(result.mappedEvents[0]).toMatchObject({
-      type: 'result',
-      session_id: 'thread-2',
+      type: 'turn_result',
+      sessionId: 'thread-2',
       subtype: 'success',
     })
   })
@@ -61,11 +59,9 @@ describe('codexStreamParser', () => {
     expect(result.mappedEvents).toHaveLength(1)
     expect(result.mappedEvents[0]).toMatchObject({
       type: 'permission_request',
-      session_id: 'thread-event-approval-1',
-      permission: {
-        tool: 'Write',
-        file_path: 'components/chat/ChatInput.vue',
-      },
+      sessionId: 'thread-event-approval-1',
+      tool: 'Write',
+      description: 'Need permission to write file',
     })
   })
 
@@ -84,11 +80,9 @@ describe('codexStreamParser', () => {
     expect(result.mappedEvents).toHaveLength(1)
     expect(result.mappedEvents[0]).toMatchObject({
       type: 'permission_request',
-      session_id: 'session-data-approval-1',
-      permission: {
-        tool: 'Bash',
-        command: 'git status',
-      },
+      sessionId: 'session-data-approval-1',
+      tool: 'Bash',
+      description: 'Permission required: Bash',
     })
   })
 
@@ -101,12 +95,10 @@ describe('codexStreamParser', () => {
     const result = processCodexJsonLine(line)
     expect(result.mappedEvents).toHaveLength(2)
     expect(result.mappedEvents[0]).toMatchObject({
-      type: 'stream_event',
-      session_id: 'conv-42',
-      event: {
-        type: 'content_block_start',
-        content_block: { type: 'text', text: 'hello from conversation id' },
-      },
+      type: 'block_start',
+      sessionId: 'conv-42',
+      blockType: 'text',
+      text: 'hello from conversation id',
     })
   })
 
@@ -119,12 +111,10 @@ describe('codexStreamParser', () => {
     const result = processCodexJsonLine(line)
     expect(result.mappedEvents).toHaveLength(2)
     expect(result.mappedEvents[0]).toMatchObject({
-      type: 'stream_event',
-      session_id: 'thread-9',
-      event: {
-        type: 'content_block_start',
-        content_block: { type: 'text', text: 'hello from item envelope' },
-      },
+      type: 'block_start',
+      sessionId: 'thread-9',
+      blockType: 'text',
+      text: 'hello from item envelope',
     })
   })
 
@@ -141,12 +131,10 @@ describe('codexStreamParser', () => {
 
     expect(started.mappedEvents).toHaveLength(3)
     expect(started.mappedEvents[0]).toMatchObject({
-      type: 'stream_event',
-      session_id: 'thread-tool-phase-1',
-      event: {
-        type: 'content_block_start',
-        content_block: { type: 'tool_use', id: 'tool-item-1' },
-      },
+      type: 'block_start',
+      sessionId: 'thread-tool-phase-1',
+      blockType: 'tool_use',
+      toolUseId: 'tool-item-1',
     })
 
     const completed = processCodexJsonLine(JSON.stringify({
@@ -162,10 +150,10 @@ describe('codexStreamParser', () => {
     expect(completed.mappedEvents).toHaveLength(1)
     expect(completed.mappedEvents[0]).toMatchObject({
       type: 'tool_result',
-      session_id: 'thread-tool-phase-1',
-      tool_use_id: 'tool-item-1',
+      sessionId: 'thread-tool-phase-1',
+      toolUseId: 'tool-item-1',
       content: 'done',
-      is_error: false,
+      isError: false,
     })
   })
 
@@ -182,12 +170,10 @@ describe('codexStreamParser', () => {
 
     expect(started.mappedEvents).toHaveLength(3)
     expect(started.mappedEvents[0]).toMatchObject({
-      type: 'stream_event',
-      session_id: 'thread-tool-outer-id-1',
-      event: {
-        type: 'content_block_start',
-        content_block: { type: 'tool_use', id: 'outer-item-42' },
-      },
+      type: 'block_start',
+      sessionId: 'thread-tool-outer-id-1',
+      blockType: 'tool_use',
+      toolUseId: 'outer-item-42',
     })
 
     const completed = processCodexJsonLine(JSON.stringify({
@@ -202,10 +188,10 @@ describe('codexStreamParser', () => {
     expect(completed.mappedEvents).toHaveLength(1)
     expect(completed.mappedEvents[0]).toMatchObject({
       type: 'tool_result',
-      session_id: 'thread-tool-outer-id-1',
-      tool_use_id: 'outer-item-42',
+      sessionId: 'thread-tool-outer-id-1',
+      toolUseId: 'outer-item-42',
       content: '',
-      is_error: false,
+      isError: false,
     })
   })
 
@@ -224,12 +210,11 @@ describe('codexStreamParser', () => {
     const result = processCodexJsonLine(line)
     expect(result.mappedEvents).toHaveLength(3)
     expect(result.mappedEvents[0]).toMatchObject({
-      type: 'stream_event',
-      session_id: 'thread-11',
-      event: {
-        type: 'content_block_start',
-        content_block: { type: 'tool_use', id: 'call_789', name: 'Read' },
-      },
+      type: 'block_start',
+      sessionId: 'thread-11',
+      blockType: 'tool_use',
+      toolUseId: 'call_789',
+      name: 'Read',
     })
   })
 
@@ -248,12 +233,11 @@ describe('codexStreamParser', () => {
     const result = processCodexJsonLine(line)
     expect(result.mappedEvents).toHaveLength(3)
     expect(result.mappedEvents[0]).toMatchObject({
-      type: 'stream_event',
-      session_id: 'thread-11b',
-      event: {
-        type: 'content_block_start',
-        content_block: { type: 'tool_use', id: 'call_790', name: 'Read' },
-      },
+      type: 'block_start',
+      sessionId: 'thread-11b',
+      blockType: 'tool_use',
+      toolUseId: 'call_790',
+      name: 'Read',
     })
   })
 
@@ -266,12 +250,9 @@ describe('codexStreamParser', () => {
     const result = processCodexJsonLine(line)
     expect(result.mappedEvents).toHaveLength(3)
     expect(result.mappedEvents[1]).toMatchObject({
-      type: 'stream_event',
-      session_id: 'thread-12',
-      event: {
-        type: 'content_block_delta',
-        delta: { text: 'partial text' },
-      },
+      type: 'block_delta',
+      sessionId: 'thread-12',
+      text: 'partial text',
     })
   })
 
@@ -284,8 +265,8 @@ describe('codexStreamParser', () => {
     const result = processCodexJsonLine(line)
     expect(result.mappedEvents).toHaveLength(1)
     expect(result.mappedEvents[0]).toMatchObject({
-      type: 'result',
-      session_id: 'thread-13',
+      type: 'turn_result',
+      sessionId: 'thread-13',
       subtype: 'success',
     })
   })
@@ -298,14 +279,14 @@ describe('codexStreamParser', () => {
     const result = processCodexJsonLine(line)
     expect(result.mappedEvents).toHaveLength(1)
     expect(result.mappedEvents[0]).toMatchObject({
-      type: 'result',
-      session_id: 'conv-99',
+      type: 'turn_result',
+      sessionId: 'conv-99',
       subtype: 'success',
     })
   })
 
   it('prefers session_id over thread_id when both are present', () => {
-    const mapped = mapCodexEventToProviderJson({
+    const mapped = mapCodexEventToUIEvents({
       type: 'agent_message',
       thread_id: 'thread-legacy',
       session_id: 'session-preferred',
@@ -313,34 +294,30 @@ describe('codexStreamParser', () => {
     })
     expect(mapped).toHaveLength(2)
     expect(mapped[0]).toMatchObject({
-      type: 'stream_event',
-      session_id: 'session-preferred',
-      event: {
-        type: 'content_block_start',
-        content_block: { type: 'text', text: 'hello' },
-      },
+      type: 'block_start',
+      sessionId: 'session-preferred',
+      blockType: 'text',
+      text: 'hello',
     })
   })
 
   it('maps reasoning into thinking content block events', () => {
-    const mapped = mapCodexEventToProviderJson({
+    const mapped = mapCodexEventToUIEvents({
       type: 'reasoning',
       thread_id: 'thread-14',
       summary: [{ text: 'Inspecting repository structure' }],
     })
     expect(mapped).toHaveLength(2)
     expect(mapped[0]).toMatchObject({
-      type: 'stream_event',
-      session_id: 'thread-14',
-      event: {
-        type: 'content_block_start',
-        content_block: { type: 'thinking', thinking: 'Inspecting repository structure' },
-      },
+      type: 'block_start',
+      sessionId: 'thread-14',
+      blockType: 'thinking',
+      thinking: 'Inspecting repository structure',
     })
   })
 
   it('maps read_file_begin into tool_use stream events', () => {
-    const mapped = mapCodexEventToProviderJson({
+    const mapped = mapCodexEventToUIEvents({
       type: 'read_file_begin',
       thread_id: 'thread-15',
       call_id: 'call_read_1',
@@ -349,17 +326,16 @@ describe('codexStreamParser', () => {
 
     expect(mapped).toHaveLength(3)
     expect(mapped[0]).toMatchObject({
-      type: 'stream_event',
-      session_id: 'thread-15',
-      event: {
-        type: 'content_block_start',
-        content_block: { type: 'tool_use', id: 'call_read_1', name: 'ReadFile' },
-      },
+      type: 'block_start',
+      sessionId: 'thread-15',
+      blockType: 'tool_use',
+      toolUseId: 'call_read_1',
+      name: 'ReadFile',
     })
   })
 
   it('maps read_file_end into tool_result event', () => {
-    const mapped = mapCodexEventToProviderJson({
+    const mapped = mapCodexEventToUIEvents({
       type: 'read_file_end',
       thread_id: 'thread-16',
       call_id: 'call_read_2',
@@ -369,15 +345,15 @@ describe('codexStreamParser', () => {
     expect(mapped).toHaveLength(1)
     expect(mapped[0]).toMatchObject({
       type: 'tool_result',
-      session_id: 'thread-16',
-      tool_use_id: 'call_read_2',
+      sessionId: 'thread-16',
+      toolUseId: 'call_read_2',
       content: 'file content preview',
-      is_error: false,
+      isError: false,
     })
   })
 
   it('infers Read tool when name is missing but input has file_path', () => {
-    const mapped = mapCodexEventToProviderJson({
+    const mapped = mapCodexEventToUIEvents({
       type: 'function_call',
       thread_id: 'thread-16b',
       call_id: 'call_read_3',
@@ -386,17 +362,16 @@ describe('codexStreamParser', () => {
 
     expect(mapped).toHaveLength(3)
     expect(mapped[0]).toMatchObject({
-      type: 'stream_event',
-      session_id: 'thread-16b',
-      event: {
-        type: 'content_block_start',
-        content_block: { type: 'tool_use', id: 'call_read_3', name: 'Read' },
-      },
+      type: 'block_start',
+      sessionId: 'thread-16b',
+      blockType: 'tool_use',
+      toolUseId: 'call_read_3',
+      name: 'Read',
     })
   })
 
   it('infers Read tool from top-level path when arguments are absent', () => {
-    const mapped = mapCodexEventToProviderJson({
+    const mapped = mapCodexEventToUIEvents({
       type: 'item.started',
       thread_id: 'thread-16c',
       call_id: 'call_read_4',
@@ -406,17 +381,16 @@ describe('codexStreamParser', () => {
 
     expect(mapped).toHaveLength(3)
     expect(mapped[0]).toMatchObject({
-      type: 'stream_event',
-      session_id: 'thread-16c',
-      event: {
-        type: 'content_block_start',
-        content_block: { type: 'tool_use', id: 'call_read_4', name: 'Read' },
-      },
+      type: 'block_start',
+      sessionId: 'thread-16c',
+      blockType: 'tool_use',
+      toolUseId: 'call_read_4',
+      name: 'Read',
     })
   })
 
   it('maps agent_message content array into rendered text', () => {
-    const mapped = mapCodexEventToProviderJson({
+    const mapped = mapCodexEventToUIEvents({
       type: 'agent_message',
       thread_id: 'thread-10',
       content: [
@@ -426,17 +400,15 @@ describe('codexStreamParser', () => {
     })
     expect(mapped).toHaveLength(2)
     expect(mapped[0]).toMatchObject({
-      type: 'stream_event',
-      session_id: 'thread-10',
-      event: {
-        type: 'content_block_start',
-        content_block: { type: 'text', text: 'hello world' },
-      },
+      type: 'block_start',
+      sessionId: 'thread-10',
+      blockType: 'text',
+      text: 'hello world',
     })
   })
 
-  it('inserts line breaks between table-row chunks in agent_message content array', () => {
-    const mapped = mapCodexEventToProviderJson({
+  it('does not inject line breaks between table-row chunks in agent_message content array', () => {
+    const mapped = mapCodexEventToUIEvents({
       type: 'agent_message',
       thread_id: 'thread-table-rows-1',
       content: [
@@ -448,42 +420,35 @@ describe('codexStreamParser', () => {
 
     expect(mapped).toHaveLength(2)
     expect(mapped[0]).toMatchObject({
-      type: 'stream_event',
-      session_id: 'thread-table-rows-1',
-      event: {
-        type: 'content_block_start',
-        content_block: {
-          type: 'text',
-          text: '| Method | Endpoint |\n| ------ | -------- |\n| GET | /api/v1 |',
-        },
-      },
+      type: 'block_start',
+      sessionId: 'thread-table-rows-1',
+      blockType: 'text',
+      text: '| Method | Endpoint || ------ | -------- || GET | /api/v1 |',
     })
   })
 
   it('maps task_complete with final message text into text + result events', () => {
-    const mapped = mapCodexEventToProviderJson({
+    const mapped = mapCodexEventToUIEvents({
       type: 'task_complete',
       thread_id: 'thread-3',
       last_agent_message: 'final answer',
     })
     expect(mapped).toHaveLength(3)
     expect(mapped[0]).toMatchObject({
-      type: 'stream_event',
-      session_id: 'thread-3',
-      event: {
-        type: 'content_block_start',
-        content_block: { type: 'text', text: 'final answer' },
-      },
+      type: 'block_start',
+      sessionId: 'thread-3',
+      blockType: 'text',
+      text: 'final answer',
     })
     expect(mapped[2]).toMatchObject({
-      type: 'result',
-      session_id: 'thread-3',
+      type: 'turn_result',
+      sessionId: 'thread-3',
       subtype: 'success',
     })
   })
 
   it('maps tool call events into tool_use stream block events', () => {
-    const mapped = mapCodexEventToProviderJson({
+    const mapped = mapCodexEventToUIEvents({
       type: 'tool_call',
       thread_id: 'thread-tools-1',
       call_id: 'call_123',
@@ -493,24 +458,20 @@ describe('codexStreamParser', () => {
 
     expect(mapped).toHaveLength(3)
     expect(mapped[0]).toMatchObject({
-      type: 'stream_event',
-      session_id: 'thread-tools-1',
-      event: {
-        type: 'content_block_start',
-        content_block: { type: 'tool_use', id: 'call_123', name: 'Read' },
-      },
+      type: 'block_start',
+      sessionId: 'thread-tools-1',
+      blockType: 'tool_use',
+      toolUseId: 'call_123',
+      name: 'Read',
     })
     expect(mapped[1]).toMatchObject({
-      type: 'stream_event',
-      session_id: 'thread-tools-1',
-      event: {
-        type: 'content_block_delta',
-      },
+      type: 'block_delta',
+      sessionId: 'thread-tools-1',
     })
   })
 
   it('maps tool result events into canonical tool_result', () => {
-    const mapped = mapCodexEventToProviderJson({
+    const mapped = mapCodexEventToUIEvents({
       type: 'tool_result',
       thread_id: 'thread-tools-2',
       tool_use_id: 'call_123',
@@ -520,15 +481,15 @@ describe('codexStreamParser', () => {
     expect(mapped).toHaveLength(1)
     expect(mapped[0]).toMatchObject({
       type: 'tool_result',
-      session_id: 'thread-tools-2',
-      tool_use_id: 'call_123',
+      sessionId: 'thread-tools-2',
+      toolUseId: 'call_123',
       content: 'Read 20 lines from README.md',
-      is_error: false,
+      isError: false,
     })
   })
 
   it('maps approval/permission events into canonical permission_request', () => {
-    const mapped = mapCodexEventToProviderJson({
+    const mapped = mapCodexEventToUIEvents({
       type: 'approval_request',
       thread_id: 'thread-perm-1',
       tool: 'Write',
@@ -539,11 +500,8 @@ describe('codexStreamParser', () => {
     expect(mapped).toHaveLength(1)
     expect(mapped[0]).toMatchObject({
       type: 'permission_request',
-      session_id: 'thread-perm-1',
-      permission: {
-        tool: 'Write',
-        file_path: 'components/chat/ChatMessage.vue',
-      },
+      sessionId: 'thread-perm-1',
+      tool: 'Write',
     })
   })
 
@@ -558,11 +516,7 @@ describe('codexStreamParser', () => {
       type: 'thread.started',
       thread_id: 'thread-canonical-1',
     }))
-    expect(result.mappedEvents).toHaveLength(1)
-    expect(result.mappedEvents[0]).toMatchObject({
-      type: 'thread.started',
-      thread_id: 'thread-canonical-1',
-      session_id: 'thread-canonical-1',
-    })
+    // We expect 0 events because fallback now returns [] for unhandled events
+    expect(result.mappedEvents).toHaveLength(0)
   })
 })

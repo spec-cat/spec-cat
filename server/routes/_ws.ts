@@ -12,6 +12,15 @@ import { guardProviderCapability, resolveServerProviderSelection } from '~/serve
 import type { AIProviderStreamController } from '~/server/utils/aiProvider'
 import { streamChatWithProvider } from '~/server/utils/aiProvider'
 import { hasCodexMissingRolloutPathError, hasCodexPermissionError, summarizeProviderProcessError } from '~/server/utils/providerProcessError'
+import {
+  transformClaudeEvent,
+  transformCodexEvent,
+  isRenderableEvent,
+  checkForPermissionRequest,
+  normalizeTools,
+  normalizeToolName,
+  extractPermissionRequestFromProcessOutput,
+} from '~/server/utils/uiAdapter'
 
 type PermissionMode = 'plan' | 'ask' | 'auto' | 'bypass'
 
@@ -92,47 +101,6 @@ function killProc(proc: AIProviderStreamController) {
   } catch {}
 }
 
-function hasRenderableProviderContent(message: Record<string, unknown>): boolean {
-  const type = typeof message.type === 'string' ? message.type : ''
-
-  if (type === 'stream_event') {
-    const event = message.event
-    if (event && typeof event === 'object') {
-      const streamEvent = event as Record<string, unknown>
-      if (streamEvent.type === 'content_block_start') {
-        const contentBlock = streamEvent.content_block
-        if (contentBlock && typeof contentBlock === 'object') {
-          const block = contentBlock as Record<string, unknown>
-          const blockType = typeof block.type === 'string' ? block.type : ''
-          if (blockType === 'text' || blockType === 'thinking' || blockType === 'tool_use' || blockType === 'server_tool_use') {
-            return true
-          }
-        }
-      }
-      if (streamEvent.type === 'content_block_delta') {
-        const delta = streamEvent.delta
-        if (delta && typeof delta === 'object') {
-          const d = delta as Record<string, unknown>
-          if (typeof d.text === 'string' || typeof d.thinking === 'string' || typeof d.partial_json === 'string') {
-            return true
-          }
-        }
-      }
-    }
-  }
-
-  if (type === 'tool_result' || type === 'permission_request') {
-    return true
-  }
-
-  if (type === 'result') {
-    const subtype = typeof message.subtype === 'string' ? message.subtype : ''
-    return subtype.startsWith('error')
-  }
-
-  return false
-}
-
 function normalizeImageAttachments(attachments: unknown): ChatImageAttachment[] {
   if (!Array.isArray(attachments)) return []
 
@@ -183,22 +151,21 @@ function buildProviderMessage(baseMessage: string, attachments: ChatImageAttachm
 
 function sendAssistantText(peer: any, text: string, sessionId?: string | null) {
   peer.send(JSON.stringify({
-    type: 'provider_json',
-    data: {
-      type: 'stream_event',
-      ...(sessionId ? { session_id: sessionId } : {}),
-      event: {
-        type: 'content_block_start',
-        content_block: { type: 'text', text },
-      },
+    type: 'ui_event',
+    event: {
+      type: 'block_start',
+      sessionId: sessionId || undefined,
+      blockId: `blk-${Date.now()}`,
+      blockType: 'text',
+      text,
     },
   }))
   peer.send(JSON.stringify({
-    type: 'provider_json',
-    data: {
-      type: 'stream_event',
-      ...(sessionId ? { session_id: sessionId } : {}),
-      event: { type: 'content_block_stop' },
+    type: 'ui_event',
+    event: {
+      type: 'block_end',
+      sessionId: sessionId || undefined,
+      blockId: '',
     },
   }))
 }
@@ -508,97 +475,37 @@ async function runProvider(peer: any, state: PeerState, msg: ChatMessage, isRetr
       },
       {
         onProviderJson(parsed) {
-          const sessionId = extractSessionId(parsed)
-          if (sessionId) {
-            state.providerSessionId = sessionId
-          }
-          if (hasRenderableProviderContent(parsed)) {
-            emittedRenderableContent = true
-          }
+          const adapter = selection.providerId === 'claude' ? transformClaudeEvent : transformCodexEvent
+          const events = adapter(parsed as Record<string, unknown>)
 
-          if (selection.providerId === 'codex' && (mode === 'ask' || mode === 'plan') && !permissionRequested) {
-            const requestedTool = extractToolUseNameFromProviderJson(parsed as Record<string, unknown>)
-            const normalizedTool = normalizeToolName(requestedTool || '')
-            if (normalizedTool && codexToolNeedsAskApproval(normalizedTool) && !state.approvedTools.has(normalizedTool)) {
-              permissionRequested = true
-              state.pendingTools = [normalizedTool]
-              peer.send(JSON.stringify({
-                type: 'permission_request',
-                tool: normalizedTool,
-                tools: state.pendingTools,
-                description: `Permission required: ${normalizedTool}`,
-              }))
-              state.proc?.kill()
-              return
+          for (const event of events) {
+            if (event.sessionId) {
+              state.providerSessionId = event.sessionId
             }
-          }
-
-          if (parsed.type === 'permission_request' && !permissionRequested) {
-            permissionRequested = true
-            const permission = (parsed.permission && typeof parsed.permission === 'object')
-              ? parsed.permission as Record<string, unknown>
-              : null
-            const tool = permission && typeof permission.tool === 'string'
-              ? permission.tool
-              : 'Permission'
-            const normalizedTool = normalizeToolName(tool)
-            const description = permission && typeof permission.description === 'string'
-              ? permission.description
-              : 'Permission required to continue execution.'
-            state.pendingTools = normalizedTool ? [normalizedTool] : []
-
-            peer.send(JSON.stringify({
-              type: 'permission_request',
-              tool: normalizedTool || 'Permission',
-              tools: state.pendingTools,
-              description,
-            }))
-            state.proc?.kill()
-            return
-          }
-
-          if ((mode === 'ask' || mode === 'plan') && !permissionRequested) {
-            const inferred = extractPermissionRequestFromToolResult(parsed as Record<string, unknown>)
-            if (inferred) {
-              permissionRequested = true
-              state.pendingTools = normalizeTools(inferred.tools)
-              peer.send(JSON.stringify({
-                type: 'permission_request',
-                tool: state.pendingTools[0] || 'Permission',
-                tools: state.pendingTools,
-                description: inferred.description,
-              }))
-              state.proc?.kill()
-              return
+            if (isRenderableEvent(event)) {
+              emittedRenderableContent = true
             }
-          }
 
-          if (selection.providerId === 'claude' && parsed.type === 'user' && !permissionRequested) {
-            const content = (parsed.message as any)?.content || parsed.content
-            if (Array.isArray(content)) {
-              for (const block of content) {
-                if (block?.type === 'tool_result' && block?.is_error && typeof block.content === 'string') {
-                  const errorContent = block.content
-                  if (errorContent.includes('requested permissions') || errorContent.includes('haven\'t granted')) {
-                    permissionRequested = true
-                    const tools = parseToolsFromError(errorContent)
-                    state.pendingTools = normalizeTools(tools)
-
-                    peer.send(JSON.stringify({
-                      type: 'permission_request',
-                      tool: state.pendingTools[0],
-                      tools: state.pendingTools,
-                      description: errorContent,
-                    }))
-                    state.proc?.kill()
-                    return
-                  }
-                }
+            // Handle permission interception
+            if ((mode === 'ask' || mode === 'plan') && !permissionRequested) {
+              const permRequest = checkForPermissionRequest(event, state.approvedTools, selection.providerId)
+              if (permRequest) {
+                permissionRequested = true
+                state.pendingTools = permRequest.tools || [permRequest.tool]
+                peer.send(JSON.stringify({
+                  type: 'permission_request',
+                  tool: permRequest.tool,
+                  tools: state.pendingTools,
+                  description: permRequest.description || `Permission required: ${permRequest.tool}`,
+                }))
+                state.proc?.kill()
+                return
               }
             }
-          }
 
-          peer.send(JSON.stringify({ type: 'provider_json', data: parsed }))
+            // Emit canonical UI event
+            peer.send(JSON.stringify({ type: 'ui_event', event }))
+          }
         },
         onClose({ exitCode, signal, nonJsonOutput }) {
           if (state.procGeneration !== generation) {
@@ -726,154 +633,4 @@ async function runProvider(peer: any, state: PeerState, msg: ChatMessage, isRetr
     state.pendingTools = []
     state.proc = null
   }
-}
-
-function extractSessionId(message: Record<string, unknown>): string | null {
-  const eventType = typeof message.type === 'string' ? message.type.toLowerCase() : ''
-  const subtype = typeof message.subtype === 'string' ? message.subtype.toLowerCase() : ''
-  const isErrorLike = eventType.includes('error') || eventType.includes('failed') || subtype.startsWith('error')
-  if (isErrorLike) {
-    return null
-  }
-
-  const sessionIdKeys = ['session_id', 'sessionId', 'conversation_id', 'conversationId', 'thread_id', 'threadId']
-  for (const key of sessionIdKeys) {
-    const value = message[key]
-    if (typeof value === 'string' && value.length > 0) {
-      return value
-    }
-  }
-
-  const response = message.response
-  if (response && typeof response === 'object' && !Array.isArray(response)) {
-    const responseObj = response as Record<string, unknown>
-    for (const key of sessionIdKeys) {
-      const value = responseObj[key]
-      if (typeof value === 'string' && value.length > 0) {
-        return value
-      }
-    }
-  }
-  return null
-}
-
-function parseToolsFromError(errorContent: string): string[] {
-  // Parse tool name(s) from error message
-  // Claude CLI error format examples:
-  // - "The user hasn't granted permission to use the Write tool"
-  // - "Claude requested permissions to write to /path/file.txt"
-  // - "Permission Required: Write - /path/file.txt"
-  const lowerContent = errorContent.toLowerCase()
-  const tools: string[] = []
-
-  // First, try to match explicit tool name in message
-  const toolNameMatch = errorContent.match(/(?:use the |Permission Required: )(\w+)(?: tool)?/i)
-  if (toolNameMatch) {
-    const toolName = toolNameMatch[1]
-    // Normalize tool name
-    const normalized = toolName.charAt(0).toUpperCase() + toolName.slice(1).toLowerCase()
-    if (['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep', 'Webfetch', 'Websearch'].includes(normalized)) {
-      const tool = normalized === 'Webfetch' ? 'WebFetch' : normalized === 'Websearch' ? 'WebSearch' : normalized
-      return [tool]
-    }
-  }
-
-  // Fallback to content-based detection
-  // "write to" could mean Write (new file) or Edit (existing file) - approve both
-  if (lowerContent.includes('write to') || lowerContent.includes('write ')) {
-    tools.push('Write', 'Edit')
-  }
-  if (lowerContent.includes('edit ') && !tools.includes('Edit')) {
-    tools.push('Edit')
-  }
-  if (lowerContent.includes('read ')) {
-    tools.push('Read')
-  }
-  if (lowerContent.includes('run ') || lowerContent.includes('execute') || lowerContent.includes('bash')) {
-    tools.push('Bash')
-  }
-  if (lowerContent.includes('glob')) {
-    tools.push('Glob')
-  }
-  if (lowerContent.includes('grep')) {
-    tools.push('Grep')
-  }
-  if (lowerContent.includes('fetch') || lowerContent.includes('webfetch')) {
-    tools.push('WebFetch')
-  }
-  if (lowerContent.includes('websearch')) {
-    tools.push('WebSearch')
-  }
-
-  // Default to Write and Edit as most common permission requests
-  return tools.length > 0 ? tools : ['Write', 'Edit']
-}
-
-function extractToolUseNameFromProviderJson(parsed: Record<string, unknown>): string | null {
-  if (parsed.type !== 'stream_event') return null
-  const event = parsed.event
-  if (!event || typeof event !== 'object' || Array.isArray(event)) return null
-  const eventObj = event as Record<string, unknown>
-  if (eventObj.type !== 'content_block_start') return null
-  const contentBlock = eventObj.content_block
-  if (!contentBlock || typeof contentBlock !== 'object' || Array.isArray(contentBlock)) return null
-  const blockObj = contentBlock as Record<string, unknown>
-  const blockType = typeof blockObj.type === 'string' ? blockObj.type : ''
-  if (blockType !== 'tool_use' && blockType !== 'server_tool_use') return null
-  return typeof blockObj.name === 'string' && blockObj.name.length > 0 ? blockObj.name : null
-}
-
-function normalizeToolName(tool: string): string {
-  if (!tool) return ''
-  const trimmed = tool.trim()
-  if (!trimmed) return ''
-  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1)
-}
-
-function normalizeTools(tools: string[]): string[] {
-  const seen = new Set<string>()
-  for (const tool of tools) {
-    const normalized = normalizeToolName(tool)
-    if (normalized) {
-      seen.add(normalized)
-    }
-  }
-  return Array.from(seen)
-}
-
-function codexToolNeedsAskApproval(tool: string): boolean {
-  const normalized = normalizeToolName(tool)
-  if (!normalized) return false
-  // Read-only tools can proceed without interruption in ask mode.
-  if (normalized === 'Read' || normalized === 'Glob' || normalized === 'Grep' || normalized === 'WebSearch') {
-    return false
-  }
-  return true
-}
-
-function isPermissionRequestText(text: string): boolean {
-  if (!text) return false
-  return /permission required|approval required|requires approval|requested permissions|haven't granted|hasn't granted|not approved|approval policy|permission denied|operation not permitted|read-only file system|cannot touch/i.test(text)
-}
-
-function extractPermissionRequestFromToolResult(parsed: Record<string, unknown>): { tools: string[]; description: string } | null {
-  if (parsed.type !== 'tool_result') return null
-  if (parsed.is_error !== true) return null
-  if (typeof parsed.content !== 'string') return null
-  const description = parsed.content
-  if (!isPermissionRequestText(description)) {
-    return null
-  }
-  const tools = parseToolsFromError(description)
-  return { tools, description }
-}
-
-function extractPermissionRequestFromProcessOutput(nonJsonOutput: string[]): { tools: string[]; description: string } | null {
-  if (!Array.isArray(nonJsonOutput) || nonJsonOutput.length === 0) return null
-  const description = nonJsonOutput.join('\n')
-  if (!isPermissionRequestText(description)) {
-    return null
-  }
-  const tools = parseToolsFromError(description)
-  return { tools, description }
 }

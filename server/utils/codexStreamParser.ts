@@ -1,3 +1,13 @@
+import type {
+  UIStreamEvent,
+  UIStreamBlockStartEvent,
+  UIStreamBlockDeltaEvent,
+  UIStreamBlockEndEvent,
+  UIStreamToolResultEvent,
+  UIStreamPermissionRequestEvent,
+  UIStreamTurnResultEvent,
+} from '~/types/chat'
+
 export function extractCodexDiagnosticFromEvent(event: Record<string, unknown>): string | null {
   const eventType = typeof event.type === 'string' ? event.type : ''
   if (eventType === 'error') {
@@ -74,20 +84,7 @@ function stringifyUnknown(value: unknown): string {
 }
 
 function joinTextChunks(chunks: string[]): string {
-  if (chunks.length <= 1) return chunks[0] || ''
-  let out = ''
-  for (const chunk of chunks) {
-    if (!chunk) continue
-    const prev = out.trimEnd()
-    const current = chunk.trimStart()
-    const prevLooksLikeTableRow = /^\|.+\|$/.test(prev.split('\n').pop() || '')
-    const currentLooksLikeTableRow = /^\|.+\|$/.test(current.split('\n')[0] || '')
-    if (out && prevLooksLikeTableRow && currentLooksLikeTableRow) {
-      out += '\n'
-    }
-    out += chunk
-  }
-  return out
+  return chunks.filter(Boolean).join('')
 }
 
 function deriveToolNameFromEventType(eventType: string): string {
@@ -451,103 +448,94 @@ function extractReasoningTextFromEvent(event: Record<string, unknown>): string {
   return ''
 }
 
-export function mapCodexEventToProviderJson(event: Record<string, unknown>): Record<string, unknown>[] {
+export function mapCodexEventToUIEvents(event: Record<string, unknown>): UIStreamEvent[] {
   const eventType = typeof event.type === 'string' ? event.type : ''
-  const sessionId = extractSessionId(event)
+  const sessionId = extractSessionId(event) || undefined
 
-  const asTextStreamEvents = (text: string): Record<string, unknown>[] => ([
+  const asTextStreamEvents = (text: string): UIStreamEvent[] => ([
     {
-      type: 'stream_event',
-      ...(sessionId ? { session_id: sessionId } : {}),
-      event: {
-        type: 'content_block_start',
-        content_block: { type: 'text', text },
-      },
+      type: 'block_start',
+      sessionId,
+      blockId: `blk-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      blockType: 'text',
+      text,
     },
     {
-      type: 'stream_event',
-      ...(sessionId ? { session_id: sessionId } : {}),
-      event: { type: 'content_block_stop' },
+      type: 'block_end',
+      sessionId,
+      blockId: '',
     },
   ])
 
-  const asThinkingStreamEvents = (thinking: string): Record<string, unknown>[] => ([
+  const asThinkingStreamEvents = (thinking: string): UIStreamEvent[] => ([
     {
-      type: 'stream_event',
-      ...(sessionId ? { session_id: sessionId } : {}),
-      event: {
-        type: 'content_block_start',
-        content_block: { type: 'thinking', thinking },
-      },
+      type: 'block_start',
+      sessionId,
+      blockId: `blk-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      blockType: 'thinking',
+      thinking,
     },
     {
-      type: 'stream_event',
-      ...(sessionId ? { session_id: sessionId } : {}),
-      event: { type: 'content_block_stop' },
+      type: 'block_end',
+      sessionId,
+      blockId: '',
     },
   ])
 
-  const mapPermissionRequest = () => {
+  const mapPermissionRequest = (): UIStreamPermissionRequestEvent | null => {
     const permission = extractPermissionRequest(event)
     if (!permission) return null
 
     return {
       type: 'permission_request',
-      ...(sessionId ? { session_id: sessionId } : {}),
-      permission,
-    } satisfies Record<string, unknown>
+      sessionId,
+      tool: permission.tool,
+      description: permission.description,
+      input: event.permission as Record<string, unknown>,
+    }
   }
 
-  const mapToolUseAsStreamEvents = (): Record<string, unknown>[] | null => {
+  const mapToolUseAsStreamEvents = (): UIStreamEvent[] | null => {
     const toolUse = extractToolUse(event)
     if (!toolUse) return null
     const inputJson = JSON.stringify(toolUse.input)
+    const blockId = `blk-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`
     return [
       {
-        type: 'stream_event',
-        ...(sessionId ? { session_id: sessionId } : {}),
-        event: {
-          type: 'content_block_start',
-          index: 0,
-          content_block: {
-            type: 'tool_use',
-            id: toolUse.toolUseId,
-            name: toolUse.name,
-          },
-        },
+        type: 'block_start',
+        sessionId,
+        blockId,
+        blockType: 'tool_use',
+        index: 0,
+        name: toolUse.name,
+        toolUseId: toolUse.toolUseId,
       },
       {
-        type: 'stream_event',
-        ...(sessionId ? { session_id: sessionId } : {}),
-        event: {
-          type: 'content_block_delta',
-          index: 0,
-          delta: {
-            partial_json: inputJson,
-          },
-        },
+        type: 'block_delta',
+        sessionId,
+        blockId,
+        index: 0,
+        partialJson: inputJson,
       },
       {
-        type: 'stream_event',
-        ...(sessionId ? { session_id: sessionId } : {}),
-        event: {
-          type: 'content_block_stop',
-          index: 0,
-        },
+        type: 'block_end',
+        sessionId,
+        blockId,
+        index: 0,
       },
     ]
   }
 
-  const mapToolResult = () => {
+  const mapToolResult = (): UIStreamToolResultEvent | null => {
     const result = extractToolResult(event)
     if (!result) return null
     return {
       type: 'tool_result',
-      ...(sessionId ? { session_id: sessionId } : {}),
-      tool_use_id: result.toolUseId,
+      sessionId,
+      toolUseId: result.toolUseId,
       content: result.content,
-      is_error: result.isError,
-    } satisfies Record<string, unknown>
+      isError: result.isError,
+    }
   }
 
   const getFinalMessageText = (): string => {
@@ -586,27 +574,25 @@ export function mapCodexEventToProviderJson(event: Record<string, unknown>): Rec
         ? event.text
         : ''
     if (!text) return []
+    const blockId = `blk-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`
     return [
       {
-        type: 'stream_event',
-        ...(sessionId ? { session_id: sessionId } : {}),
-        event: {
-          type: 'content_block_start',
-          content_block: { type: 'text', text: '' },
-        },
+        type: 'block_start',
+        sessionId,
+        blockId,
+        blockType: 'text',
+        text: '',
       },
       {
-        type: 'stream_event',
-        ...(sessionId ? { session_id: sessionId } : {}),
-        event: {
-          type: 'content_block_delta',
-          delta: { text },
-        },
+        type: 'block_delta',
+        sessionId,
+        blockId,
+        text,
       },
       {
-        type: 'stream_event',
-        ...(sessionId ? { session_id: sessionId } : {}),
-        event: { type: 'content_block_stop' },
+        type: 'block_end',
+        sessionId,
+        blockId,
       },
     ]
   }
@@ -614,21 +600,7 @@ export function mapCodexEventToProviderJson(event: Record<string, unknown>): Rec
   if (eventType === 'agent_message') {
     const text = extractAgentTextFromEvent(event)
     if (!text) return []
-    return [
-      {
-        type: 'stream_event',
-        ...(sessionId ? { session_id: sessionId } : {}),
-        event: {
-          type: 'content_block_start',
-          content_block: { type: 'text', text },
-        },
-      },
-      {
-        type: 'stream_event',
-        ...(sessionId ? { session_id: sessionId } : {}),
-        event: { type: 'content_block_stop' },
-      },
-    ]
+    return asTextStreamEvents(text)
   }
 
   if (eventType === 'reasoning' || eventType === 'agent_reasoning') {
@@ -639,9 +611,9 @@ export function mapCodexEventToProviderJson(event: Record<string, unknown>): Rec
 
   if (eventType === 'task_complete' || eventType === 'turn.completed') {
     const finalText = getFinalMessageText()
-    const resultEvent = {
-      type: 'result',
-      ...(sessionId ? { session_id: sessionId } : {}),
+    const resultEvent: UIStreamTurnResultEvent = {
+      type: 'turn_result',
+      sessionId,
       subtype: 'success',
     }
 
@@ -651,9 +623,7 @@ export function mapCodexEventToProviderJson(event: Record<string, unknown>): Rec
 
     return [
       ...asTextStreamEvents(finalText),
-      {
-        ...resultEvent,
-      },
+      resultEvent,
     ]
   }
 
@@ -672,11 +642,12 @@ export function mapCodexEventToProviderJson(event: Record<string, unknown>): Rec
     return toolUseEvents
   }
 
-  return [sessionId ? { ...event, session_id: sessionId } : event]
+  // Fallback for unhandled events - wrap in thinking if it has content, or omit
+  return []
 }
 
 export function processCodexJsonLine(cleanedLine: string): {
-  mappedEvents: Record<string, unknown>[]
+  mappedEvents: UIStreamEvent[]
   diagnostics: string[]
   nonJson?: string
 } {
@@ -750,7 +721,7 @@ export function processCodexJsonLine(cleanedLine: string): {
       .map(event => extractCodexDiagnosticFromEvent(event))
       .filter((diag): diag is string => !!diag)
 
-    const mappedEvents = eventsToProcess.flatMap(event => mapCodexEventToProviderJson(event))
+    const mappedEvents = eventsToProcess.flatMap(event => mapCodexEventToUIEvents(event))
 
     return {
       mappedEvents,

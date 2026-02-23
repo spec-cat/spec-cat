@@ -21,7 +21,7 @@ describe('buildCodexExecArgs', () => {
       'gpt-5.3-codex',
       '--sandbox',
       'workspace-write',
-      'hello',
+      '-',
     ])
   })
 
@@ -39,7 +39,7 @@ describe('buildCodexExecArgs', () => {
       '--sandbox',
       'workspace-write',
       'thread-123',
-      'follow-up',
+      '-',
     ])
   })
 
@@ -70,8 +70,6 @@ describe('buildCodexExecArgs', () => {
       message: 'implement the task',
     }))
 
-    expect(args.at(-1)).toBe(
-      'System instructions:\nRead specs/018/spec.md first.\n\nUser request:\nimplement the task',
-    )
+    expect(args.at(-1)).toBe('-')
   })
 })

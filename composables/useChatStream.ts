@@ -15,6 +15,7 @@ import type {
   ResultSummaryBlock,
   SessionInitBlock,
   ChatImageAttachment,
+  UIStreamEvent,
 } from '~/types/chat'
 import { DEFAULT_MODEL_KEY, DEFAULT_PROVIDER_ID } from '~/types/aiProvider'
 import { generateBlockId } from '~/types/chat'
@@ -27,84 +28,10 @@ import {
   parsePermissionRequestFromText,
 } from '~/utils/chatStream'
 
-// Provider SDK message types
-interface StreamEvent {
-  type: 'stream_event'
-  event: {
-    type: 'message_start' | 'content_block_start' | 'content_block_delta' | 'content_block_stop' | 'message_stop'
-    index?: number
-    delta?: {
-      type?: string
-      text?: string
-      thinking?: string
-      partial_json?: string
-    }
-    content_block?: {
-      type: string
-      id?: string
-      name?: string
-      text?: string
-      thinking?: string
-      input?: Record<string, unknown>
-    }
-  }
-  session_id?: string
-}
-
-interface ToolResultMessage {
-  type: 'tool_result'
-  tool_use_id: string
-  content: string
-  is_error?: boolean
-  session_id?: string
-}
-
-interface PermissionRequestMessage {
-  type: 'permission_request'
-  permission: {
-    tool: string
-    path?: string
-    file_path?: string
-    command?: string
-    description?: string
-    [key: string]: unknown
-  }
-  session_id?: string
-}
-
-interface ResultMessage {
-  type: 'result'
-  subtype: 'success' | 'error_max_turns' | 'error_during_execution'
-  result?: string
-  total_cost_usd?: number
-  duration_ms?: number
-  duration_api_ms?: number
-  num_turns?: number
-  usage?: {
-    input_tokens: number
-    output_tokens: number
-    cache_creation_input_tokens: number
-    cache_read_input_tokens: number
-  }
-  session_id?: string
-  is_error?: boolean
-}
-
-interface SystemMessage {
-  type: 'system'
-  subtype?: string
-  model?: string
-  tools?: string[]
-  permissionMode?: string
-  cwd?: string
-  session_id?: string
-}
-
-type SDKMessage = StreamEvent | ToolResultMessage | PermissionRequestMessage | ResultMessage | SystemMessage | { type: string }
-
 interface WSResponse {
-  type: 'provider_json' | 'done' | 'error' | 'pong' | 'permission_prompt' | 'permission_request' | 'session_reset' | 'worktree_recovered' | 'aborted' | 'context_reset'
-  data?: SDKMessage
+  type: 'ui_event' | 'provider_json' | 'done' | 'error' | 'pong' | 'permission_prompt' | 'permission_request' | 'session_reset' | 'worktree_recovered' | 'aborted' | 'context_reset'
+  event?: UIStreamEvent
+  data?: any // Legacy provider JSON payload
   error?: string
   requestId?: string
   text?: string  // For permission_prompt
@@ -114,7 +41,7 @@ interface WSResponse {
   denied?: boolean  // For done after permission denial
 }
 
-function extractProviderSessionId(msg: SDKMessage): string | null {
+function extractProviderSessionId(msg: any): string | null {
   if (!msg || typeof msg !== 'object') return null
   const record = msg as Record<string, unknown>
   const keys = ['session_id', 'sessionId', 'conversation_id', 'conversationId', 'thread_id', 'threadId']
@@ -155,8 +82,6 @@ interface ConnectionState {
   activeTools: Map<number, ActiveTool>
   currentTextBlockId: string | null
   currentThinkingBlockId: string | null
-  pendingTextDelta: string
-  textFlushTimer: ReturnType<typeof setTimeout> | null
   healthCheckInterval: ReturnType<typeof setInterval> | null
   lastMessageTime: number
   lastServerError: string | null
@@ -173,7 +98,6 @@ const rolloutRecoveryAttempts = new Set<string>()
 // Health check constants
 const HEALTH_CHECK_INTERVAL_MS = 30_000  // Check every 30s
 const STREAMING_TIMEOUT_MS = 180_000     // 3 min with no messages → timeout
-const TEXT_BUFFER_FLUSH_MS = 220         // Fallback flush when no newline arrives
 
 function summarizeCloseCode(code: number): string {
   switch (code) {
@@ -341,20 +265,11 @@ export function useChatStream() {
   function cleanupConnection(conversationId: string, closeSocket = true) {
     const conn = connections.get(conversationId)
     if (!conn) return
-    flushBufferedText(conn, conversationId, true)
-    clearTextFlushTimer(conn)
     clearHealthCheck(conn)
     if (closeSocket && conn.ws.readyState === WebSocket.OPEN) {
       conn.ws.close()
     }
     connections.delete(conversationId)
-  }
-
-  function clearTextFlushTimer(conn: ConnectionState) {
-    if (conn.textFlushTimer) {
-      clearTimeout(conn.textFlushTimer)
-      conn.textFlushTimer = null
-    }
   }
 
   function flushTextChunk(conn: ConnectionState, conversationId: string, chunk: string) {
@@ -366,32 +281,6 @@ export function useChatStream() {
     }, conversationId, { syncContent: false })
     // Keep flat content in sync incrementally while we stream text.
     chatStore.appendToMessage(conn.currentMessageId, chunk, conversationId)
-  }
-
-  function flushBufferedText(conn: ConnectionState, conversationId: string, forceAll = false) {
-    clearTextFlushTimer(conn)
-    if (!conn.pendingTextDelta) return
-
-    if (forceAll) {
-      flushTextChunk(conn, conversationId, conn.pendingTextDelta)
-      conn.pendingTextDelta = ''
-      return
-    }
-
-    const lastNewline = conn.pendingTextDelta.lastIndexOf('\n')
-    if (lastNewline === -1) return
-
-    const chunk = conn.pendingTextDelta.slice(0, lastNewline + 1)
-    conn.pendingTextDelta = conn.pendingTextDelta.slice(lastNewline + 1)
-    flushTextChunk(conn, conversationId, chunk)
-  }
-
-  function scheduleTextFlush(conn: ConnectionState, conversationId: string) {
-    clearTextFlushTimer(conn)
-    if (!conn.pendingTextDelta) return
-    conn.textFlushTimer = setTimeout(() => {
-      flushBufferedText(conn, conversationId, true)
-    }, TEXT_BUFFER_FLUSH_MS)
   }
 
   /**
@@ -459,8 +348,6 @@ export function useChatStream() {
         activeTools: new Map(),
         currentTextBlockId: null,
         currentThinkingBlockId: null,
-        pendingTextDelta: '',
-        textFlushTimer: null,
         healthCheckInterval: null,
         lastMessageTime: Date.now(),
         lastServerError: null,
@@ -479,7 +366,6 @@ export function useChatStream() {
           conn.lastSocketError = 'Browser reported a WebSocket transport error (network/proxy/server)'
         }
         if (chatStore.isConversationStreaming(conversationId)) {
-          if (conn) flushBufferedText(conn, conversationId, true)
           if (conn?.currentMessageId) {
             markRunningToolBlocks(conn.currentMessageId, conversationId, 'error')
             chatStore.updateMessage(conn.currentMessageId, { status: 'error' }, conversationId)
@@ -494,9 +380,7 @@ export function useChatStream() {
 
       ws.onclose = (event) => {
         const conn = connections.get(conversationId)
-        if (conn) flushBufferedText(conn, conversationId, true)
         if (conn) clearHealthCheck(conn)
-        if (conn) clearTextFlushTimer(conn)
         connections.delete(conversationId)
         cascadeStates.delete(conversationId)
 
@@ -612,7 +496,6 @@ export function useChatStream() {
         }
 
         clearHealthCheck(conn)
-        flushBufferedText(conn, conversationId, true)
         // Mark any remaining running tool_use blocks as error
         markRunningToolBlocks(conn.currentMessageId, conversationId, 'error')
         chatStore.updateMessage(conn.currentMessageId, { status: 'error' }, conversationId)
@@ -633,7 +516,6 @@ export function useChatStream() {
 
       if (response.type === 'done') {
         clearHealthCheck(conn)
-        flushBufferedText(conn, conversationId, true)
         const currentStatus = getMessageStatus(conversationId, conn.currentMessageId)
         rolloutRecoveryAttempts.delete(buildRecoveryKey(conversationId, conn.currentMessageId))
 
@@ -790,7 +672,6 @@ export function useChatStream() {
         // Claude CLI exits while waiting for permission approval.
         // Move UI out of "streaming" until user responds.
         clearHealthCheck(conn)
-        flushBufferedText(conn, conversationId, true)
         chatStore.endConversationStreaming(conversationId)
 
         const request: PermissionRequest = parsePermissionRequestFromText(
@@ -810,7 +691,6 @@ export function useChatStream() {
       if (response.type === 'permission_prompt' && response.text) {
         // Legacy permission prompt path has the same lifecycle as permission_request.
         clearHealthCheck(conn)
-        flushBufferedText(conn, conversationId, true)
         chatStore.endConversationStreaming(conversationId)
 
         const request: PermissionRequest = parsePermissionRequestFromText(response.text, 'Permission')
@@ -822,8 +702,10 @@ export function useChatStream() {
         return
       }
 
-      if (response.type === 'provider_json' && response.data) {
-        processSDKMessage(response.data, conversationId)
+      if (response.type === 'ui_event' && response.event) {
+        processUIEvent(response.event, conversationId)
+      } else if (response.type === 'provider_json' && response.data) {
+        // Legacy path ignored - server now emits ui_event for all providers
       }
     } catch (e) {
       console.error(`[useChatStream] Failed to parse WebSocket message for ${conversationId}:`, e, 'Raw data:', data?.slice(0, 200))
@@ -839,155 +721,56 @@ export function useChatStream() {
   }
 
   /**
-   * Ensure a message has contentBlocks initialized
+   * Process canonical UI stream event
    */
-  function ensureBlocks(messageId: string, conversationId: string) {
-    chatStore.initContentBlocks(messageId, conversationId)
-  }
-
-  /**
-   * Append a TextBlock with the given text (for system notifications like permission, session reset)
-   */
-  function appendTextBlock(messageId: string, text: string, conversationId: string) {
-    ensureBlocks(messageId, conversationId)
-    const block: TextBlock = { id: generateBlockId(), type: 'text', text }
-    chatStore.appendContentBlockWithSave(messageId, block, conversationId)
-  }
-
-  function hasSessionInitBlock(messageId: string, conversationId: string): boolean {
-    const conv = chatStore.conversations.find((c: { id: string }) => c.id === conversationId)
-    const msg = conv?.messages.find((m: { id: string }) => m.id === messageId)
-    return !!msg?.contentBlocks?.some((block) => block.type === 'session_init')
-  }
-
-  /**
-   * Process SDK message and build structured content blocks (per-conversation)
-   */
-  function processSDKMessage(msg: SDKMessage, conversationId: string) {
+  function processUIEvent(event: UIStreamEvent, conversationId: string) {
     const conn = connections.get(conversationId)
     if (!conn) return
+    
     chatStore.pushDebugEvent({
       direction: 'in',
-      channel: 'provider',
-      eventType: msg.type,
-      payload: msg,
+      channel: 'ui',
+      eventType: event.type,
+      payload: event,
     }, conversationId)
 
-    // Capture provider session ID for resume capability, but never from error-shaped events.
-    const eventType = typeof msg.type === 'string' ? msg.type.toLowerCase() : ''
-    const subtype = 'subtype' in msg && typeof (msg as { subtype?: unknown }).subtype === 'string'
-      ? String((msg as { subtype: string }).subtype).toLowerCase()
-      : ''
-    const isErrorLike = eventType.includes('error') || eventType.includes('failed') || subtype.startsWith('error')
-    const extractedSessionId = !isErrorLike ? extractProviderSessionId(msg) : null
-    if (extractedSessionId) {
-      chatStore.setProviderSessionId(extractedSessionId, conversationId)
+    if (event.sessionId) {
+      chatStore.setProviderSessionId(event.sessionId, conversationId)
     }
 
-    // Handle permission_request from SDK
-    if (msg.type === 'permission_request') {
-      const permMsg = msg as PermissionRequestMessage
-      const perm = permMsg.permission
-
-      const request: PermissionRequest = {
-        tool: perm.tool,
-        filePath: perm.file_path || perm.path,
-        command: perm.command,
-        description: perm.description,
-        input: perm,
-      }
-
-      chatStore.setPendingPermission(request, conversationId)
-
-      let permText = `\n\n**Permission Required**: ${perm.tool}`
-      if (request.filePath) permText += ` - ${request.filePath}`
-      else if (request.command) permText += ` - \`${request.command}\``
-      appendTextBlock(conn.currentMessageId, permText + '\n', conversationId)
-      return
-    }
-
-    // Handle 'user' type message with tool_result containing permission error
-    if (msg.type === 'user') {
-      const userMsg = msg as {
-        type: 'user'
-        message?: { content?: Array<{ type: string; content?: string; is_error?: boolean }> }
-        content?: Array<{ type: string; content?: string; is_error?: boolean }>
-      }
-
-      const contentArray = userMsg.message?.content || userMsg.content
-
-      if (contentArray) {
-        for (const block of contentArray) {
-          if (block.type === 'tool_result' && block.is_error && block.content) {
-            const content = block.content
-            if (content.includes('requested permissions') || content.includes('haven\'t granted')) {
-              const request: PermissionRequest = parsePermissionRequestFromText(content, 'Permission')
-
-              chatStore.setPendingPermission(request, conversationId)
-
-              let permText = `\n\n**Permission Required**: ${request.tool}`
-              if (request.filePath) permText += ` - ${request.filePath}`
-              else if (request.command) permText += ` - \`${request.command}\``
-              appendTextBlock(conn.currentMessageId, permText + '\n', conversationId)
-              return
-            }
-          }
-        }
-      }
-    }
-
-    // Handle system message (session init info)
-    if (msg.type === 'system') {
-      const sysMsg = msg as SystemMessage
-      if (sysMsg.subtype === 'init' && sysMsg.model) {
+    switch (event.type) {
+      case 'session_init': {
         ensureBlocks(conn.currentMessageId, conversationId)
         const block: SessionInitBlock = {
           id: generateBlockId(),
           type: 'session_init',
-          model: sysMsg.model,
-          tools: sysMsg.tools || [],
-          permissionMode: sysMsg.permissionMode || '',
-          cwd: sysMsg.cwd || '',
+          model: event.model,
+          tools: event.tools,
+          permissionMode: event.permissionMode,
+          cwd: event.cwd,
         }
         chatStore.appendContentBlockWithSave(conn.currentMessageId, block, conversationId)
+        break
       }
-      return
-    }
 
-    // Handle stream_event
-    if (msg.type === 'stream_event') {
-      const streamEvent = msg as StreamEvent
-      const event = streamEvent.event
-
-      if (event.type === 'content_block_start' && event.content_block) {
-        const contentBlock = event.content_block
-
-        if (contentBlock.type === 'text') {
-          conn.pendingTextDelta = ''
-          clearTextFlushTimer(conn)
-          ensureBlocks(conn.currentMessageId, conversationId)
-          const blockId = generateBlockId()
-          const block: TextBlock = { id: blockId, type: 'text', text: contentBlock.text || '' }
+      case 'block_start': {
+        ensureBlocks(conn.currentMessageId, conversationId)
+        const blockId = event.blockId || generateBlockId()
+        
+        if (event.blockType === 'text') {
+          const block: TextBlock = { id: blockId, type: 'text', text: event.text || '' }
           chatStore.appendContentBlockWithSave(conn.currentMessageId, block, conversationId)
           conn.currentTextBlockId = blockId
-        }
-
-        if (contentBlock.type === 'thinking') {
-          ensureBlocks(conn.currentMessageId, conversationId)
-          const blockId = generateBlockId()
-          const block: ThinkingBlock = { id: blockId, type: 'thinking', thinking: contentBlock.thinking || '' }
+        } else if (event.blockType === 'thinking') {
+          const block: ThinkingBlock = { id: blockId, type: 'thinking', thinking: event.thinking || '' }
           chatStore.appendContentBlockWithSave(conn.currentMessageId, block, conversationId)
           conn.currentThinkingBlockId = blockId
-        }
-
-        if ((contentBlock.type === 'tool_use' || contentBlock.type === 'server_tool_use') && contentBlock.id && contentBlock.name) {
-          ensureBlocks(conn.currentMessageId, conversationId)
-          const blockId = generateBlockId()
+        } else if (event.blockType === 'tool_use' && event.toolUseId && event.name) {
           const block: ToolUseBlock = {
             id: blockId,
             type: 'tool_use',
-            toolUseId: contentBlock.id,
-            name: contentBlock.name,
+            toolUseId: event.toolUseId,
+            name: event.name,
             input: {},
             inputSummary: '',
             status: 'running',
@@ -995,49 +778,43 @@ export function useChatStream() {
           chatStore.appendContentBlockWithSave(conn.currentMessageId, block, conversationId)
           conn.activeTools.set(event.index ?? 0, {
             blockId,
-            toolUseId: contentBlock.id,
-            name: contentBlock.name,
+            toolUseId: event.toolUseId,
+            name: event.name,
             inputJson: '',
           })
         }
+        break
       }
 
-      if (event.type === 'content_block_delta' && event.delta) {
-        if (event.delta.text && conn.currentTextBlockId) {
-          conn.pendingTextDelta += event.delta.text
-          flushBufferedText(conn, conversationId, false)
-          scheduleTextFlush(conn, conversationId)
+      case 'block_delta': {
+        if (event.text && conn.currentTextBlockId) {
+          flushTextChunk(conn, conversationId, event.text)
         }
 
-        if (event.delta.thinking && conn.currentThinkingBlockId) {
+        if (event.thinking && conn.currentThinkingBlockId) {
           chatStore.updateBlockWithSave(conn.currentMessageId, conn.currentThinkingBlockId, (block) => {
             if (block.type === 'thinking') {
-              (block as ThinkingBlock).thinking += event.delta!.thinking!
+              (block as ThinkingBlock).thinking += event.thinking!
             }
           }, conversationId, { syncContent: false })
         }
 
-        if (event.delta.partial_json && event.index !== undefined) {
+        if (event.partialJson && event.index !== undefined) {
           const tool = conn.activeTools.get(event.index)
           if (tool) {
-            tool.inputJson += event.delta.partial_json
+            tool.inputJson += event.partialJson
           }
         }
+        break
       }
 
-      if (event.type === 'content_block_stop') {
-        // If a text block was being streamed, clear the tracker
+      case 'block_end': {
         if (conn.currentTextBlockId) {
-          flushBufferedText(conn, conversationId, true)
           conn.currentTextBlockId = null
         }
-
-        // If a thinking block was being streamed, clear the tracker
         if (conn.currentThinkingBlockId) {
           conn.currentThinkingBlockId = null
         }
-
-        // Handle tool block completion
         if (event.index !== undefined) {
           const tool = conn.activeTools.get(event.index)
           if (tool) {
@@ -1068,78 +845,105 @@ export function useChatStream() {
             }, conversationId)
           }
         }
+        break
       }
 
-      return
-    }
-
-    // Handle tool_result — create ToolResultBlock with full content (no truncation)
-    if (msg.type === 'tool_result') {
-      const result = msg as ToolResultMessage
-      flushBufferedText(conn, conversationId, true)
-      ensureBlocks(conn.currentMessageId, conversationId)
-
-      // Update the matching ToolUseBlock status
-      const toolBlock = chatStore.findToolUseBlock(conn.currentMessageId, result.tool_use_id, conversationId)
-      if (toolBlock && toolBlock.type === 'tool_use') {
-        chatStore.updateBlockById(conn.currentMessageId, toolBlock.id, (block) => {
-          if (block.type === 'tool_use') {
-            (block as ToolUseBlock).status = result.is_error ? 'error' : 'complete'
-          }
-        }, conversationId)
-      }
-
-      // Create ToolResultBlock
-      const block: ToolResultBlock = {
-        id: generateBlockId(),
-        type: 'tool_result',
-        toolUseId: result.tool_use_id,
-        content: result.content || '',
-        isError: !!result.is_error,
-      }
-      chatStore.appendContentBlockWithSave(conn.currentMessageId, block, conversationId)
-
-      if (result.is_error) {
-        console.warn('[useChatStream] Tool error:', result.content?.slice(0, 500))
-      }
-      return
-    }
-
-    // Handle result message
-    if (msg.type === 'result') {
-      flushBufferedText(conn, conversationId, true)
-      const result = msg as ResultMessage
-
-      if (result.is_error || result.subtype === 'error_max_turns' || result.subtype === 'error_during_execution') {
-        chatStore.updateMessage(conn.currentMessageId, { status: 'error' }, conversationId)
-        disableCascade(conversationId)
-        if (result.subtype === 'error_max_turns') {
-          chatStore.setSessionError('Maximum conversation turns reached. Please start a new conversation.', conversationId)
-        } else if (result.subtype === 'error_during_execution') {
-          chatStore.setSessionError('An error occurred during provider execution.', conversationId)
-        }
-        console.error('[useChatStream] Result error:', result.subtype)
-      }
-
-      // Add result summary block for successful completions
-      if (result.subtype === 'success' && result.usage) {
+      case 'tool_result': {
         ensureBlocks(conn.currentMessageId, conversationId)
-        const block: ResultSummaryBlock = {
+
+        // Update the matching ToolUseBlock status
+        const toolBlock = chatStore.findToolUseBlock(conn.currentMessageId, event.toolUseId, conversationId)
+        if (toolBlock && toolBlock.type === 'tool_use') {
+          chatStore.updateBlockById(conn.currentMessageId, toolBlock.id, (block) => {
+            if (block.type === 'tool_use') {
+              (block as ToolUseBlock).status = event.isError ? 'error' : 'complete'
+            }
+          }, conversationId)
+        }
+
+        // Create ToolResultBlock
+        const block: ToolResultBlock = {
           id: generateBlockId(),
-          type: 'result_summary',
-          totalCostUsd: result.total_cost_usd ?? 0,
-          durationMs: result.duration_ms ?? 0,
-          numTurns: result.num_turns ?? 0,
-          usage: {
-            inputTokens: result.usage.input_tokens ?? 0,
-            outputTokens: result.usage.output_tokens ?? 0,
-            cacheCreationInputTokens: result.usage.cache_creation_input_tokens ?? 0,
-            cacheReadInputTokens: result.usage.cache_read_input_tokens ?? 0,
-          },
+          type: 'tool_result',
+          toolUseId: event.toolUseId,
+          content: event.content || '',
+          isError: !!event.isError,
         }
         chatStore.appendContentBlockWithSave(conn.currentMessageId, block, conversationId)
+        break
+      }
+
+      case 'permission_request': {
+        clearHealthCheck(conn)
+        chatStore.endConversationStreaming(conversationId)
+
+        const request: PermissionRequest = {
+          tool: event.tool,
+          description: event.description,
+          input: event.input,
+          tools: event.tools,
+        }
+
+        chatStore.setPendingPermission(request, conversationId)
+
+        let permText = `\n\n**Permission Required**: ${request.tool}`
+        appendTextBlock(conn.currentMessageId, permText + '\n', conversationId)
+        break
+      }
+
+      case 'turn_result': {
+        if (event.subtype !== 'success') {
+          chatStore.updateMessage(conn.currentMessageId, { status: 'error' }, conversationId)
+          disableCascade(conversationId)
+          if (event.subtype === 'max_turns') {
+            chatStore.setSessionError('Maximum conversation turns reached. Please start a new conversation.', conversationId)
+          }
+        }
+
+        // Add result summary block for successful completions
+        if (event.subtype === 'success' && event.usage) {
+          ensureBlocks(conn.currentMessageId, conversationId)
+          const block: ResultSummaryBlock = {
+            id: generateBlockId(),
+            type: 'result_summary',
+            totalCostUsd: event.totalCostUsd ?? 0,
+            durationMs: event.durationMs ?? 0,
+            numTurns: event.numTurns ?? 0,
+            usage: event.usage,
+          }
+          chatStore.appendContentBlockWithSave(conn.currentMessageId, block, conversationId)
+        }
+        break
+      }
+
+      case 'error': {
+        chatStore.updateMessage(conn.currentMessageId, { status: 'error' }, conversationId)
+        chatStore.setSessionError(event.error, conversationId)
+        break
       }
     }
+  }
+
+  /**
+   * Ensure a message has contentBlocks initialized
+   */
+  function ensureBlocks(messageId: string, conversationId: string) {
+    chatStore.initContentBlocks(messageId, conversationId)
+  }
+
+  /**
+   * Append a TextBlock with the given text (for system notifications like permission, session reset)
+   */
+  function appendTextBlock(messageId: string, text: string, conversationId: string) {
+    ensureBlocks(messageId, conversationId)
+    const block: TextBlock = { id: generateBlockId(), type: 'text', text }
+    chatStore.appendContentBlockWithSave(messageId, block, conversationId)
+  }
+
+  function hasSessionInitBlock(messageId: string, conversationId: string): boolean {
+    const conv = chatStore.conversations.find((c: { id: string }) => c.id === conversationId)
+    const msg = conv?.messages.find((m: { id: string }) => m.id === messageId)
+    return !!msg?.contentBlocks?.some((block) => block.type === 'session_init')
   }
 
   /**
@@ -1166,8 +970,6 @@ export function useChatStream() {
         conn.activeTools.clear()
         conn.currentTextBlockId = null
         conn.currentThinkingBlockId = null
-        conn.pendingTextDelta = ''
-        clearTextFlushTimer(conn)
         startHealthCheck(conn)
       }
 
