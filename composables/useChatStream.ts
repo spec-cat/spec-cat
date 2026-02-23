@@ -155,6 +155,8 @@ interface ConnectionState {
   activeTools: Map<number, ActiveTool>
   currentTextBlockId: string | null
   currentThinkingBlockId: string | null
+  pendingTextDelta: string
+  textFlushTimer: ReturnType<typeof setTimeout> | null
   healthCheckInterval: ReturnType<typeof setInterval> | null
   lastMessageTime: number
   lastServerError: string | null
@@ -171,6 +173,7 @@ const rolloutRecoveryAttempts = new Set<string>()
 // Health check constants
 const HEALTH_CHECK_INTERVAL_MS = 30_000  // Check every 30s
 const STREAMING_TIMEOUT_MS = 180_000     // 3 min with no messages → timeout
+const TEXT_BUFFER_FLUSH_MS = 220         // Fallback flush when no newline arrives
 
 function summarizeCloseCode(code: number): string {
   switch (code) {
@@ -338,11 +341,57 @@ export function useChatStream() {
   function cleanupConnection(conversationId: string, closeSocket = true) {
     const conn = connections.get(conversationId)
     if (!conn) return
+    flushBufferedText(conn, conversationId, true)
+    clearTextFlushTimer(conn)
     clearHealthCheck(conn)
     if (closeSocket && conn.ws.readyState === WebSocket.OPEN) {
       conn.ws.close()
     }
     connections.delete(conversationId)
+  }
+
+  function clearTextFlushTimer(conn: ConnectionState) {
+    if (conn.textFlushTimer) {
+      clearTimeout(conn.textFlushTimer)
+      conn.textFlushTimer = null
+    }
+  }
+
+  function flushTextChunk(conn: ConnectionState, conversationId: string, chunk: string) {
+    if (!chunk || !conn.currentTextBlockId) return
+    chatStore.updateBlockWithSave(conn.currentMessageId, conn.currentTextBlockId, (block) => {
+      if (block.type === 'text') {
+        (block as TextBlock).text += chunk
+      }
+    }, conversationId, { syncContent: false })
+    // Keep flat content in sync incrementally while we stream text.
+    chatStore.appendToMessage(conn.currentMessageId, chunk, conversationId)
+  }
+
+  function flushBufferedText(conn: ConnectionState, conversationId: string, forceAll = false) {
+    clearTextFlushTimer(conn)
+    if (!conn.pendingTextDelta) return
+
+    if (forceAll) {
+      flushTextChunk(conn, conversationId, conn.pendingTextDelta)
+      conn.pendingTextDelta = ''
+      return
+    }
+
+    const lastNewline = conn.pendingTextDelta.lastIndexOf('\n')
+    if (lastNewline === -1) return
+
+    const chunk = conn.pendingTextDelta.slice(0, lastNewline + 1)
+    conn.pendingTextDelta = conn.pendingTextDelta.slice(lastNewline + 1)
+    flushTextChunk(conn, conversationId, chunk)
+  }
+
+  function scheduleTextFlush(conn: ConnectionState, conversationId: string) {
+    clearTextFlushTimer(conn)
+    if (!conn.pendingTextDelta) return
+    conn.textFlushTimer = setTimeout(() => {
+      flushBufferedText(conn, conversationId, true)
+    }, TEXT_BUFFER_FLUSH_MS)
   }
 
   /**
@@ -410,6 +459,8 @@ export function useChatStream() {
         activeTools: new Map(),
         currentTextBlockId: null,
         currentThinkingBlockId: null,
+        pendingTextDelta: '',
+        textFlushTimer: null,
         healthCheckInterval: null,
         lastMessageTime: Date.now(),
         lastServerError: null,
@@ -428,6 +479,7 @@ export function useChatStream() {
           conn.lastSocketError = 'Browser reported a WebSocket transport error (network/proxy/server)'
         }
         if (chatStore.isConversationStreaming(conversationId)) {
+          if (conn) flushBufferedText(conn, conversationId, true)
           if (conn?.currentMessageId) {
             markRunningToolBlocks(conn.currentMessageId, conversationId, 'error')
             chatStore.updateMessage(conn.currentMessageId, { status: 'error' }, conversationId)
@@ -442,7 +494,9 @@ export function useChatStream() {
 
       ws.onclose = (event) => {
         const conn = connections.get(conversationId)
+        if (conn) flushBufferedText(conn, conversationId, true)
         if (conn) clearHealthCheck(conn)
+        if (conn) clearTextFlushTimer(conn)
         connections.delete(conversationId)
         cascadeStates.delete(conversationId)
 
@@ -558,6 +612,7 @@ export function useChatStream() {
         }
 
         clearHealthCheck(conn)
+        flushBufferedText(conn, conversationId, true)
         // Mark any remaining running tool_use blocks as error
         markRunningToolBlocks(conn.currentMessageId, conversationId, 'error')
         chatStore.updateMessage(conn.currentMessageId, { status: 'error' }, conversationId)
@@ -578,6 +633,7 @@ export function useChatStream() {
 
       if (response.type === 'done') {
         clearHealthCheck(conn)
+        flushBufferedText(conn, conversationId, true)
         const currentStatus = getMessageStatus(conversationId, conn.currentMessageId)
         rolloutRecoveryAttempts.delete(buildRecoveryKey(conversationId, conn.currentMessageId))
 
@@ -734,6 +790,7 @@ export function useChatStream() {
         // Claude CLI exits while waiting for permission approval.
         // Move UI out of "streaming" until user responds.
         clearHealthCheck(conn)
+        flushBufferedText(conn, conversationId, true)
         chatStore.endConversationStreaming(conversationId)
 
         const request: PermissionRequest = parsePermissionRequestFromText(
@@ -753,6 +810,7 @@ export function useChatStream() {
       if (response.type === 'permission_prompt' && response.text) {
         // Legacy permission prompt path has the same lifecycle as permission_request.
         clearHealthCheck(conn)
+        flushBufferedText(conn, conversationId, true)
         chatStore.endConversationStreaming(conversationId)
 
         const request: PermissionRequest = parsePermissionRequestFromText(response.text, 'Permission')
@@ -905,6 +963,8 @@ export function useChatStream() {
         const contentBlock = event.content_block
 
         if (contentBlock.type === 'text') {
+          conn.pendingTextDelta = ''
+          clearTextFlushTimer(conn)
           ensureBlocks(conn.currentMessageId, conversationId)
           const blockId = generateBlockId()
           const block: TextBlock = { id: blockId, type: 'text', text: contentBlock.text || '' }
@@ -944,13 +1004,9 @@ export function useChatStream() {
 
       if (event.type === 'content_block_delta' && event.delta) {
         if (event.delta.text && conn.currentTextBlockId) {
-          chatStore.updateBlockWithSave(conn.currentMessageId, conn.currentTextBlockId, (block) => {
-            if (block.type === 'text') {
-              (block as TextBlock).text += event.delta!.text!
-            }
-          }, conversationId, { syncContent: false })
-          // Keep flat content in sync incrementally during streaming deltas.
-          chatStore.appendToMessage(conn.currentMessageId, event.delta.text, conversationId)
+          conn.pendingTextDelta += event.delta.text
+          flushBufferedText(conn, conversationId, false)
+          scheduleTextFlush(conn, conversationId)
         }
 
         if (event.delta.thinking && conn.currentThinkingBlockId) {
@@ -972,6 +1028,7 @@ export function useChatStream() {
       if (event.type === 'content_block_stop') {
         // If a text block was being streamed, clear the tracker
         if (conn.currentTextBlockId) {
+          flushBufferedText(conn, conversationId, true)
           conn.currentTextBlockId = null
         }
 
@@ -1019,6 +1076,7 @@ export function useChatStream() {
     // Handle tool_result — create ToolResultBlock with full content (no truncation)
     if (msg.type === 'tool_result') {
       const result = msg as ToolResultMessage
+      flushBufferedText(conn, conversationId, true)
       ensureBlocks(conn.currentMessageId, conversationId)
 
       // Update the matching ToolUseBlock status
@@ -1049,6 +1107,7 @@ export function useChatStream() {
 
     // Handle result message
     if (msg.type === 'result') {
+      flushBufferedText(conn, conversationId, true)
       const result = msg as ResultMessage
 
       if (result.is_error || result.subtype === 'error_max_turns' || result.subtype === 'error_during_execution') {
@@ -1107,6 +1166,8 @@ export function useChatStream() {
         conn.activeTools.clear()
         conn.currentTextBlockId = null
         conn.currentThinkingBlockId = null
+        conn.pendingTextDelta = ''
+        clearTextFlushTimer(conn)
         startHealthCheck(conn)
       }
 

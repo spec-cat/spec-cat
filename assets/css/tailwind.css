@@ -192,7 +192,7 @@ textarea:focus:not(:focus-visible) {
   line-height: 1.7;
 }
 
-.chat-markdown > *:first-child {
+.chat-markdown > :first-child:is(p, ul, ol, pre, blockquote, table) {
   margin-top: 0;
 }
 
