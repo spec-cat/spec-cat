@@ -225,11 +225,25 @@ async function resolveStepPrompt(step: string, featureId: string): Promise<strin
 function findReusableConversationId(featureId: string, forceNew: boolean): string | null {
   if (forceNew) return null
   const existing = chatStore.findConversationByFeature(featureId)
-  if (existing && !chatStore.isConversationStreaming(existing.id)) {
+  if (existing && !chatStore.isConversationStreaming(existing.id) && !existing.finalized) {
     chatStore.selectConversation(existing.id)
     return existing.id
   }
   return null
+}
+
+function checkForFinalizedConversation(featureId: string): boolean {
+  const existing = chatStore.findConversationByFeature(featureId)
+  if (existing && existing.finalized) {
+    toast.error(
+      `This feature has a finalized conversation "${existing.title}". ` +
+      'Please archive it first to start a new conversation.'
+    )
+    // Select the finalized conversation to help user find it
+    chatStore.selectConversation(existing.id)
+    return true
+  }
+  return false
 }
 
 async function createFeatureConversation(featureId: string, title: string, baseBranch: string): Promise<string> {
@@ -298,6 +312,12 @@ async function executeCascadeAction(featureId: string, command: string, conversa
 
 async function handleCascade(event: MouseEvent, featureId: string, command: string) {
   const forceNew = event.shiftKey
+
+  // Check for finalized conversation first (unless force-creating new)
+  if (!forceNew && checkForFinalizedConversation(featureId)) {
+    return
+  }
+
   const reusableConversationId = findReusableConversationId(featureId, forceNew)
 
   if (reusableConversationId) {
@@ -321,6 +341,12 @@ async function handleCascade(event: MouseEvent, featureId: string, command: stri
 // Open spec chat
 async function handleOpenChat(event: MouseEvent, featureId: string) {
   void event
+
+  // Check for finalized conversation
+  if (checkForFinalizedConversation(featureId)) {
+    return
+  }
+
   pendingFeatureAction.value = {
     type: 'open-chat',
     featureId,
@@ -346,6 +372,12 @@ async function executeSkillAction(featureId: string, skillId: string, conversati
 // Skill execution
 async function handleSkill(event: MouseEvent, featureId: string, skillId: string) {
   const forceNew = event.shiftKey
+
+  // Check for finalized conversation first (unless force-creating new)
+  if (!forceNew && checkForFinalizedConversation(featureId)) {
+    return
+  }
+
   const reusableConversationId = findReusableConversationId(featureId, forceNew)
 
   if (reusableConversationId) {

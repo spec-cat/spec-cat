@@ -8,6 +8,7 @@
 - [ ] T006 [FR-001][FR-004] Scope preview/finalize/rebase actions in `stores/chat.ts`.
 - [ ] T007 [FR-002] Enforce preview-sync response validation in store caller path in `stores/chat.ts` (treat `success: false` as failure with contextual logs).
 - [ ] T008 [FR-002] Enforce preview-sync response validation in stream completion path in `composables/useChatStream.ts` (no silent success on sync failure).
+- [x] T009 [FR-005] Prevent cascade automation from reusing finalized conversations in `components/features/FeaturesPanel.vue` and show archive-first error message.
 
 ---
 

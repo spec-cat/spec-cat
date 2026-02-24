@@ -29,3 +29,4 @@ Extract preview/finalize workflows from lifecycle/conflict concerns to run in pa
 | FR-002 | Preview sync flow across API + store caller + stream-completion caller, including explicit handling of `success: false` responses |
 | FR-003 | Finalize workflow |
 | FR-004 | Rebase transition handling |
+| FR-005 | Cascade automation finalized check in FeaturesPanel + error messaging |
