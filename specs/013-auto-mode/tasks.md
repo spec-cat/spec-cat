@@ -1,17 +1,25 @@
 # Tasks: Auto Mode
 
 **Input**: Design documents from `/specs/013-auto-mode/`
-**Prerequisites**: plan.md (required), spec.md (required), research.md, data-model.md, contracts/api.md
+**Prerequisites**: plan.md (required), spec.md (required), research.md, data-model.md, contracts/api.md, quickstart.md
 
 **Tests**: Not requested — manual testing per CLAUDE.md.
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
 
-## Format: `[ID] [P?] [Story] Description`
+## Task Format Requirements
 
-- **[P]**: Can run in parallel (different files, no dependencies)
-- **[Story]**: Which user story this task belongs to (e.g., US1, US2, US3, US4)
-- Include exact file paths in descriptions
+**MANDATORY**: Every task MUST follow this exact format:
+```text
+- [ ] [TaskID] [P?] [Story?] Description with file path
+```
+
+Components:
+- **Checkbox**: `- [ ]` (required)
+- **Task ID**: Sequential (T001, T002...)
+- **[P]**: Present only if parallelizable
+- **[Story]**: Required for user story tasks ([US1], [US2], [US3], [US4])
+- **File path**: Must be included in description
 
 ---
 
@@ -19,9 +27,13 @@
 
 **Purpose**: Extend data model types and shared store state needed by all user stories
 
-- [x] T001 [P] Add `autoMode?: boolean` field to `Conversation` interface in `types/chat.ts` (FR-008)
-- [x] T002 [P] Add `concurrency: number` field to `AutoModeConfig` and add `AutoModePersistedSession` interface in `types/autoMode.ts` (FR-013, FR-015)
-- [x] T003 [P] Add `autoModeConcurrency` field (default: 3) to settings store state, add `setAutoModeConcurrency()` action, update `resetToDefaults()` and `hydrate()` in `stores/settings.ts` (FR-016)
+- [X] T001 [P] Add `autoMode?: boolean` field to `Conversation` interface in types/chat.ts
+- [X] T002 [P] Add `concurrency: number` field to `AutoModeConfig` interface in types/autoMode.ts
+- [X] T003 [P] Add `AutoModePersistedSession` interface to types/autoMode.ts
+- [X] T004 [P] Add `autoModeConcurrency: number` field to SettingsStoreState in stores/settings.ts
+- [X] T005 [P] Add `setAutoModeConcurrency(value: number)` action to settings store in stores/settings.ts
+- [X] T006 Update `resetToDefaults()` in stores/settings.ts to reset autoModeConcurrency to 3
+- [X] T007 Update `hydrate()` in stores/settings.ts to load autoModeConcurrency from localStorage
 
 ---
 
@@ -31,11 +43,19 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [x] T004 Add concurrency parameter to `toggle()` method in `server/utils/autoModeScheduler.ts` — accept `concurrency?: number` and store it on the scheduler instance (FR-013)
-- [x] T005 Implement concurrent processing pool in `server/utils/autoModeScheduler.ts` — replace sequential `for` loop in `runCycle()` with `Promise.race`-based concurrent queue pattern (process up to N features simultaneously) per research.md R-003 (FR-013)
-- [x] T006 Implement session persistence in `server/utils/autoModeScheduler.ts` — write `~/.spec-cat/projects/{hash}/auto-mode-session.json` on session start, update on each task state change, delete on session completion/stop, restore on server startup per research.md R-004 (FR-015)
-- [x] T007 Implement conversation creation in `stores/autoMode.ts` — on task_update with running state, create a conversation via the chat store API (reuse existing if `featureId` matches), set `autoMode: true` on the conversation, and link worktree to conversation (FR-004, FR-008)
-- [x] T008 Accept `concurrency` parameter in request body of `server/api/auto-mode/toggle.post.ts` and pass it to `autoModeScheduler.toggle()` (FR-013, FR-016)
+- [X] T008 Add concurrency parameter to `toggle()` method signature in server/utils/autoModeScheduler.ts
+- [X] T009 Store concurrency value on scheduler instance in server/utils/autoModeScheduler.ts
+- [X] T010 Replace sequential processing loop with Promise.race-based concurrent queue in runCycle() method in server/utils/autoModeScheduler.ts
+- [X] T011 Implement processWithConcurrency helper function using pattern from research.md R-003 in server/utils/autoModeScheduler.ts
+- [X] T012 Create session persistence file at ~/.spec-cat/projects/{hash}/auto-mode-session.json on session start in server/utils/autoModeScheduler.ts
+- [X] T013 Update session persistence file on each task state change in server/utils/autoModeScheduler.ts
+- [X] T014 Delete session persistence file on session completion or stop in server/utils/autoModeScheduler.ts
+- [X] T015 Restore session from persistence file on server startup in server/utils/autoModeScheduler.ts
+- [X] T016 Create conversation via chat store when task enters running state in stores/autoMode.ts
+- [X] T017 Set autoMode: true on created conversations in stores/autoMode.ts
+- [X] T018 Link worktree to conversation when created in stores/autoMode.ts
+- [X] T019 Accept concurrency parameter in request body of server/api/auto-mode/toggle.post.ts
+- [X] T020 Pass concurrency parameter from API to autoModeScheduler.toggle() in server/api/auto-mode/toggle.post.ts
 
 **Checkpoint**: Foundation ready — concurrent processing, session persistence, and conversation creation all work. User story implementation can now begin.
 
@@ -49,11 +69,18 @@
 
 ### Implementation for User Story 1
 
-- [x] T009 [US1] Update `autoModeStore.toggle()` in `stores/autoMode.ts` to read `autoModeConcurrency` from settings store and pass it as `concurrency` parameter to `POST /api/auto-mode/toggle` request body (FR-013, FR-016)
-- [x] T010 [US1] Add edge case handling in `server/utils/autoModeScheduler.ts` — when no spec directories are found, broadcast an `auto_mode_error` with "No specs to process" message and transition session to idle state (Edge Case: no spec directories)
-- [x] T011 [US1] Add skip logic in `server/utils/autoModeScheduler.ts` — when a feature already has an active streaming conversation, mark task as `skipped` and continue to next feature (FR-011)
-- [x] T012 [US1] Implement single-cycle-per-activation behavior in `server/utils/autoModeScheduler.ts` — after all queued features are processed, transition session state to `idle` (toggle stays "on" but no re-scanning). User must toggle off and on to trigger a new cycle (FR-017)
-- [x] T013 [US1] Implement page-refresh resilience in `stores/autoMode.ts` — on store initialization, call `GET /api/auto-mode/status` to check for persisted server session and restore client state accordingly (FR-015)
+- [X] T021 [US1] Read autoModeConcurrency from settings store in autoModeStore.toggle() method in stores/autoMode.ts
+- [X] T022 [US1] Pass concurrency parameter in POST /api/auto-mode/toggle request body in stores/autoMode.ts
+- [X] T023 [US1] Handle "no specs to process" edge case in discoverFeatures() method in server/utils/autoModeScheduler.ts
+- [X] T024 [US1] Broadcast auto_mode_error WebSocket message when no specs found in server/utils/autoModeScheduler.ts
+- [X] T025 [US1] Transition session to idle state when no specs found in server/utils/autoModeScheduler.ts
+- [X] T026 [US1] Check for existing active worktree before processing feature in processFeature() method in server/utils/autoModeScheduler.ts
+- [X] T027 [US1] Mark task as skipped when active worktree exists in server/utils/autoModeScheduler.ts
+- [X] T028 [US1] Implement single-cycle operation - set session state to idle after all features processed in server/utils/autoModeScheduler.ts
+- [X] T029 [US1] Prevent re-scanning when toggle remains on but session is idle in server/utils/autoModeScheduler.ts
+- [X] T030 [US1] Call GET /api/auto-mode/status on store initialization in stores/autoMode.ts
+- [X] T031 [US1] Restore client state from server session if found in stores/autoMode.ts
+- [X] T032 [US1] Implement SHA-256 hash comparison to skip unchanged specs in server/utils/autoModeScheduler.ts
 
 **Checkpoint**: User Story 1 fully functional — Auto Mode can be toggled on/off, processes all specs concurrently, creates conversations, and survives page refresh.
 
@@ -67,8 +94,11 @@
 
 ### Implementation for User Story 2
 
-- [x] T014 [P] [US2] Add "auto" badge to `components/chat/ConversationItem.vue` — when `conversation.autoMode === true`, render a small badge (retro-yellow styling, matching AutoModeToggle) next to the conversation title, alongside existing streaming badge (FR-008)
-- [x] T015 [US2] Ensure Auto Mode conversations are searchable/filterable in the conversation list — verify the existing search/filter in the conversation list works with `autoMode` conversations (no code change expected if search operates on title/featureId) (FR-014)
+- [X] T033 [P] [US2] Add auto badge container div to components/conversations/ConversationListItem.vue
+- [X] T034 [US2] Add v-if="conversation.autoMode" condition for badge display in components/conversations/ConversationListItem.vue
+- [X] T035 [US2] Style auto badge with retro-yellow colors matching AutoModeToggle in components/conversations/ConversationListItem.vue
+- [X] T036 [US2] Position auto badge next to existing streaming indicator in components/conversations/ConversationListItem.vue
+- [X] T037 [US2] Verify conversation search works with autoMode conversations in conversation list
 
 **Checkpoint**: User Story 2 complete — Auto Mode conversations are visually distinguishable and fully browsable.
 
@@ -82,8 +112,11 @@
 
 ### Implementation for User Story 3
 
-- [x] T016 [US3] Verify that Auto Mode conversations support preview/finalize flow in `server/utils/autoModeScheduler.ts` — ensure worktree paths and branch names are set correctly on the conversation so that existing `POST /api/chat/preview` and `POST /api/chat/finalize` endpoints work without modification (FR-009, FR-014)
-- [x] T017 [US3] Verify that deleting an Auto Mode conversation cleans up the worktree — ensure existing delete logic in `stores/chat.ts` handles `autoMode` conversations identically to manual ones (FR-014)
+- [X] T038 [US3] Ensure worktreePath is set correctly on Auto Mode conversations in server/utils/autoModeScheduler.ts
+- [X] T039 [US3] Ensure worktreeBranch is set correctly on Auto Mode conversations in server/utils/autoModeScheduler.ts
+- [X] T040 [US3] Verify POST /api/chat/preview works with Auto Mode conversations
+- [X] T041 [US3] Verify POST /api/chat/finalize works with Auto Mode conversations
+- [X] T042 [US3] Verify conversation delete cleans up Auto Mode worktrees in stores/chat.ts
 
 **Checkpoint**: User Story 3 complete — standard preview/finalize/delete flow works for Auto Mode conversations.
 
@@ -93,12 +126,15 @@
 
 **Goal**: Auto Mode creates a dedicated "constitution" conversation that runs the constitution update workflow, reviewable via the same preview/finalize flow.
 
-**Independent Test**: Enable Auto Mode → verify a conversation with featureId "constitution" is created → verify `/speckit.constitution` command is run instead of plan/tasks/analyze cascade.
+**Independent Test**: Enable Auto Mode → verify a conversation with featureId "constitution" is created → verify /speckit.constitution command is run instead of plan/tasks/skill:better-spec cascade.
 
 ### Implementation for User Story 4
 
-- [x] T018 [US4] Add constitution special-case handling in `server/utils/autoModeScheduler.ts` — in the feature queue, add a `constitution` entry. In `processFeature()`, detect `featureId === 'constitution'` and run `/speckit.constitution` command instead of the normal plan → tasks → skill:better-spec → analyze cascade per research.md R-005 (FR-012)
-- [x] T019 [US4] Set correct working directory for constitution conversation in `server/utils/autoModeScheduler.ts` — constitution runs at project root, not in a spec subdirectory. Ensure worktree is created and `.speckit/memory/constitution.md` is the target file (FR-012)
+- [X] T043 [US4] Add "constitution" entry to feature queue in discoverFeatures() method in server/utils/autoModeScheduler.ts
+- [X] T044 [US4] Detect featureId === "constitution" in processFeature() method in server/utils/autoModeScheduler.ts
+- [X] T045 [US4] Run /speckit.constitution command for constitution feature instead of normal cascade in server/utils/autoModeScheduler.ts
+- [X] T046 [US4] Set working directory to project root for constitution conversation in server/utils/autoModeScheduler.ts
+- [X] T047 [US4] Ensure constitution worktree targets .speckit/memory/constitution.md in server/utils/autoModeScheduler.ts
 
 **Checkpoint**: User Story 4 complete — constitution sync works as a first-class conversation.
 
@@ -108,9 +144,12 @@
 
 **Purpose**: Settings UI and final integration
 
-- [x] T020 [P] Add concurrency setting to `components/settings/SettingsModal.vue` — add a labeled number input or slider (range 1–10, default 3) in the settings modal that reads/writes `autoModeConcurrency` via the settings store (FR-016)
-- [x] T021 [P] Add concurrency setting to `pages/settings.vue` — add the same concurrency control in the settings page for consistency with the modal (FR-016)
-- [ ] T022 Run `quickstart.md` manual validation — follow all 7 test scenarios from quickstart.md to verify end-to-end behavior
+- [X] T048 [P] Add AutoModeSettings.vue component to components/settings/
+- [X] T049 [P] Add concurrency number input (range 1-10, default 3) to AutoModeSettings.vue
+- [X] T050 [P] Connect concurrency input to settings store autoModeConcurrency in AutoModeSettings.vue
+- [X] T051 [P] Import and use AutoModeSettings component in components/settings/SettingsModal.vue
+- [X] T052 [P] Add Auto Mode section with concurrency control to pages/settings.vue
+- [ ] T053 Run all 7 manual test scenarios from quickstart.md
 
 ---
 
@@ -118,52 +157,47 @@
 
 ### Phase Dependencies
 
-- **Setup (Phase 1)**: No dependencies — can start immediately. All T001–T003 are parallel.
-- **Foundational (Phase 2)**: Depends on Phase 1 (types must exist). T004→T005 sequential (concurrency then pool). T006, T007, T008 parallel with each other but after T004.
-- **User Story 1 (Phase 3)**: Depends on Phase 2 completion
-- **User Story 2 (Phase 4)**: Depends on Phase 1 (T001 for autoMode field). Can run in parallel with US1 Phase 3.
-- **User Story 3 (Phase 5)**: Depends on Phase 2 (conversations must be created). Can run in parallel with US1/US2.
-- **User Story 4 (Phase 6)**: Depends on Phase 2 (scheduler must support conversation creation). Can run in parallel with US1/US2/US3.
-- **Polish (Phase 7)**: T020/T021 depend on Phase 1 (T003 settings store). T022 depends on all phases.
+```
+Phase 1 (Setup) ──────────┐
+                          ▼
+Phase 2 (Foundational) ───┬──→ Phase 3 (US1)
+                          ├──→ Phase 4 (US2)
+                          ├──→ Phase 5 (US3)
+                          └──→ Phase 6 (US4)
+                                    │
+Phase 1 ─────────────────────────→ Phase 7 (Polish)
+```
 
-### User Story Dependencies
-
-- **User Story 1 (P1)**: Depends on Foundational — no dependencies on other stories
-- **User Story 2 (P2)**: Depends on Setup T001 — independently testable with any existing `autoMode: true` conversation
-- **User Story 3 (P2)**: Depends on Foundational — independently testable with any Auto Mode conversation that has worktree
-- **User Story 4 (P3)**: Depends on Foundational — independently testable as constitution conversation
-
-### Within Each User Story
-
-- Core implementation before edge cases
-- Server-side before client-side (scheduler drives state)
+### Critical Path
+1. **Phase 1**: T001-T007 (all parallel)
+2. **Phase 2**: T008→T009→T010→T011 (sequential), then T012-T020 (parallel)
+3. **Phase 3**: T021-T032 (US1 implementation)
+4. **Parallel options**: US2, US3, US4 can run simultaneously after Phase 2
+5. **Phase 7**: Can start after Phase 1, complete after all stories
 
 ### Parallel Opportunities
 
-- T001, T002, T003 all in parallel (different files)
-- T006, T007, T008 in parallel after T004/T005 (different files/concerns)
-- T014, T015 in parallel (different concerns)
-- T018, T019 sequential (same file, depends on feature detection)
-- T020, T021 in parallel (different files)
-- US2, US3, US4 can all run in parallel with US1 (if team capacity allows)
-
----
-
-## Parallel Example: Phase 1 (Setup)
-
+**Phase 1 (Setup)** - All tasks in parallel:
 ```bash
-# Launch all setup tasks together (different files):
-Task T001: "Add autoMode field to Conversation in types/chat.ts"
-Task T002: "Add concurrency + AutoModePersistedSession to types/autoMode.ts"
-Task T003: "Add autoModeConcurrency to stores/settings.ts"
+T001: Add autoMode field to types/chat.ts
+T002: Add concurrency to types/autoMode.ts
+T003: Add AutoModePersistedSession to types/autoMode.ts
+T004: Add autoModeConcurrency to stores/settings.ts
+T005: Add setAutoModeConcurrency to stores/settings.ts
 ```
 
-## Parallel Example: User Story 2
-
+**After T011 in Phase 2** - Parallel execution:
 ```bash
-# Launch US2 tasks together (different concerns):
-Task T014: "Add auto badge to ConversationItem.vue"
-Task T015: "Verify search/filter works with autoMode conversations"
+T012-T015: Session persistence tasks
+T016-T018: Conversation creation tasks
+T019-T020: API parameter tasks
+```
+
+**User Stories 2-4** - Can run in parallel:
+```bash
+US2: T033-T037 (Auto badges)
+US3: T038-T042 (Preview/finalize)
+US4: T043-T047 (Constitution)
 ```
 
 ---
@@ -172,56 +206,64 @@ Task T015: "Verify search/filter works with autoMode conversations"
 
 ### MVP First (User Story 1 Only)
 
-1. Complete Phase 1: Setup (T001–T003) — ~3 tasks, all parallel
-2. Complete Phase 2: Foundational (T004–T008) — ~5 tasks, core logic
-3. Complete Phase 3: User Story 1 (T009–T013) — ~5 tasks
-4. **STOP and VALIDATE**: Toggle Auto Mode on, verify conversations created, cascade runs, specs updated
-5. This delivers the core value: automated spec processing
+1. **Phase 1**: Setup infrastructure (7 tasks, all parallel) - 30 min
+2. **Phase 2**: Core scheduler (13 tasks) - 2 hours
+3. **Phase 3**: User Story 1 (12 tasks) - 1.5 hours
+4. **Validate MVP**: Toggle works, specs process, conversations created
 
 ### Incremental Delivery
 
-1. Setup + Foundational → Foundation ready
-2. Add User Story 1 → Auto Mode works end-to-end (MVP!)
-3. Add User Story 2 → Visual badges and monitoring
-4. Add User Story 3 → Preview/finalize verification
-5. Add User Story 4 → Constitution sync
-6. Polish → Settings UI + full validation
+- **Milestone 1**: Setup + Foundational = Working infrastructure
+- **Milestone 2**: + User Story 1 = Core Auto Mode (MVP) ✅
+- **Milestone 3**: + User Story 2 = Visual monitoring
+- **Milestone 4**: + User Story 3 = Review workflow
+- **Milestone 5**: + User Story 4 = Constitution sync
+- **Milestone 6**: + Polish = Complete feature
 
 ---
 
-## FR Traceability
+## FR Traceability Matrix
 
-| FR | Tasks |
-|----|-------|
-| FR-001 | Already implemented (AutoModeToggle.vue) |
-| FR-002 | Already implemented (localStorage) |
-| FR-003 | Already implemented (discoverFeatures()) |
-| FR-004 | T007 |
-| FR-005 | Already implemented (SPECKIT_STEPS) |
-| FR-006 | Already implemented (worktreeResolver) |
-| FR-007 | Already implemented (cascade analysis) |
-| FR-008 | T001, T014 |
-| FR-009 | T016 |
-| FR-010 | Already implemented (stopProcessing()) |
-| FR-011 | T011 |
-| FR-012 | T018, T019 |
-| FR-013 | T002, T004, T005, T008, T009 |
-| FR-014 | T015, T016, T017 |
-| FR-015 | T002, T006, T013 |
-| FR-016 | T003, T008, T009, T020, T021 |
-| FR-017 | T012 |
+| FR ID | Requirement | Tasks |
+|-------|-------------|-------|
+| FR-001 | On/off toggle in sidebar | Already implemented |
+| FR-002 | Persist enabled state | Already implemented |
+| FR-003 | Scan specs and build queue | Already implemented |
+| FR-003a | Eligible directory pattern | Already implemented |
+| FR-003b | SHA-256 change detection | T032 |
+| FR-004 | Create conversation per feature | T016, T017 |
+| FR-005 | Run cascade sequence | Already implemented |
+| FR-006 | Isolated worktree | Already implemented |
+| FR-007 | Update specs via Claude | Already implemented |
+| FR-008 | Auto badge in conversations | T001, T033-T036 |
+| FR-009 | Human review required | T038-T041 |
+| FR-010 | Disable stops queued tasks | Already implemented |
+| FR-010a | Running tasks complete | Already implemented |
+| FR-011 | Skip active worktrees | T026, T027 |
+| FR-012 | Constitution conversation | T043-T047 |
+| FR-013 | Concurrent processing | T002, T008-T011, T019, T021 |
+| FR-014 | Full conversation lifecycle | T037, T042 |
+| FR-015 | Queue persistence | T003, T012-T015, T030-T031 |
+| FR-015a | Resume resets running | T015 |
+| FR-016 | Concurrency setting | T004-T007, T019-T022, T048-T052 |
+| FR-017 | Single cycle operation | T028, T029 |
+
+**Coverage**: 100% - All functional requirements have implementing tasks.
 
 ---
 
-## Notes
+## Summary
 
-- [P] tasks = different files, no dependencies
-- [Story] label maps task to specific user story for traceability
-- Each user story should be independently completable and testable
-- Many FRs are already implemented — focus on gaps identified in plan.md
-- Commit after each task or logical group
-- Stop at any checkpoint to validate story independently
-
-## FR Traceability Addendum (2026-02-14)
-
-- [ ] T022 [Traceability] Add explicit mapping for queue eligibility/hash skip and resume semantics [FR-003a, FR-003b, FR-010a, FR-015a]
+- **Total Tasks**: 53
+- **By User Story**:
+  - Setup/Foundation: 20 tasks
+  - User Story 1: 12 tasks
+  - User Story 2: 5 tasks
+  - User Story 3: 5 tasks
+  - User Story 4: 5 tasks
+  - Polish: 6 tasks
+- **Parallel Opportunities**:
+  - Phase 1: 7 tasks in parallel
+  - Phase 2: 9 tasks in parallel after T011
+  - US2/US3/US4: All can run in parallel
+- **MVP Scope**: Phases 1-3 (32 tasks) delivers core Auto Mode functionality

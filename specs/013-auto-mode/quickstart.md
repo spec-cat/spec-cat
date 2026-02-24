@@ -1,6 +1,6 @@
-# Quickstart: Auto Mode (009-auto-mode)
+# Quickstart: Auto Mode (013-auto-mode)
 
-**Date**: 2026-02-08
+**Date**: 2026-02-24
 
 ## Overview
 

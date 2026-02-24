@@ -127,6 +127,13 @@ class AutoModeScheduler {
 
   private async startProcessing() {
     if (this.processing) return
+
+    // T029: Prevent re-scanning when toggle remains on but session is idle
+    if (this.session && this.session.state === 'idle') {
+      log.info('Auto Mode: Session is idle, not starting new cycle')
+      return
+    }
+
     this.processing = true
     this.abortController = new AbortController()
 
@@ -230,41 +237,27 @@ class AutoModeScheduler {
     if (!this.session) return
 
     const queue = this.session.tasks.filter(t => t.state === 'queued')
-    const active = new Map<string, Promise<void>>()
 
-    while (queue.length > 0 || active.size > 0) {
-      // When disabled: don't start new tasks, but wait for running ones to finish
+    // Use processWithConcurrency helper pattern from research.md R-003
+    await this.processWithConcurrency(queue, this.concurrency, async (task) => {
       if (!this.enabled || this.abortController?.signal.aborted) {
-        // Remove remaining queued tasks (already marked failed by stopProcessing)
-        queue.length = 0
-
-        if (active.size > 0) {
-          // Wait for all running tasks to complete
-          await Promise.all(active.values())
+        // Mark remaining queued tasks as failed (already done by stopProcessing)
+        if (task.state === 'queued') {
+          task.state = 'failed'
+          task.error = 'Auto Mode disabled'
+          this.broadcastTaskUpdate(task)
         }
-        break
+        return
       }
 
-      // Fill up to concurrency limit
-      while (active.size < this.concurrency && queue.length > 0) {
-        const task = queue.shift()!
-        const promise = this.processFeature(projectDir, task).then(() => {
-          active.delete(task.featureId)
-        })
-        active.set(task.featureId, promise)
-      }
+      await this.processFeature(projectDir, task)
+    })
 
-      if (active.size > 0) {
-        // Wait for any one to complete
-        await Promise.race(active.values())
-      }
-    }
-
-    // Finalize session (T012: FR-017 — single cycle, transition to idle)
+    // Finalize session (T028: FR-017 — single cycle, transition to idle)
     const allDone = this.session.tasks.every(t =>
       t.state === 'completed' || t.state === 'skipped' || t.state === 'failed'
     )
-    this.session.state = allDone ? 'completed' : 'stopped'
+    this.session.state = allDone && this.enabled ? 'idle' : 'stopped'
     this.session.completedAt = new Date().toISOString()
     this.broadcast({ type: 'auto_mode_status', session: this.getSession(), enabled: this.enabled })
     await this.deletePersistedSession()
@@ -548,6 +541,29 @@ class AutoModeScheduler {
 
   private broadcastTaskUpdate(task: AutoModeTask) {
     this.broadcast({ type: 'auto_mode_task_update', task: { ...task } })
+  }
+
+  /** Process tasks with concurrency control (T011: R-003) */
+  private async processWithConcurrency<T>(
+    queue: T[],
+    concurrency: number,
+    processor: (item: T) => Promise<void>
+  ): Promise<void> {
+    const active = new Set<Promise<void>>()
+
+    for (const item of queue) {
+      // Wait if we're at concurrency limit
+      while (active.size >= concurrency) {
+        await Promise.race(active)
+      }
+
+      const promise = processor(item)
+        .finally(() => active.delete(promise))
+      active.add(promise)
+    }
+
+    // Wait for all remaining tasks to complete
+    await Promise.all(active)
   }
 
   // ---- Session Persistence (T006: FR-015, R-004) ----

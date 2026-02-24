@@ -94,3 +94,8 @@ If traceability is broken, fix planning artifacts before coding.
 - Filesystem-backed settings at `~/.spec-cat/projects/{hash}/settings.json`; conversation session state in existing chat store persistence
 - TypeScript 5.6+, Vue 3.5+, Nuxt 3.16+ + Nuxt/Nitro runtime, Pinia, Tailwind CSS, `@heroicons/vue`
 - Filesystem-backed spec search index/cache (existing), no new storage for this feature
+- TypeScript 5.6+, Node.js runtime via Nuxt 3.16+ + Nuxt 3.16+, Vue 3.5+, Pinia 2.2+, @anthropic-ai/claude-code SDK (013-auto-mode)
+- localStorage for settings persistence, existing chat store for runtime state, filesystem-backed conversation persistence (013-auto-mode)
+
+## Recent Changes
+- 013-auto-mode: Added TypeScript 5.6+, Node.js runtime via Nuxt 3.16+ + Nuxt 3.16+, Vue 3.5+, Pinia 2.2+, @anthropic-ai/claude-code SDK

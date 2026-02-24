@@ -1,6 +1,6 @@
-# Data Model: Auto Mode (009-auto-mode)
+# Data Model: Auto Mode (013-auto-mode)
 
-**Date**: 2026-02-08
+**Date**: 2026-02-24
 **Phase**: 1 — Design & Contracts
 
 ## Entities

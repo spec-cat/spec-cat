@@ -9,7 +9,7 @@
 
 ### User Story 1 - Enable Auto Mode (Priority: P1)
 
-A developer wants to keep their specifications up to date without manually running the speckit workflow for each feature. They click the "Auto Mode" toggle button in the UI to activate background spec processing. Once enabled, the system scans eligible spec directories and creates a regular chat conversation per feature (reusing existing conversations for a feature if available, just like 012-cascade-automation). Each conversation runs the Auto Mode step sequence (plan → tasks → skill:better-spec) via the existing chat streaming infrastructure. The system updates specs to reflect reality — it never modifies implementation code. The developer can see all Auto Mode conversations in the normal conversation list, click into any of them to watch progress in real-time, and review/finalize changes using the standard worktree preview/finalize flow.
+A developer wants to keep their specifications up to date without manually running the speckit workflow for each feature. They click the "Auto Mode" toggle button in the UI to activate background spec processing. Once enabled, the system scans eligible spec directories and creates a regular chat conversation per feature (reusing existing conversations for a feature if available, just like 012-cascade-automation). Each conversation runs the Auto Mode step sequence incrementally — if all files match stored hashes, the feature is skipped; otherwise, execution starts from the first changed file in the sequence (plan → tasks → skill:better-spec). The system updates specs to reflect reality — it never modifies implementation code. The developer can see all Auto Mode conversations in the normal conversation list, click into any of them to watch progress in real-time, and review/finalize changes using the standard worktree preview/finalize flow.
 
 **Why this priority**: This is the core value proposition of Auto Mode. Without the ability to turn it on and have it process specs automatically, no other functionality matters.
 
@@ -78,18 +78,26 @@ Auto Mode also keeps project-wide configuration files up to date. It creates a d
 - What happens when the user navigates away from the page while Auto Mode is running? Since conversations use the existing WebSocket/PTY infrastructure, active streams continue on the server. The Auto Mode queue state is persisted so it can resume on reconnect.
 - What happens when Auto Mode is re-enabled after being disabled mid-processing? It should start a fresh scan. Existing conversations from previous runs remain in the conversation list for review.
 - What happens when multiple specs depend on each other? Each spec is processed independently in its own conversation. Cross-spec consistency is not in scope for this feature.
-- What happens when the user manually opens an Auto Mode conversation and sends a message while cascade is running? The cascade queue should be paused for that conversation to avoid conflicts. Manual interaction takes priority.
+- What happens when the user manually opens an Auto Mode conversation and sends a message while cascade is running? The current cascade is cancelled entirely and the task is marked as failed with reason "Manual interaction". Manual interaction takes priority.
 
 ## Clarifications
 
 ### Session 2026-02-08
 
-- Q: What is the comparison mechanism for FR-007 ("compare current implementation against existing specs")? → A: Claude's Auto Mode step sequence (plan/tasks/skill/analyze) is the comparison mechanism. No separate diff or comparison engine is built.
+- Q: What is the comparison mechanism for FR-007 ("compare current implementation against existing specs")? → A: Claude's Auto Mode step sequence (plan/tasks/skill:better-spec) is the comparison mechanism. No separate diff or comparison engine is built.
 - Q: Does Auto Mode always run every feature on each activation? → A: No. Queue discovery is incremental: unchanged features are skipped using SHA-256 hash comparison over feature spec contents.
 - Q: Where should the Auto Mode toggle be placed in the UI? → A: In the sidebar, near the conversation list header, adjacent to the conversations it creates.
 - Q: Should there be a timeout or maximum duration per conversation cascade? → A: No timeout. Cascades run until completion. The user can manually stop stuck conversations via the existing conversation controls.
 - Q: How should the feature queue ordering work, and how many cascades can run simultaneously? → A: Alphabetical by spec directory name. Up to N cascades run concurrently (default 3), configurable via a setting in the settings page.
 - Q: What happens when Auto Mode completes a full cycle (all queued features processed)? → A: Single cycle per activation — process all features once, then transition to idle state (still "on" but not re-scanning). The user must toggle off and on to trigger a new cycle.
+
+### Session 2026-02-24
+
+- Q: Should Auto Mode execution be always full cascade, incremental based on changed files, skip if all match hashes, or combination? → A: Combination: Skip if all match (C), otherwise incremental execution (B)
+- Q: When should file hashes be stored for incremental execution comparison? → A: Only after successful cascade completion (all steps finished without errors)
+- Q: Who should be authorized to toggle Auto Mode on/off? → A: no permission
+- Q: Should there be a way to force re-processing of unchanged specs? → A: No force option - users must modify a file to trigger reprocessing
+- Q: What should happen to Auto Mode cascade when user manually interacts? → A: Cancel current cascade entirely - mark task as failed with reason "Manual interaction"
 
 ## Requirements *(mandatory)*
 
@@ -99,11 +107,11 @@ Auto Mode also keeps project-wide configuration files up to date. It creates a d
 - **FR-002**: System MUST persist the Auto Mode enabled/disabled state so it survives page refreshes (localStorage).
 - **FR-003**: When Auto Mode is enabled, the system MUST scan `specs/` and build a processing queue ordered alphabetically by directory name.
 - **FR-003a**: A feature directory MUST be eligible only when it matches `NNN-*` and contains `spec.md`.
-- **FR-003b**: Queue discovery MUST use SHA-256 hash comparison to skip unchanged feature specs from previous successful runs.
+- **FR-003b**: Queue discovery MUST use SHA-256 hash comparison on spec.md, plan.md, and tasks.md files. Features are skipped entirely if all three files match stored hashes from previous successful runs.
 - **FR-004**: System MUST create a regular chat conversation per feature using the existing conversation system (009-conversation-management), reusing an existing conversation for the same featureId if one exists (same as 012-cascade-automation).
-- **FR-005**: System MUST run the Auto Mode step sequence (plan → tasks → skill:better-spec → analyze) in each conversation using the existing cascade/chat execution mechanism, stopping before implement.
+- **FR-005**: System MUST run the Auto Mode step sequence incrementally based on file changes: if spec.md changes, run all steps (plan → tasks → skill:better-spec); if only plan.md changes, run from tasks onward; if only tasks.md changes, run only skill:better-spec. Execution always stops before implement.
 - **FR-006**: Each conversation MUST have its own isolated worktree via the existing worktree integration (011-chat-worktree-integration).
-- **FR-007**: System MUST update spec files to reflect the current codebase by running the Auto Mode step sequence (plan → tasks → skill:better-spec → analyze) via Claude's analysis. No separate diff or comparison engine is built. The system MUST never modify implementation code.
+- **FR-007**: System MUST update spec files to reflect the current codebase by running the Auto Mode step sequence (plan → tasks → skill:better-spec) via Claude's analysis. No separate diff or comparison engine is built. The system MUST never modify implementation code.
 - **FR-008**: Auto Mode conversations MUST be visually distinguishable in the conversation list with an "auto" badge or indicator.
 - **FR-009**: Completed spec updates MUST remain in conversation worktree branches until a human reviews via the standard preview/finalize flow.
 - **FR-010**: When Auto Mode is disabled, queued (not-yet-started) tasks MUST immediately transition to failed with reason `Auto Mode disabled`, and no new tasks may start.
@@ -116,6 +124,9 @@ Auto Mode also keeps project-wide configuration files up to date. It creates a d
 - **FR-015**: The Auto Mode queue state MUST be persisted so that if the page is refreshed while Auto Mode is on, it can resume processing unfinished tasks.
 - **FR-015a**: During resume, tasks persisted as `running` MUST be reset to `queued` and restarted from the beginning of the feature sequence.
 - **FR-017**: Auto Mode MUST operate as a single cycle per activation — once all queued features have been processed, the system transitions to an idle state (toggle remains "on" but no re-scanning occurs). The user must toggle off and on again to trigger a new cycle.
+- **FR-018**: System MUST store SHA-256 hashes of spec.md, plan.md, and tasks.md files only after successful cascade completion (all steps finished without errors) for a feature, enabling incremental execution on subsequent runs. Failed cascades do not update stored hashes.
+- **FR-019**: System MUST allow any authenticated user to toggle Auto Mode on/off without requiring special permissions or authorization.
+- **FR-020**: System MUST cancel any running Auto Mode cascade when a user manually sends a message in that conversation, marking the task as failed with reason "Manual interaction".
 
 ### Key Entities
 

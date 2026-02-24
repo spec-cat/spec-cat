@@ -1,0 +1,132 @@
+openapi: 3.0.0
+info:
+  title: Auto Mode API
+  description: API endpoints for Auto Mode feature in Spec Cat
+  version: 1.0.0
+
+paths:
+  /api/automode/toggle:
+    post:
+      summary: Enable or disable Auto Mode
+      description: Toggles Auto Mode on/off and starts/stops spec processing
+      operationId: toggleAutoMode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AutoModeToggleRequest'
+      responses:
+        '200':
+          description: Successfully toggled Auto Mode
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AutoModeToggleResponse'
+        '400':
+          description: Invalid request (e.g., invalid concurrency value)
+        '500':
+          description: Server error
+
+  /api/automode/queue:
+    get:
+      summary: Get current Auto Mode queue state
+      description: Returns the current state of the Auto Mode processing queue
+      operationId: getAutoModeQueue
+      responses:
+        '200':
+          description: Current queue state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AutoModeQueueResponse'
+
+  /api/automode/specs:
+    get:
+      summary: List all spec directories with hash information
+      description: Returns spec directories eligible for Auto Mode processing with content hashes
+      operationId: listSpecs
+      responses:
+        '200':
+          description: List of spec directories
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  specs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SpecInfo'
+
+components:
+  schemas:
+    AutoModeToggleRequest:
+      type: object
+      required:
+        - enabled
+      properties:
+        enabled:
+          type: boolean
+          description: Whether to enable or disable Auto Mode
+        concurrency:
+          type: integer
+          minimum: 1
+          maximum: 10
+          description: Number of concurrent cascades to run (only used when enabling)
+
+    AutoModeToggleResponse:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+          description: Current Auto Mode state after toggle
+        sessionId:
+          type: string
+          description: ID of the newly created session (when enabling)
+        message:
+          type: string
+          description: Human-readable status message
+
+    AutoModeQueueResponse:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+          description: Whether Auto Mode is currently enabled
+        queued:
+          type: array
+          items:
+            type: string
+          description: Feature IDs waiting to be processed
+        active:
+          type: array
+          items:
+            type: string
+          description: Feature IDs currently being processed
+        completed:
+          type: array
+          items:
+            type: string
+          description: Feature IDs completed in this cycle
+        idle:
+          type: boolean
+          description: Whether all queued features have been processed
+
+    SpecInfo:
+      type: object
+      properties:
+        featureId:
+          type: string
+          pattern: '^[0-9]{3}-.*$'
+          description: Feature ID extracted from directory name
+        path:
+          type: string
+          description: Full path to the spec directory
+        contentHash:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+          description: SHA-256 hash of spec.md content
+        isValid:
+          type: boolean
+          description: Whether spec.md exists and is readable
