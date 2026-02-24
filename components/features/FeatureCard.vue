@@ -109,7 +109,7 @@ const cardClass = computed(() => {
             {{ feature.id }}
           </span>
         </div>
-        <p class="text-sm font-mono text-retro-muted mt-1 truncate">
+        <p class="text-xs font-mono text-retro-muted mt-1 truncate">
           {{ feature.name }}
         </p>
       </div>
