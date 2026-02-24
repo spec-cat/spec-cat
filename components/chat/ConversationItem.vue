@@ -123,9 +123,9 @@ const formattedDate = computed(() => {
         <div v-else class="flex items-center gap-2">
           <!-- Streaming indicator -->
           <div v-if="isStreaming" class="flex-shrink-0 relative">
-            <div class="w-4 h-4 rounded-full bg-retro-cyan/30 animate-pulse" />
+            <div class="w-4 h-4 rounded-full bg-retro-orange/30 animate-pulse" />
             <div class="absolute inset-0 flex items-center justify-center">
-              <div class="w-2 h-2 rounded-full bg-retro-cyan animate-ping" />
+              <div class="w-2 h-2 rounded-full bg-retro-orange animate-ping" />
             </div>
           </div>
           <ChatBubbleLeftIcon v-else class="w-4 h-4 text-retro-muted flex-shrink-0 -translate-y-px" />
@@ -176,7 +176,7 @@ const formattedDate = computed(() => {
           <!-- Streaming badge -->
           <span
             v-if="isStreaming"
-            class="text-xs font-mono text-retro-cyan bg-retro-cyan/10 px-1.5 py-0.5 rounded flex-shrink-0"
+            class="text-xs font-mono text-retro-orange bg-retro-orange/10 px-1.5 py-0.5 rounded flex-shrink-0"
           >
             streaming
           </span>
