@@ -96,6 +96,7 @@ function generateTemplateCommitMessage(featureId: string | undefined, diffStat: 
 export async function autoCommitChanges(
   worktreePath: string,
   featureId?: string,
+  options?: { pathspecs?: string[] },
 ): Promise<{ success: boolean; message?: string; currentBranch?: string; error?: string }> {
   try {
     // Detect current branch (may have changed during AI execution)
@@ -106,7 +107,16 @@ export async function autoCommitChanges(
       return { success: true, message: 'No changes to commit', currentBranch }
     }
 
-    execGit(worktreePath, 'add -A')
+    if (options?.pathspecs && options.pathspecs.length > 0) {
+      execGit(worktreePath, `add -A -- ${options.pathspecs.join(' ')}`)
+    } else {
+      execGit(worktreePath, 'add -A')
+    }
+
+    const staged = execGit(worktreePath, 'diff --cached --name-only')
+    if (!staged.trim()) {
+      return { success: true, message: 'No changes to commit', currentBranch }
+    }
 
     const diff = execGit(worktreePath, 'diff --cached --stat')
 

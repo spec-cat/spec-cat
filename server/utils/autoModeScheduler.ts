@@ -8,6 +8,7 @@ import { readdir, stat, writeFile, readFile, unlink, mkdir } from 'node:fs/promi
 import { existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { createHash } from 'node:crypto'
+import { execSync } from 'node:child_process'
 import { getProjectDir } from './projectDir'
 import { loadSkill, renderPrompt } from './skillRegistry'
 import { resolveWorktree, findWorktreeByFeature } from './worktreeResolver'
@@ -92,13 +93,14 @@ class AutoModeScheduler {
       const data = await readFile(sessionPath, 'utf-8')
       const persisted: AutoModePersistedSession = JSON.parse(data)
 
-      const hasUnfinished = persisted.tasks.some(t => t.state === 'queued' || t.state === 'running')
-      if (persisted.enabled && persisted.tasks.length > 0 && hasUnfinished) {
+      const persistedTasks = persisted.tasks.filter(t => t.featureId !== 'constitution')
+      const hasUnfinished = persistedTasks.some(t => t.state === 'queued' || t.state === 'running')
+      if (persisted.enabled && persistedTasks.length > 0 && hasUnfinished) {
         this.enabled = true
         this.session = {
           id: persisted.sessionId,
           state: 'active',
-          tasks: persisted.tasks,
+          tasks: persistedTasks,
           startedAt: persisted.startedAt,
         }
         this.concurrency = DEFAULT_CONCURRENCY
@@ -208,14 +210,10 @@ class AutoModeScheduler {
 
     // Create session (only if not restored)
     if (!this.session) {
-      // Build task list: constitution first, then discovered features (T018: FR-012)
-      const allTasks: AutoModeTask[] = [
-        { featureId: 'constitution', state: 'queued' as AutoModeTaskState },
-        ...features.map(f => ({
-          featureId: f,
-          state: 'queued' as AutoModeTaskState,
-        })),
-      ]
+      const allTasks: AutoModeTask[] = features.map(f => ({
+        featureId: f,
+        state: 'queued' as AutoModeTaskState,
+      }))
 
       this.session = {
         id: `auto-${Date.now()}`,
@@ -328,11 +326,6 @@ class AutoModeScheduler {
 
   /** Process a single feature through the speckit cascade (T007: FR-004, FR-008) */
   private async processFeature(projectDir: string, task: AutoModeTask) {
-    // Constitution uses a different flow (T018: FR-012)
-    if (task.featureId === 'constitution') {
-      return this.processConstitution(projectDir, task)
-    }
-
     // Skip if an active pipeline session is already running for this feature (FR-011, T011)
     const existingWorktree = await findWorktreeByFeature(projectDir, task.featureId)
     if (existingWorktree) {
@@ -364,11 +357,14 @@ class AutoModeScheduler {
         this.broadcast({ type: 'auto_mode_step_start', featureId: task.featureId, step })
 
         await this.runSpeckitStep(worktreeInfo.path, task.featureId, step)
+        await this.assertSpecsOnlyChanges(worktreeInfo.path, task.featureId)
 
         this.broadcast({ type: 'auto_mode_step_complete', featureId: task.featureId, step })
 
-        // Auto-commit after each step
-        await autoCommitChanges(worktreeInfo.path, task.featureId)
+        // Auto-commit only files under specs/{featureId}
+        await autoCommitChanges(worktreeInfo.path, task.featureId, {
+          pathspecs: [`specs/${task.featureId}`],
+        })
       }
 
       task.state = 'completed'
@@ -389,59 +385,9 @@ class AutoModeScheduler {
     await this.persistSession()
   }
 
-  /** Process constitution update — runs /speckit.constitution at project root (T018, T019: FR-012, R-005) */
-  private async processConstitution(projectDir: string, task: AutoModeTask) {
-    // Skip if an active worktree exists for constitution
-    const existingWorktree = await findWorktreeByFeature(projectDir, 'constitution')
-    if (existingWorktree) {
-      task.state = 'skipped'
-      task.error = 'Active worktree already exists for constitution'
-      log.info('Auto Mode: skipping constitution (active worktree)')
-      this.broadcastTaskUpdate(task)
-      await this.persistSession()
-      return
-    }
-
-    task.state = 'running'
-    task.startedAt = new Date().toISOString()
-    this.broadcastTaskUpdate(task)
-    await this.persistSession()
-
-    try {
-      // Create worktree for constitution — operates at project root level (T019)
-      const worktreeInfo = await resolveWorktree(projectDir, 'constitution')
-      task.worktreePath = worktreeInfo.path
-      task.worktreeBranch = worktreeInfo.branch
-      task.baseBranch = worktreeInfo.baseBranch
-      this.broadcastTaskUpdate(task)
-
-      task.currentStep = 'constitution'
-      this.broadcastTaskUpdate(task)
-      this.broadcast({ type: 'auto_mode_step_start', featureId: 'constitution', step: 'constitution' })
-
-      // Run /speckit.constitution instead of specify → plan → tasks
-      await this.runSpeckitStep(worktreeInfo.path, 'constitution', 'constitution')
-
-      this.broadcast({ type: 'auto_mode_step_complete', featureId: 'constitution', step: 'constitution' })
-      await autoCommitChanges(worktreeInfo.path, 'constitution')
-
-      task.state = 'completed'
-      task.completedAt = new Date().toISOString()
-      task.currentStep = undefined
-      log.info('Auto Mode: constitution completed')
-    } catch (e) {
-      task.state = 'failed'
-      task.error = e instanceof Error ? e.message : String(e)
-      log.error('Auto Mode: constitution failed', { error: task.error })
-    }
-
-    this.broadcastTaskUpdate(task)
-    await this.persistSession()
-  }
-
   /** Execute a single speckit command or skill via AI provider (Claude CLI for now) */
   private async runSpeckitStep(worktreePath: string, featureId: string, step: string): Promise<void> {
-    const autoModeDirective = 'You are running in Auto Mode. Do NOT ask questions or wait for user input. Make decisions aggressively and proceed autonomously. If you encounter ambiguity, use your best judgment and continue. Never use AskUserQuestion. '
+    const autoModeDirective = `You are running in Auto Mode. Do NOT ask questions or wait for user input. Make decisions aggressively and proceed autonomously. If you encounter ambiguity, use your best judgment and continue. Never use AskUserQuestion. Only edit files under specs/${featureId}/. Never modify files outside specs/. `
 
     let prompt: string
     if (step.startsWith('skill:')) {
@@ -537,6 +483,28 @@ class AutoModeScheduler {
       specHash: updates.specHash || current.specHash,
     }
     await writeAutoModeSpecState(state)
+  }
+
+  private getChangedFiles(worktreePath: string): string[] {
+    const output = execSync('git status --porcelain', { cwd: worktreePath, encoding: 'utf-8' }).trim()
+    if (!output) return []
+
+    return output
+      .split('\n')
+      .map(line => line.slice(3).trim())
+      .map(path => path.includes(' -> ') ? path.split(' -> ').at(-1) || path : path)
+      .filter(Boolean)
+  }
+
+  private async assertSpecsOnlyChanges(worktreePath: string, featureId: string): Promise<void> {
+    const allowedPrefix = `specs/${featureId}/`
+    const changedFiles = this.getChangedFiles(worktreePath)
+    const invalidFiles = changedFiles.filter(path => !path.startsWith(allowedPrefix))
+    if (invalidFiles.length === 0) return
+
+    throw new Error(
+      `Auto Mode generated changes outside ${allowedPrefix}: ${invalidFiles.join(', ')}`
+    )
   }
 
   private broadcastTaskUpdate(task: AutoModeTask) {
