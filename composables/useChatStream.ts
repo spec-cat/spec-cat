@@ -1104,6 +1104,8 @@ export function useChatStream() {
       chatStore.selectConversation(conversationId)
     }
 
+    const conv = chatStore.conversations.find((c: { id: string }) => c.id === conversationId)
+
     // Support skill: prefixed steps (e.g. 'skill:better-spec') — fetch rendered prompt from API
     let prompt: string
     if (step.startsWith('skill:')) {
@@ -1111,7 +1113,7 @@ export function useChatStream() {
       try {
         const rendered = await $fetch<{ prompt: string }>(`/api/skills/${skillId}/prompt`, {
           method: 'POST',
-          body: { featureId },
+          body: { featureId, cwd: conv?.worktreePath },
         })
         prompt = rendered.prompt
       } catch (err) {
@@ -1124,7 +1126,6 @@ export function useChatStream() {
     chatStore.addUserMessage(prompt, conversationId)
     chatStore.saveConversation(conversationId, true)
 
-    const conv = chatStore.conversations.find((c: { id: string }) => c.id === conversationId)
     const assistantMessage = chatStore.addAssistantMessage(conversationId)
     chatStore.startSession(createSessionId(), conversationId)
     chatStore.startConversationStreaming(conversationId)

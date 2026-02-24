@@ -1,6 +1,6 @@
 import { readdir } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { getProjectDir } from '../../../utils/projectDir'
 import { loadSkill, renderPrompt } from '../../../utils/skillRegistry'
 import type { SkillPromptResponse } from '~/types/skill'
@@ -11,13 +11,23 @@ export default defineEventHandler(async (event): Promise<SkillPromptResponse> =>
     throw createError({ statusCode: 400, statusMessage: 'Missing skillId parameter' })
   }
 
-  const body = await readBody<{ featureId?: string }>(event)
+  const body = await readBody<{ featureId?: string; cwd?: string }>(event)
   if (!body?.featureId) {
     throw createError({ statusCode: 400, statusMessage: 'Missing featureId in request body' })
   }
 
   const projectDir = getProjectDir()
-  const specsDir = join(projectDir, 'specs', body.featureId)
+  const requestedCwd = typeof body.cwd === 'string' && body.cwd.trim().length > 0
+    ? resolve(body.cwd)
+    : null
+
+  // Prefer worktree-local specs path when cwd is provided, otherwise use main project path.
+  // Fallback to projectDir if requested cwd doesn't have the feature specs.
+  const preferredSpecsDir = requestedCwd
+    ? join(requestedCwd, 'specs', body.featureId)
+    : join(projectDir, 'specs', body.featureId)
+  const fallbackSpecsDir = join(projectDir, 'specs', body.featureId)
+  const specsDir = existsSync(preferredSpecsDir) ? preferredSpecsDir : fallbackSpecsDir
 
   if (!existsSync(specsDir)) {
     throw createError({ statusCode: 400, statusMessage: `Feature directory not found: specs/${body.featureId}` })

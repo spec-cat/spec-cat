@@ -210,12 +210,15 @@ const PREREQUISITE_STEPS: Record<string, string[]> = {
 /** Resolve the prompt for a cascade/prerequisite step.
  *  skill: prefixed steps fetch the rendered prompt from the API.
  *  speckit steps use the /speckit.{step} command format. */
-async function resolveStepPrompt(step: string, featureId: string): Promise<string> {
+async function resolveStepPrompt(step: string, featureId: string, conversationId?: string): Promise<string> {
   if (step.startsWith('skill:')) {
     const skillId = step.replace('skill:', '')
+    const conv = conversationId
+      ? chatStore.conversations.find(c => c.id === conversationId)
+      : null
     const rendered = await $fetch<{ prompt: string }>(`/api/skills/${skillId}/prompt`, {
       method: 'POST',
-      body: { featureId },
+      body: { featureId, cwd: conv?.worktreePath },
     })
     return rendered.prompt
   }
@@ -293,7 +296,7 @@ async function executeCascadeAction(featureId: string, command: string, conversa
     // Start with the first prerequisite step (fetch skill prompt if needed)
     const firstStep = prerequisites[0]
     try {
-      prompt = await resolveStepPrompt(firstStep, featureId)
+      prompt = await resolveStepPrompt(firstStep, featureId, conversationId)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to resolve prerequisite step')
       return
@@ -358,9 +361,10 @@ async function handleOpenChat(event: MouseEvent, featureId: string) {
 async function executeSkillAction(featureId: string, skillId: string, conversationId: string) {
   let rendered: SkillPromptResponse
   try {
+    const conv = chatStore.conversations.find(c => c.id === conversationId)
     rendered = await $fetch<SkillPromptResponse>(`/api/skills/${skillId}/prompt`, {
       method: 'POST',
-      body: { featureId },
+      body: { featureId, cwd: conv?.worktreePath },
     })
   } catch (err) {
     throw new Error(err instanceof Error ? err.message : 'Failed to render skill prompt')
