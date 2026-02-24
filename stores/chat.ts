@@ -1105,9 +1105,9 @@ export const useChatStore = defineStore('chat', () => {
 
     // For feature-originated conversations, validate worktree first before creating conversation
     // This prevents the chat card from appearing and then disappearing on branch conflict
-    let worktreeResult: { success: boolean; worktreePath?: string; branch?: string; baseBranch?: string; providerSessionId?: string; error?: string } | null = null
+    let worktreeResult: { success: boolean; worktreePath?: string; branch?: string; baseBranch?: string; error?: string } | null = null
     if (options?.featureId) {
-      const res = await $fetch<{ success: boolean; worktreePath?: string; branch?: string; baseBranch?: string; providerSessionId?: string; error?: string }>('/api/chat/worktree', {
+      const res = await $fetch<{ success: boolean; worktreePath?: string; branch?: string; baseBranch?: string; error?: string }>('/api/chat/worktree', {
         method: 'POST',
         body: { conversationId: id, featureId: options.featureId, baseBranch: options.baseBranch },
       })
@@ -1154,9 +1154,6 @@ export const useChatStore = defineStore('chat', () => {
       conv.hasWorktree = true
       if (worktreeResult.baseBranch) {
         conv.baseBranch = worktreeResult.baseBranch
-      }
-      if (worktreeResult.providerSessionId) {
-        conv.providerSessionId = worktreeResult.providerSessionId
       }
     }
 

@@ -7,7 +7,6 @@ import { exec } from 'node:child_process'
 import { promisify } from 'node:util'
 import { logger } from '~/server/utils/logger'
 import { getProjectDir } from '~/server/utils/projectDir'
-import { readAutoModeSpecState } from '~/server/utils/autoModeSpecState'
 
 const execAsync = promisify(exec)
 
@@ -24,8 +23,6 @@ export default defineEventHandler(async (event) => {
   const { conversationId, featureId } = body
   const requestedBaseBranch = body.baseBranch?.trim()
   const projectDir = getProjectDir()
-  const specState = featureId ? await readAutoModeSpecState() : {}
-  const providerSessionId = featureId ? specState[featureId]?.sessionId : undefined
 
   // Feature-originated conversations use the featureId as branch name (e.g. "001-auth")
   // New chat conversations use sc/conv-xxx branches
@@ -88,7 +85,6 @@ export default defineEventHandler(async (event) => {
       worktreePath,
       branch: branchName,
       baseBranch,
-      providerSessionId,
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error)
