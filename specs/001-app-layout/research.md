@@ -127,10 +127,10 @@ This document captures research decisions for the App Layout System feature — 
 
 ### 9. Header Strategy
 
-**Decision**: Each panel has its own header row. Application title "SPEC CAT v0.1.0" and settings gear icon are placed in one panel's header (e.g., the leftmost Git Tree panel header or a spanning top bar).
+**Decision**: Each panel has its own header row. Application title "SPEC CAT / {project-name}" and settings gear icon are placed in one panel's header (e.g., the leftmost Git Tree panel header or a spanning top bar).
 
 **Rationale**:
-- FR-007 says header with "SPEC CAT v0.1.0" title and settings button
+- FR-007 says header with "SPEC CAT / {project-name}" title and settings button
 - Per-panel headers are simpler than a spanning header that must align with column widths
 - Settings gear can be in the Chat panel header (rightmost) or in a top-level bar
 - Consistent panel header height across all 4 columns

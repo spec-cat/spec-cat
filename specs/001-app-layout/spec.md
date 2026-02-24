@@ -65,7 +65,7 @@ Settings are provided as a modal overlay.
 
 ### FR-007: Header Display
 Application header is embedded in the Git Tree panel header (not a global top bar).
-It must display `SPEC CAT / {project-name}`, where `{project-name}` is the last segment of the current working directory path fetched from `/api/cwd`.
+It must display `SPEC CAT / {project-name}`, where `{project-name}` is the last segment of the current working directory path.
 A settings button is shown on the right side of this same header.
 
 ## Non-Functional Requirements
@@ -81,23 +81,6 @@ Supports minimum viewport width down to 320px.
 
 ### NFR-004: Independent Scrolling
 Each of the 4 panels has its own independent scroll area.
-
-## Technical Implementation
-
-### Components
-- `layouts/default.vue` - Overall layout container (4-column flex)
-- `components/layout/AppHeader.vue` - Header bar (title + action slot)
-- `components/layout/AppMain.vue` - Main content area (may be repurposed or removed)
-- `components/settings/SettingsModal.vue` - Settings modal (AI provider/model selection)
-- `components/chat/ChatPanel.vue` - Chat panel (rightmost column)
-- `components/features/FeaturesPanel.vue` - Features/spec list panel (new)
-- `components/conversations/ConversationsPanel.vue` - Conversations list panel (new or extracted)
-
-### Store
-- `stores/layout.ts` - Layout state management (currentViewport, panel widths)
-
-### Types
-- `types/layout.ts` - Viewport breakpoints, ViewportSize type
 
 ## Success Criteria
 - [ ] 4-column layout rendered: Git Tree (30%) | Features (20%) | Conversations (20%) | Chat (30%)

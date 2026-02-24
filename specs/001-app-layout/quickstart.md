@@ -95,7 +95,7 @@ Remove or archive components no longer needed:
 ### 8. Update Header
 
 Update or inline `components/layout/AppHeader.vue`:
-- "SPEC CAT v0.1.0" title
+- "SPEC CAT / {project-name}" title (where {project-name} is derived from current working directory)
 - Settings gear icon (Cog6ToothIcon) on the right
 - Either as a spanning bar above all columns or embedded in a panel header
 

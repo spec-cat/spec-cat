@@ -116,7 +116,7 @@ types/
 | FR-006a | Gear icon opens modal | `layouts/default.vue` or `AppHeader.vue` (Cog6ToothIcon button) |
 | FR-006b | ESC/backdrop closes modal | `SettingsModal.vue` (existing behavior) |
 | FR-006c | AI provider/model selection UI | `SettingsModal.vue` (existing) |
-| FR-007 | Header Display | `layouts/default.vue` or `components/layout/AppHeader.vue` |
+| FR-007 | Header Display | `layouts/default.vue` or `components/layout/AppHeader.vue`, fetches project name from `/api/cwd` |
 
 ## Post-Design Constitution Re-check
 
