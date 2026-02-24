@@ -72,11 +72,14 @@ const activeFeatureId = computed(() => {
   return features.value.some(feature => feature.id === branch) ? branch : null
 })
 
-const highlightedFeatureId = computed(() => selectedFeatureId.value || activeFeatureId.value)
+const highlightedFeatureId = computed(() => activeFeatureId.value || selectedFeatureId.value)
 
 // Auto-scroll to active feature card
 watch(() => chatStore.activeConversationId, () => {
+  // Conversation-driven selection should not be masked by stale manual clicks.
+  selectedFeatureId.value = null
   const fid = activeFeatureId.value
+  gitGraphStore.setSelectedFeatureId(fid)
   if (!fid) return
   nextTick(() => {
     const el = featureRefs.value[fid]
