@@ -12,18 +12,6 @@ description: "Task list template for feature implementation"
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
 
-## Scope Guardrails *(mandatory)*
-
-### Owned Files (from plan.md)
-
-- `[path/to/file]`
-
-### Do Not Edit (from plan.md)
-
-- `[path/to/file]`
-
-**Rule**: Do not create tasks that modify `Do Not Edit` files. Split into a separate spec if required.
-
 ## Format: `[ID] [P?] [Story] Description`
 
 - **[P]**: Can run in parallel (different files, no dependencies)

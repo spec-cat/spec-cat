@@ -5,24 +5,6 @@
 **Status**: Draft  
 **Input**: User description: "$ARGUMENTS"
 
-## Scope Control *(mandatory)*
-
-### In Scope
-
-- [List bounded feature responsibilities]
-
-### Out of Scope
-
-- [List explicit exclusions to prevent scope creep]
-
-### Owned Files
-
-- `[path/to/file]` - [what this spec is allowed to change]
-
-### Do Not Edit
-
-- `[path/to/file]` - [owned by another active spec/lane]
-
 ## User Scenarios & Testing *(mandatory)*
 
 <!--
