@@ -64,9 +64,39 @@ function contentBlockRenderSignature(message: ChatMessageType): string {
     .join('|')
 }
 
+// ResizeObserver to handle container resize (e.g., when input area grows/shrinks)
+const resizeObserverCleanup = ref<(() => void) | null>(null)
+
+function setupResizeObserver() {
+  if (resizeObserverCleanup.value) {
+    resizeObserverCleanup.value()
+    resizeObserverCleanup.value = null
+  }
+
+  if (!containerRef.value || typeof ResizeObserver === 'undefined') return
+
+  const resizeObserver = new ResizeObserver(() => {
+    // When container resizes, maintain scroll position at bottom if we were already there
+    maybeScrollToBottom('instant')
+  })
+
+  resizeObserver.observe(containerRef.value)
+
+  resizeObserverCleanup.value = () => {
+    resizeObserver.disconnect()
+  }
+}
+
 // On mount (panel just opened), scroll instantly — no animation
 onMounted(() => {
   scrollToBottom('instant')
+  setupResizeObserver()
+})
+
+onUnmounted(() => {
+  if (resizeObserverCleanup.value) {
+    resizeObserverCleanup.value()
+  }
 })
 
 // Scroll instantly on conversation switch
@@ -77,6 +107,11 @@ watch(
     scrollToBottom('instant')
   }
 )
+
+// Re-setup ResizeObserver when container ref changes
+watch(containerRef, () => {
+  setupResizeObserver()
+})
 
 // Ensure initial render after refresh lands at bottom once messages are actually present.
 watch(

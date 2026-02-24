@@ -876,7 +876,7 @@ watch(() => chatStore.activeConversationId, () => {
 </script>
 
 <template>
-  <div class="flex-shrink-0 border-t border-retro-border bg-retro-dark p-3">
+  <div class="flex-shrink-0 flex-grow-0 border-t border-retro-border bg-retro-dark p-3">
     <!-- Model + Mode selector -->
     <div class="flex items-center gap-2 mb-2">
       <div class="relative min-w-0 flex-1 max-w-[154px] model-selector">
@@ -1065,7 +1065,7 @@ watch(() => chatStore.activeConversationId, () => {
       </div>
     </div>
 
-    <div class="flex gap-2 items-center">
+    <div class="flex gap-2 items-start">
       <input
         ref="fileInputRef"
         type="file"
@@ -1089,7 +1089,7 @@ watch(() => chatStore.activeConversationId, () => {
       </button>
 
       <!-- Input -->
-      <div class="flex-1 relative h-10">
+      <div class="flex-1 relative min-h-[40px]">
         <textarea
           ref="inputRef"
           v-model="inputText"
@@ -1098,7 +1098,7 @@ watch(() => chatStore.activeConversationId, () => {
             ? 'This conversation is finalized (read-only)'
             : 'Type a message...'"
           rows="1"
-          class="w-full h-full min-h-0 px-3 py-2 bg-retro-black border border-retro-border rounded
+          class="w-full h-full min-h-[40px] px-3 py-2 bg-retro-black border border-retro-border rounded
                  text-sm font-mono text-retro-text placeholder-retro-muted
                  focus:outline-none focus:border-retro-cyan
                  disabled:opacity-50 disabled:cursor-not-allowed

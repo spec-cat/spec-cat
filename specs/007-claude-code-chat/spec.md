@@ -63,6 +63,7 @@ As a developer, I want to quickly open/close and resize the chat panel so that I
 - **FR-006**: System MUST show a bounce loading indicator while Claude is generating
 - **FR-007**: System MUST maintain conversation history within the current session
 - **FR-008**: System MUST automatically scroll to show new messages (with 50px threshold detection)
+- **FR-008a**: System MUST maintain scroll position at bottom when input area expands/contracts
 - **FR-009**: System MUST pass the current working directory context to the Claude Code CLI
 - **FR-010**: System MUST display the current working directory (abbreviated) in the chat panel header
 - **FR-011**: System MUST provide a stop button to abort in-progress response generation
@@ -83,6 +84,7 @@ As a developer, I want to quickly open/close and resize the chat panel so that I
 - **FR-015**: System MUST preserve message formatting (code blocks, inline code, bold, line breaks) via simple markdown rendering
 - **FR-016**: System MUST support Enter to send, Shift+Enter for newline
 - **FR-016a**: System MUST provide a retry button when the last message errored
+- **FR-016b**: System MUST grow the input area container height as the textarea expands with multi-line content (up to 200px max)
 - **FR-018**: System MUST route all AI requests through the configured `claudeModel` setting (no per-request model overrides)
 - **FR-019**: System MUST render chat history with viewport-based virtualization so DOM node count remains bounded as message count grows
 
@@ -104,6 +106,8 @@ As a developer, I want to quickly open/close and resize the chat panel so that I
 - [x] Error states are communicated clearly with dismissible banners
 - [x] Code blocks are displayed with proper formatting
 - [x] Long conversations keep smooth scrolling and input responsiveness via virtualized message rendering
+- [x] Chat input area expands with multi-line content without overflowing the viewport
+- [x] Scroll position stays at bottom when input area expands (no drift upward)
 
 ## Technical Implementation
 

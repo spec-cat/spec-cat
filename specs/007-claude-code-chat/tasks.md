@@ -205,6 +205,7 @@ Phase 3 (US1+US2: Chat+Toggle) ◀────── MVP COMPLETE  │
 | FR-006 | T017 |
 | FR-007 | T019-T021 |
 | FR-008 | T022 |
+| FR-008a | T065 |
 | FR-009 | T025 |
 | FR-010 | T023 |
 | FR-011 | T026-T028 |
@@ -219,6 +220,8 @@ Phase 3 (US1+US2: Chat+Toggle) ◀────── MVP COMPLETE  │
 | FR-014 | T018 |
 | FR-015 | T059 |
 | FR-016 | T012 |
+| FR-016a | T056 |
+| FR-016b | T064 |
 | FR-017 | T053, T054 |
 | FR-019 | T063 |
 
@@ -236,3 +239,8 @@ Phase 3 (US1+US2: Chat+Toggle) ◀────── MVP COMPLETE  │
 ## FR Traceability Addendum (2026-02-14)
 
 - [ ] T060 [Traceability] Add explicit mapping for retry flow requirements in chat interaction [FR-016a, FR-018]
+
+## FR Traceability Addendum (2026-02-24)
+
+- [x] T064 [P] [US1] Fix ChatInput container to grow with textarea expansion in components/chat/ChatInput.vue [FR-016b]
+- [x] T065 [P] [US1] Maintain scroll position when input area resizes in components/chat/ChatMessages.vue [FR-008a]

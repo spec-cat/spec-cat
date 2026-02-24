@@ -105,6 +105,7 @@ server/utils/
 | FR-006 | Loading indicator | `components/chat/ChatMessages.vue` (bounce animation during streaming) | Done |
 | FR-007 | Conversation history | `stores/chat.ts` (messages per conversation) | Done |
 | FR-008 | Auto-scroll | `composables/useAutoScroll.ts` (50px threshold) | Done |
+| FR-008a | Maintain scroll on input resize | `components/chat/ChatMessages.vue` (ResizeObserver) | Done |
 | FR-009 | Working directory context | `server/routes/_ws.ts` (cwd passed to pty.spawn), `stores/chat.ts` (conv.cwd) | Done |
 | FR-010 | CWD display | `components/chat/ChatPanel.vue` (abbreviated path in header) | Done |
 | FR-011 | Stop button | `components/chat/ChatInput.vue`, `composables/useChatStream.ts` (abort) | Done |
@@ -120,6 +121,7 @@ server/utils/
 | FR-015 | Markdown rendering | `components/chat/ChatMessage.vue` (marked + dompurify) | Done |
 | FR-016 | Enter/Shift+Enter | `components/chat/ChatInput.vue` (keydown handler) | Done |
 | FR-016a | Retry button | `components/chat/ChatInput.vue` (shown when last message errored) | Done |
+| FR-016b | Grow input area with textarea | `components/chat/ChatInput.vue` (autoResize function, min-h-[40px], items-start) | Done |
 | FR-017 | Panel resize | `composables/useChatPanel.ts` (useResize with drag), `stores/chat.ts` (setPanelWidth) | Done |
 | FR-019 | Virtualized message rendering | `components/chat/ChatMessages.vue`, `composables/useVirtualMessageList.ts` | Done |
 
