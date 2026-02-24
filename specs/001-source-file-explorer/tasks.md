@@ -13,9 +13,9 @@
 
 ## Phase 2: Foundational API (Blocking)
 
-- [ ] T003 Implement project-root-safe path resolver and traversal helpers in `server/utils/projectDir.ts` (or dedicated helper) [FR-002, FR-006]
-- [ ] T004 Implement `GET /api/project/tree` endpoint in `server/api/project/tree.get.ts` with hidden/binary filtering and stable sorting [FR-002, FR-007]
-- [ ] T005 Implement `GET /api/project/file` endpoint in `server/api/project/file.get.ts` with size limit, read errors, and unsupported/binary detection [FR-004, FR-005, FR-006, FR-007]
+- [ ] T003 Implement project-root-safe path resolver and traversal helpers in `server/utils/projectDir.ts` [FR-002, FR-006, FR-008]
+- [ ] T004 Implement `GET /api/project/tree` endpoint in `server/api/project/tree.get.ts` with hidden/binary filtering and stable sorting [FR-002, FR-007, FR-009]
+- [ ] T005 Implement `GET /api/project/file` endpoint in `server/api/project/file.get.ts` with size limit, read errors, and unsupported/binary detection [FR-004, FR-005, FR-006, FR-007, FR-009]
 
 ## Phase 3: User Story 1 - Open Explorer Modal (P1)
 
@@ -51,8 +51,9 @@
 ## Phase 6: Polish
 
 - [ ] T016 [P] Guard edge case when project has no readable files (empty tree state) in `components/project/SourceExplorerModal.vue` [FR-006, FR-007]
-- [ ] T017 [P] Verify path traversal protections (`..`, absolute paths) in `server/api/project/tree.get.ts` and `server/api/project/file.get.ts` [FR-006]
-- [ ] T018 Run manual acceptance checks against all scenarios and edge cases in `specs/001-source-file-explorer/spec.md` [FR-001..FR-007]
+- [ ] T017 [P] Enforce and verify path traversal protections (`..`, absolute paths) via `server/utils/projectDir.ts`, `server/api/project/tree.get.ts`, and `server/api/project/file.get.ts` [FR-006, FR-008]
+- [ ] T018 Run manual acceptance checks against all scenarios and edge cases in `specs/001-source-file-explorer/spec.md` [FR-001, FR-002, FR-003, FR-004, FR-005, FR-006, FR-007, FR-008]
+- [ ] T019 Measure and verify tree-load/file-open response behavior against the 2-second target in representative local repositories and capture pass/fail notes [FR-009]
 
 ## Dependencies & Parallel Opportunities
 

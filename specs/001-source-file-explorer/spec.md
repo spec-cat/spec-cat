@@ -7,19 +7,6 @@
 
 ## User Scenarios & Testing *(mandatory)*
 
-<!--
-  IMPORTANT: User stories should be PRIORITIZED as user journeys ordered by importance.
-  Each user story/journey must be INDEPENDENTLY TESTABLE - meaning if you implement just ONE of them,
-  you should still have a viable MVP (Minimum Viable Product) that delivers value.
-  
-  Assign priorities (P1, P2, P3, etc.) to each story, where P1 is the most critical.
-  Think of each story as a standalone slice of functionality that can be:
-  - Developed independently
-  - Tested independently
-  - Deployed independently
-  - Demonstrated to users independently
--->
-
 ### User Story 1 - Open the source file explorer modal (Priority: P1)
 
 A user wants to inspect project source files without leaving the app, so they open a dedicated modal that presents the project file explorer.
@@ -63,10 +50,6 @@ A user selects a file in the tree and reads its contents in the right-hand pane 
 1. **Given** the modal is open, **When** the user selects a text file from the tree, **Then** the file contents appear in the right pane.
 2. **Given** the user selects a different file, **When** the selection changes, **Then** the content pane updates to show the newly selected file.
 
----
-
-[Add more user stories as needed, each with an assigned priority]
-
 ### Edge Cases
 
 - The project contains no readable files or directories.
@@ -75,11 +58,6 @@ A user selects a file in the tree and reads its contents in the right-hand pane 
 - A file becomes unavailable between listing and selection (deleted or moved).
 
 ## Requirements *(mandatory)*
-
-<!--
-  ACTION REQUIRED: The content in this section represents placeholders.
-  Fill them out with the right functional requirements.
--->
 
 ### Functional Requirements
 
@@ -90,6 +68,8 @@ A user selects a file in the tree and reads its contents in the right-hand pane 
 - **FR-005**: System MUST present file contents in a read-only view.
 - **FR-006**: System MUST show a clear message when a file cannot be displayed (unsupported format, too large, or unavailable).
 - **FR-007**: System MUST indicate loading and error states while fetching file lists or file contents.
+- **FR-008**: System MUST reject path traversal and absolute-path requests so that all file system access remains scoped to the current project root.
+- **FR-009**: System MUST display either requested data or an explicit error state within 2 seconds for repositories up to 5,000 nodes and files up to 1 MB under normal local conditions.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -101,16 +81,13 @@ A user selects a file in the tree and reads its contents in the right-hand pane 
 - The modal is scoped to the current project root and does not access external locations.
 - Only text-based files are intended for display; binary or unsupported formats are treated as non-displayable.
 - Users who can access the app are permitted to view project source files; no new access controls are introduced.
+- "Normal local conditions" means the project is on a local filesystem and the host machine is not resource-starved by unrelated heavy workloads.
 
 ## Success Criteria *(mandatory)*
-
-<!--
-  ACTION REQUIRED: Define measurable success criteria.
-  These must be technology-agnostic and measurable.
--->
 
 ### Measurable Outcomes
 
 - **SC-001**: In usability testing, at least 90% of participants can locate a target file and view its contents without assistance.
 - **SC-002**: At least 95% of attempts to open supported text files display content successfully.
 - **SC-003**: 100% of attempts to open unsupported, oversized, or missing files show a clear, user-facing message.
+- **SC-004**: In manual verification on representative local repositories (up to 5,000 nodes), at least 95% of tree-load and file-open actions complete (success or explicit error state) within 2 seconds.
