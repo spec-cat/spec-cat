@@ -1,6 +1,6 @@
-# Data Model: Claude Code Chat
+# Data Model: AI Provider Chat
 
-**Feature**: 007-claude-code-chat
+**Feature**: 007-ai-provider-chat
 **Date**: 2026-02-02
 
 ## Entity Overview

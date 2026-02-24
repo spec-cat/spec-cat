@@ -2,7 +2,7 @@
 
 **Branch**: `011-chat-worktree-integration` | **Date**: 2026-02-08 | **Spec**: [spec.md](./spec.md)
 **Input**: Feature specification from `/specs/011-chat-worktree-integration/spec.md`
-**Dependencies**: 007-claude-code-chat, 009-conversation-management
+**Dependencies**: 007-ai-provider-chat, 009-conversation-management
 
 ## Summary
 

@@ -3,11 +3,11 @@
 **Branch**: `009-conversation-management` | **Date**: 2026-02-08 | **Spec**: [specs/009-conversation-management/spec.md](./spec.md)
 **Input**: Feature specification from `/specs/009-conversation-management/spec.md`
 **Status**: Implemented
-**Split from**: 007-claude-code-chat
+**Split from**: 007-ai-provider-chat
 
 ## Summary
 
-Implement conversation list management with CRUD operations, localStorage persistence (hard limit 100), search/filter, inline rename, delete confirmation, streaming status badges, and auto-generated titles. The feature extends the existing Pinia chat store and localStorage patterns from 007-claude-code-chat. No server-side APIs are required — all operations are client-side with localStorage as the persistence layer.
+Implement conversation list management with CRUD operations, localStorage persistence (hard limit 100), search/filter, inline rename, delete confirmation, streaming status badges, and auto-generated titles. The feature extends the existing Pinia chat store and localStorage patterns from 007-ai-provider-chat. No server-side APIs are required — all operations are client-side with localStorage as the persistence layer.
 
 ## Technical Context
 

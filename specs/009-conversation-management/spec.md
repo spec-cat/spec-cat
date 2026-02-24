@@ -3,8 +3,8 @@
 **Feature Branch**: `009-conversation-management`
 **Created**: 2026-02-08
 **Status**: Implemented
-**Split from**: `007-claude-code-chat` (original FR-018 ~ FR-028)
-**Dependencies**: 007-claude-code-chat
+**Split from**: `007-ai-provider-chat` (original FR-018 ~ FR-028)
+**Dependencies**: 007-ai-provider-chat
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -59,7 +59,7 @@ As a developer, I want to manage multiple conversations so that I can organize d
 
 - **Conversation**: id, title, createdAt, updatedAt, messages[] (worktreePath?, worktreeBranch?, baseBranch?, featureId? are defined by 011-chat-worktree-integration)
 
-See `specs/007-claude-code-chat/data-model.md` for full entity definitions.
+See `specs/007-ai-provider-chat/data-model.md` for full entity definitions.
 
 ## Success Criteria *(mandatory)*
 

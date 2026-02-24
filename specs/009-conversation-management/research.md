@@ -5,7 +5,7 @@
 
 ## Research Summary
 
-All technical decisions are inherited from or consistent with 007-claude-code-chat research. This feature was split from 007 and focuses exclusively on conversation CRUD, persistence, and search. No new technical unknowns requiring research.
+All technical decisions are inherited from or consistent with 007-ai-provider-chat research. This feature was split from 007 and focuses exclusively on conversation CRUD, persistence, and search. No new technical unknowns requiring research.
 
 ---
 
@@ -16,7 +16,7 @@ All technical decisions are inherited from or consistent with 007-claude-code-ch
 **Decision**: localStorage with JSON serialization under `spec-cat-conversations` key
 
 **Rationale**:
-- Consistent with 007-claude-code-chat Decision 9
+- Consistent with 007-ai-provider-chat Decision 9
 - Constitution VI (Simplicity Over Complexity) — no server-side persistence needed
 - Single-user local application; localStorage provides ~5-10MB, sufficient for 100 conversations
 - Instant access with no network latency
@@ -105,7 +105,7 @@ All technical decisions are inherited from or consistent with 007-claude-code-ch
 **Decision**: First 50 characters of first user message, truncated with ellipsis
 
 **Rationale**:
-- Consistent with 007-claude-code-chat Decision 11
+- Consistent with 007-ai-provider-chat Decision 11
 - Provides meaningful context without manual input
 - Same pattern used by ChatGPT, Claude.ai
 - User can rename if auto-title is insufficient (FR-005)

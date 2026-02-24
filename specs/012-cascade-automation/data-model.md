@@ -2,7 +2,7 @@
 
 **Feature**: 012-cascade-automation
 **Date**: 2026-02-08
-**Extends**: `specs/007-claude-code-chat/data-model.md`
+**Extends**: `specs/007-ai-provider-chat/data-model.md`
 
 ## Entity Overview
 
@@ -75,7 +75,7 @@ Deleted:   - queue exhausted (all steps complete)
 
 ### 2. Conversation Extension (MODIFIED)
 
-The `Conversation` entity from `007-claude-code-chat/data-model.md` is extended with:
+The `Conversation` entity from `007-ai-provider-chat/data-model.md` is extended with:
 
 ```typescript
 interface Conversation {

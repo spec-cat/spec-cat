@@ -53,6 +53,10 @@ Display the last commit info for each worktree.
 ### FR-008: Active Worktree Indication
 Visually distinguish the currently active worktree.
 
+### FR-009: Worktree Detail Page
+Must be able to view worktree details.
+- **FR-009a**: Display commit history for the worktree branch
+
 ## Non-Functional Requirements
 
 ### NFR-001: Isolation Guarantee
@@ -61,30 +65,20 @@ Work between worktrees must not affect each other.
 ### NFR-002: Path Safety
 Only safe paths are allowed when creating worktrees.
 
-## Technical Implementation
-
-### Components
-- `components/worktree/WorktreePanel.vue` - Main worktree panel (list, create, delete, switch)
-- `components/worktree/WorktreeCreateModal.vue` - Create modal (form validation, error display)
-- `components/worktree/WorktreeStatusBadge.vue` - Color-coded status badge
-
-### Pages
-- `pages/worktrees/index.vue` - Worktree list page
-### Store
-- `stores/worktree.ts` - Worktree state management
-
-### Types
-- `types/worktree.ts` - Worktree type definitions
-
-### Server APIs
-- `GET /api/worktrees` - Get worktree list (includes status, commit counts)
-- `POST /api/worktrees` - Create worktree
-- `DELETE /api/worktrees/[name]` - Delete worktree (option: deleteBranch)
-- `POST /api/worktrees/[name]/switch` - Switch worktree
+### NFR-003: Performance Requirements
+- **NFR-003a**: Worktree list must load within 2 seconds for up to 20 worktrees
+- **NFR-003b**: Worktree creation/deletion operations must complete within 5 seconds
 
 ## Success Criteria
-- [x] Worktree list is correctly displayed as cards
-- [x] Worktree status is correctly reflected with color badges
-- [x] Worktree create/delete/switch works properly
-- [x] Feature number auto-generation works
-- [x] Force-remove fallback works
+
+- Worktree list displays all worktrees as cards with correct information
+- Status badges accurately reflect worktree state (clean/dirty/ahead/behind/diverged)
+- Create, delete, and switch operations complete successfully
+- Feature number auto-generation produces sequential numbers without conflicts
+- Force-remove fallback handles edge cases when standard removal fails
+- Main worktree cannot be deleted
+- Worktree detail page shows complete commit history
+- Work between worktrees remains isolated (no cross-contamination)
+- Only safe paths under /tmp/ are allowed for worktree creation
+- Worktree list loads within 2 seconds for up to 20 worktrees
+- Creation and deletion operations complete within 5 seconds

@@ -3,8 +3,8 @@
 **Feature Branch**: `010-chat-permission-system`
 **Created**: 2026-02-08
 **Status**: Implemented
-**Split from**: `007-claude-code-chat` (original FR-029 ~ FR-033)
-**Dependencies**: 007-claude-code-chat
+**Split from**: `007-ai-provider-chat` (original FR-029 ~ FR-033)
+**Dependencies**: 007-ai-provider-chat
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -41,7 +41,7 @@ As a developer, I want to control what Claude can do so that I can balance autom
 - **PermissionMode**: 'plan' | 'ask' | 'auto' | 'bypass'
 - **PermissionRequest**: tool name, description, allow/deny
 
-See `specs/007-claude-code-chat/data-model.md` for full entity definitions.
+See `specs/007-ai-provider-chat/data-model.md` for full entity definitions.
 
 ## Success Criteria *(mandatory)*
 

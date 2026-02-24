@@ -4,8 +4,8 @@
 **Created**: 2026-02-08
 **Status**: Implemented
 **Execution Model**: Parent spec with active child execution lanes
-**Split from**: `007-claude-code-chat` (original FR-034 ~ FR-042 + User Story 10)
-**Dependencies**: 007-claude-code-chat, 009-conversation-management
+**Split from**: `007-ai-provider-chat` (original FR-034 ~ FR-042 + User Story 10)
+**Dependencies**: 007-ai-provider-chat, 009-conversation-management
 
 ## Structure Notice
 
@@ -112,7 +112,7 @@ As a developer, I want to see which conversation (worktree) is currently being p
 - **PreviewState**: previewingConversationId (global singleton, runtime only)
 - **FinalizeRequest**: conversationId, commitMessage
 
-See `specs/007-claude-code-chat/data-model.md` for full entity definitions.
+See `specs/007-ai-provider-chat/data-model.md` for full entity definitions.
 
 ## Success Criteria *(mandatory)*
 

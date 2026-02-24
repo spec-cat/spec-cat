@@ -1,9 +1,9 @@
-# Feature Specification: Claude Code Chat
+# Feature Specification: AI Provider Chat
 
-**Feature Branch**: `007-claude-code-chat`
+**Feature Branch**: `007-ai-provider-chat`
 **Created**: 2026-02-02
 **Status**: Implemented
-**Input**: User description: "Implement Claude Code chat using the local Claude Code CLI"
+**Input**: User description: "Implement multi-provider AI chat supporting Claude, Codex, and future providers"
 
 ## Related Specs
 
@@ -18,20 +18,20 @@ Features originally part of this spec have been split into focused specs:
 
 ### User Story 1 - Interactive Chat Conversation (Priority: P1)
 
-As a developer using Spec Cat, I want to have an interactive chat conversation with Claude using the local Claude Code CLI so that I can get coding assistance, ask questions about my codebase, and receive AI-powered help directly within the application.
+As a developer using Spec Cat, I want to have an interactive chat conversation with AI providers (Claude, Codex, Gemini) so that I can get coding assistance, ask questions about my codebase, and receive AI-powered help directly within the application.
 
 **Acceptance Scenarios**:
 
-1. **Given** the chat panel is open, **When** I type a message and press send (or Enter), **Then** I see my message displayed and receive a streaming response from Claude.
-2. **Given** Claude is responding, **When** the response is being generated, **Then** I see the response text appearing incrementally with an animated cursor.
-3. **Given** Claude is generating, **When** I click the stop button, **Then** generation stops and the partial response is preserved.
+1. **Given** the chat panel is open, **When** I type a message and press send (or Enter), **Then** I see my message displayed and receive a streaming response from the selected AI provider.
+2. **Given** the AI provider is responding, **When** the response is being generated, **Then** I see the response text appearing incrementally with an animated cursor.
+3. **Given** the AI is generating, **When** I click the stop button, **Then** generation stops and the partial response is preserved.
 4. **Given** the last message errored, **When** I click retry, **Then** the message is resent.
 
 ---
 
 ### User Story 2 - Chat Panel Toggle & Resize (Priority: P1)
 
-As a developer, I want to quickly open/close and resize the chat panel so that I can access Claude while maintaining focus on my main work area.
+As a developer, I want to quickly open/close and resize the chat panel so that I can access AI chat while maintaining focus on my main work area.
 
 **Acceptance Scenarios**:
 
@@ -41,14 +41,28 @@ As a developer, I want to quickly open/close and resize the chat panel so that I
 
 ---
 
+### User Story 3 - AI Provider Selection (Priority: P1)
+
+As a developer, I want to select between different AI providers and their models so that I can use the most suitable AI for my specific needs.
+
+**Acceptance Scenarios**:
+
+1. **Given** the settings panel is open, **When** I view the provider selector, **Then** I see all available providers (Claude, Codex, Gemini) with their capabilities.
+2. **Given** a provider is selected, **When** I view the model dropdown, **Then** I see all available models for that provider.
+3. **Given** I select a different provider/model, **When** I start a new conversation, **Then** the selected provider is used for responses.
+4. **Given** a provider doesn't support certain features (e.g., permissions), **When** those features are required, **Then** the provider is shown as disabled with a clear reason.
+
+---
+
 ### Edge Cases
 
-- Claude Code CLI not installed or not authenticated → Display "Claude CLI Error: {message}"
+- Provider CLI/SDK not installed or not authenticated → Display "{Provider} Error: {message}"
 - Network disconnection during response → Display "Connection closed: {reason} (code: {code})" with close-code meaning fallback (for example, code `1005` = "No status code received from peer")
-- Claude CLI process crashes → Display "Claude CLI exited unexpectedly (code: {exitCode}, signal: {signal})"
+- Provider process crashes → Display "{Provider} exited unexpectedly (code: {exitCode}, signal: {signal})"
 - Invalid JSON from server → Display "Failed to parse server response: {error}"
-- PTY process spawn failure → Display "Failed to start Claude CLI: {error}"
-- Session corruption → Auto-retry without --resume flag
+- Provider process spawn failure → Display "Failed to start {Provider}: {error}"
+- Session corruption → Auto-retry without resume (for providers that support it)
+- Provider not supporting required capability → Display in UI with reason, disable selection
 
 ## Requirements *(mandatory)*
 
@@ -57,14 +71,14 @@ As a developer, I want to quickly open/close and resize the chat panel so that I
 #### Chat Panel
 - **FR-001**: System MUST provide a chat panel on the right side of the application
 - **FR-002**: System MUST provide a toggle button to open/close the chat panel
-- **FR-003**: System MUST allow users to type and send text messages to Claude
-- **FR-004**: System MUST display Claude's responses in a conversational format (role-based styling)
-- **FR-005**: System MUST stream Claude's responses in real-time (text appears incrementally with animated cursor)
-- **FR-006**: System MUST show a bounce loading indicator while Claude is generating
+- **FR-003**: System MUST allow users to type and send text messages to the selected AI provider
+- **FR-004**: System MUST display AI responses in a conversational format (role-based styling)
+- **FR-005**: System MUST stream AI responses in real-time (text appears incrementally with animated cursor) for providers that support streaming
+- **FR-006**: System MUST show a bounce loading indicator while AI is generating
 - **FR-007**: System MUST maintain conversation history within the current session
 - **FR-008**: System MUST automatically scroll to show new messages (with 50px threshold detection)
 - **FR-008a**: System MUST maintain scroll position at bottom when input area expands/contracts
-- **FR-009**: System MUST pass the current working directory context to the Claude Code CLI
+- **FR-009**: System MUST pass the current working directory context to the AI provider
 - **FR-010**: System MUST display the current working directory (abbreviated) in the chat panel header
 - **FR-011**: System MUST provide a stop button to abort in-progress response generation
 - **FR-012**: System MUST provide a way to start a new conversation
@@ -76,7 +90,7 @@ As a developer, I want to quickly open/close and resize the chat panel so that I
 - **FR-013b**: System MUST log errors to browser console for debugging
 - **FR-013c**: System MUST allow users to dismiss error banners
 - **FR-013d**: System MUST handle WebSocket connection errors with descriptive messages, including close code meaning fallback when `reason` is empty, `wasClean` state, and the last server error context when available
-- **FR-013e**: System MUST handle Claude CLI process failures (non-zero exit codes, spawn failures)
+- **FR-013e**: System MUST handle provider process failures (non-zero exit codes, spawn failures)
 - **FR-013f**: System MUST handle JSON parsing errors from server responses
 
 #### Input & Keyboard
@@ -85,14 +99,24 @@ As a developer, I want to quickly open/close and resize the chat panel so that I
 - **FR-016**: System MUST support Enter to send, Shift+Enter for newline
 - **FR-016a**: System MUST provide a retry button when the last message errored
 - **FR-016b**: System MUST grow the input area container height as the textarea expands with multi-line content (up to 200px max)
-- **FR-018**: System MUST route all AI requests through the configured `claudeModel` setting (no per-request model overrides)
+- **FR-018**: System MUST route all AI requests through the configured provider and model selection
 - **FR-019**: System MUST render chat history with viewport-based virtualization so DOM node count remains bounded as message count grows
+
+#### Provider Selection
+- **FR-020**: System MUST support multiple AI providers (Claude, Codex, Gemini, and future providers)
+- **FR-021**: System MUST allow users to select provider and model from available options
+- **FR-022**: System MUST display provider capabilities (streaming, permissions, resume, etc.)
+- **FR-023**: System MUST disable providers that don't support required capabilities with clear reasoning
+- **FR-024**: System MUST persist provider/model selection to settings
+- **FR-025**: System MUST use AIProvider interface for all provider interactions
 
 ### Key Entities
 
 - **ChatMessage**: role (user/assistant), content, timestamp, status (streaming/stopped/error)
-- **ChatSession**: sessionId, cwd, status (idle/streaming/error)
+- **ChatSession**: sessionId, cwd, status (idle/streaming/error), providerId, modelKey
 - **ChatPanelState**: isOpen, width
+- **AIProvider**: metadata (id, name, capabilities), streamChat(), isModelSupported()
+- **AIProviderSelection**: providerId, modelKey
 
 ## Success Criteria *(mandatory)*
 
@@ -117,6 +141,7 @@ As a developer, I want to quickly open/close and resize the chat panel so that I
 - `components/chat/ChatMessages.vue` - Message list with auto-scroll and loading indicator
 - `components/chat/ChatMessage.vue` - Individual message with markdown rendering
 - `components/chat/ChatInput.vue` - Input textarea, send/stop/retry buttons
+- `components/settings/ProviderSelector.vue` - Provider and model selection UI
 
 ### Store
 - `stores/chat.ts` - Messages, session state, panel state, streaming state
@@ -129,6 +154,7 @@ As a developer, I want to quickly open/close and resize the chat panel so that I
 
 ### Types
 - `types/chat.ts` - ChatMessage, ChatSession, ChatPanelState, MessageStatus, SessionStatus
+- `types/aiProvider.ts` - AIProviderMetadata, AIProviderSelection, AIProviderCapabilities
 
 ### Server APIs
 - `POST /api/chat` - Send message with SSE streaming (alternative to WebSocket)
@@ -137,15 +163,18 @@ As a developer, I want to quickly open/close and resize the chat panel so that I
 - `/_ws` - Claude CLI streaming with PTY, session handling
 
 ### Server Utilities
-- `server/utils/claude.ts` - Claude CLI path detection (system, which, node_modules)
-- `server/utils/claudeService.ts` - Claude SDK query() for one-off operations
-- `server/utils/claudeModel.ts` - Resolve configured `claudeModel` for all AI calls
+- `server/utils/aiProvider.ts` - AIProvider interface and streamChatWithProvider()
+- `server/utils/aiProviderRegistry.ts` - Provider registration and management
+- `server/utils/aiProviderSelection.ts` - Provider/model selection logic
+- `server/utils/claudeProvider.ts` - Claude provider implementation
+- `server/utils/codexProvider.ts` - Codex provider implementation
 
 ## Assumptions
 
-- Claude Code CLI (`@anthropic-ai/claude-code`) is installed as project dependency
-- Users have authenticated with Claude Code CLI
-- node-pty is available for PTY-based CLI interaction
+- At least one AI provider CLI/SDK is installed and configured
+- Users have authenticated with their chosen provider(s)
+- node-pty is available for PTY-based CLI interaction (for providers that use it)
+- Each provider implements the AIProvider interface
 
 ## Out of Scope
 

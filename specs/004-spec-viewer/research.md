@@ -14,7 +14,7 @@
 
 **Decision**: Use `marked` (v15.0.12) for parsing + `dompurify` (v3.2.0) for sanitization. Create a client-only composable `useMarkdown()` that returns a `renderMarkdown(content: string): string` function.
 
-**Rationale**: Both libraries are already in package.json (from 007-claude-code-chat spec). The marked library handles all required markdown features (headings, lists, tables, code blocks, bold/italic, links) out of the box. DOMPurify prevents XSS from user-controlled spec content.
+**Rationale**: Both libraries are already in package.json (from 007-ai-provider-chat spec). The marked library handles all required markdown features (headings, lists, tables, code blocks, bold/italic, links) out of the box. DOMPurify prevents XSS from user-controlled spec content.
 
 **Alternatives considered**:
 - Server-side rendering of markdown — rejected because it adds latency and the client has the libraries already

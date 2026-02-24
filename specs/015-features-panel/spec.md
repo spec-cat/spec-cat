@@ -104,7 +104,7 @@ When a developer has an active conversation linked to a feature, the correspondi
 
 **Acceptance Scenarios**:
 
-1. **Given** the active conversation is linked to feature `007-claude-code-chat`, **When** the features list is visible, **Then** the card for `007-claude-code-chat` has a distinct highlighted style (cyan border) while other cards have the default style.
+1. **Given** the active conversation is linked to feature `007-ai-provider-chat`, **When** the features list is visible, **Then** the card for `007-ai-provider-chat` has a distinct highlighted style (cyan border) while other cards have the default style.
 2. **Given** the user switches to a conversation linked to a different feature, **When** the features list is visible, **Then** the panel auto-scrolls to bring the newly active feature card into view.
 3. **Given** the active conversation has no associated feature, **When** the features list is visible, **Then** no card is highlighted.
 
@@ -115,7 +115,7 @@ When a developer has an active conversation linked to a feature, the correspondi
 - What happens when the `specs/` directory does not exist? The panel shows an error via toast notification and displays an empty list.
 - What happens when a feature directory contains no `.md` files? The file list view shows a "No spec files found" message.
 - What happens when a spec file fails to load (network error, file permission)? The content viewer shows an error message with a retry button.
-- What happens when a feature's `spec.md` has no "Feature Specification:" heading? The feature name falls back to the directory name converted to title case (e.g., `007-claude-code-chat` → `Claude Code Chat`).
+- What happens when a feature's `spec.md` has no "Feature Specification:" heading? The feature name falls back to the directory name converted to title case (e.g., `007-ai-provider-chat` → `AI Provider Chat`).
 - What happens when the user clicks an action button while the feature's conversation is already streaming? The existing streaming conversation is not reused, and a new conversation is created instead.
 - What happens when a file path contains path traversal characters (`..`)? The server rejects the request with a 400 error.
 - What happens when a non-`.md` file is requested? The server rejects the request with a 400 error.

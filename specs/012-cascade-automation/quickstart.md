@@ -7,7 +7,7 @@
 
 - Running Spec Cat application (Nuxt 3 dev server)
 - At least one feature with `spec.md` in `specs/` directory
-- Chat system functional (007-claude-code-chat)
+- Chat system functional (007-ai-provider-chat)
 - Conversation management working (009-conversation-management)
 
 ## Architecture Overview

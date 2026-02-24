@@ -15,7 +15,6 @@ Implement a worktree management interface that enables parallel development in i
 **Testing**: Manual testing; TypeScript type checking as first line of defense
 **Target Platform**: Web browser (desktop primary), server-side Node.js for git worktree operations
 **Project Type**: Web application (Nuxt 3 fullstack)
-**Performance Goals**: Worktree list load <2s, creation/deletion <5s
 **Constraints**: Worktree paths restricted to `/tmp/`; main worktree cannot be deleted
 **Scale/Scope**: 3 components, 1 store, 1 type file, 2 pages, 4 server API routes
 
@@ -108,6 +107,11 @@ server/api/worktrees/
 | FR-006 | Commit count display | `components/worktree/WorktreePanel.vue` (commitCount), `server/api/worktrees/index.get.ts` (getCommitCount) |
 | FR-007 | Last commit info | `components/worktree/WorktreePanel.vue` (lastCommit hash, message, time), `server/api/worktrees/index.get.ts` (getLastCommit) |
 | FR-008 | Active worktree indication | `components/worktree/WorktreePanel.vue` (isCurrent highlight styling) |
+| FR-009a | Worktree detail page with commit history | `pages/worktrees/[name].vue` (commit list display) |
+| NFR-001 | Isolation Guarantee | All git worktree operations use separate working directories, enforced by git |
+| NFR-002 | Path Safety | `server/utils/validateWorktree.ts` (path validation) |
+| NFR-003a | List load <2s | `server/api/worktrees/index.get.ts` (parallel status checks) |
+| NFR-003b | Create/delete <5s | `server/api/worktrees/index.post.ts`, `server/api/worktrees/[name].delete.ts` |
 
 ## Complexity Tracking
 

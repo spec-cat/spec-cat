@@ -1,19 +1,19 @@
-# Quickstart: Claude Code Chat
+# Quickstart: AI Provider Chat
 
-**Feature**: 007-claude-code-chat
+**Feature**: 007-ai-provider-chat
 **Date**: 2026-02-02
 
 ## Overview
 
-This guide provides implementation steps for adding a Claude Code Chat panel to Spec Cat. The chat uses the local Claude Code CLI via the `@anthropic-ai/claude-code` SDK.
+This guide provides implementation steps for adding a multi-provider AI chat panel to Spec Cat. The chat supports multiple AI providers (Claude, Codex, Gemini) through a unified AIProvider interface.
 
 ---
 
 ## Prerequisites
 
-- [x] `@anthropic-ai/claude-code` installed (already in package.json)
+- [x] At least one AI provider SDK/CLI installed (`@anthropic-ai/claude-code`, codex CLI, etc.)
 - [x] Nuxt 3 development environment running
-- [x] Claude Code CLI authenticated (`claude auth login`)
+- [x] Provider authentication configured (e.g., `claude auth login` for Claude)
 
 ---
 

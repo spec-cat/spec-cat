@@ -156,6 +156,6 @@ System restarts, /tmp cleared
 
 ## Dependencies
 
-- **007-claude-code-chat**: Base chat infrastructure (WebSocket, streaming, messages)
+- **007-ai-provider-chat**: Base chat infrastructure (WebSocket, streaming, messages)
 - **009-conversation-management**: Conversation CRUD, list, search, localStorage persistence
 - **003-worktree-management**: General worktree management (list, create, delete, switch)

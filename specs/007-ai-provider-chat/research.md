@@ -1,6 +1,6 @@
-# Research: Claude Code Chat
+# Research: AI Provider Chat
 
-**Feature**: 007-claude-code-chat
+**Feature**: 007-ai-provider-chat
 **Date**: 2026-02-02
 
 ## Research Summary

@@ -3,8 +3,8 @@
 **Feature Branch**: `012-cascade-automation`
 **Created**: 2026-02-08
 **Status**: Implemented
-**Split from**: `007-claude-code-chat` (original FR-043 ~ FR-046)
-**Dependencies**: 007-claude-code-chat, 009-conversation-management, 011-chat-worktree-integration
+**Split from**: `007-ai-provider-chat` (original FR-043 ~ FR-046)
+**Dependencies**: 007-ai-provider-chat, 009-conversation-management, 011-chat-worktree-integration
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -41,7 +41,7 @@ As a developer, I want to trigger Speckit pipeline steps from the Kanban feature
 - **Conversation** (cascade field): featureId
 - **CascadeState**: queue of pending cascade steps (speckit commands and/or skill prompt steps), auto-send on 'done' event
 
-See `specs/007-claude-code-chat/data-model.md` for full entity definitions.
+See `specs/007-ai-provider-chat/data-model.md` for full entity definitions.
 
 ## Success Criteria *(mandatory)*
 

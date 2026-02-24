@@ -23,7 +23,7 @@ This dashboard normalizes feature status across all `specs/*` folders using:
 | `002-git-graph` | In Progress (Redesign) | 0/0 | `in_progress` | Parent redesign spec; child specs `021`-`024` split out. |
 | `003-worktree-management` | Implemented | 13/14 | `done` | Core worktree feature shipped; minor validation task open. |
 | `004-spec-viewer` | Draft | 0/0 | `review` | Legacy parent; effectively split/covered by `028`-`030`. |
-| `007-claude-code-chat` | Implemented | 48/50 | `done` | Base chat workflow implemented; a few manual checks remain. |
+| `007-ai-provider-chat` | Implemented | 48/50 | `done` | Base chat workflow implemented; a few manual checks remain. |
 | `008-spec-search` | In Progress | 25/28 | `review` | Implementation mostly complete; validation/dependency checks pending. |
 | `009-conversation-management` | Implemented | 25/26 | `done` | Core conversation management is implemented. |
 | `010-chat-permission-system` | Implemented | 13/13 | `done` | Fully tracked as complete. |

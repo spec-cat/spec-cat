@@ -2,7 +2,7 @@
 
 **Feature**: 009-conversation-management
 **Date**: 2026-02-08
-**Dependency**: Extends `specs/007-claude-code-chat/data-model.md`
+**Dependency**: Extends `specs/007-ai-provider-chat/data-model.md`
 
 ## Entity Overview
 
@@ -138,7 +138,7 @@ const WARN_CONVERSATIONS_THRESHOLD = 80
 
 ### 3. ChatMessage (Inherited from 007)
 
-See `specs/007-claude-code-chat/data-model.md` for full definition. 009 uses but does not define this type.
+See `specs/007-ai-provider-chat/data-model.md` for full definition. 009 uses but does not define this type.
 
 ```typescript
 interface ChatMessage {

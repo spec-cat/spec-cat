@@ -3,7 +3,7 @@
 **Branch**: `010-chat-permission-system` | **Date**: 2026-02-14 | **Spec**: [specs/010-chat-permission-system/spec.md](./spec.md)
 **Input**: Feature specification from `/specs/010-chat-permission-system/spec.md`
 **Status**: Implemented (retroactive plan documentation)
-**Split from**: 007-claude-code-chat
+**Split from**: 007-ai-provider-chat
 
 ## Summary
 

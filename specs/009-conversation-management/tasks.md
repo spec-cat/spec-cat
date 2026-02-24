@@ -3,7 +3,7 @@
 **Input**: Design documents from `/specs/009-conversation-management/`
 **Prerequisites**: plan.md (required), spec.md (required), research.md, data-model.md, quickstart.md
 **Feature Branch**: `009-conversation-management`
-**Dependencies**: 007-claude-code-chat (core chat infrastructure)
+**Dependencies**: 007-ai-provider-chat (core chat infrastructure)
 
 **Tests**: Manual testing only (per spec). No automated test tasks included.
 

@@ -1,7 +1,7 @@
-# Implementation Plan: Claude Code Chat
+# Implementation Plan: AI Provider Chat
 
-**Branch**: `007-claude-code-chat` | **Date**: 2026-02-02 | **Spec**: [specs/007-claude-code-chat/spec.md](./spec.md)
-**Input**: Feature specification from `/specs/007-claude-code-chat/spec.md`
+**Branch**: `007-ai-provider-chat` | **Date**: 2026-02-02 | **Spec**: [specs/007-ai-provider-chat/spec.md](./spec.md)
+**Input**: Feature specification from `/specs/007-ai-provider-chat/spec.md`
 **Status**: Implemented
 
 ## Related Specs
@@ -15,12 +15,12 @@ Features originally part of this plan have been split into focused specs:
 
 ## Summary
 
-Provide an interactive chat interface to Claude using the local Claude Code CLI via node-pty WebSocket streaming. Features a right-side panel with real-time streaming responses, markdown rendering, error handling, and panel resize. The architecture uses WebSocket + node-pty for bidirectional communication (streaming output + session management).
+Provide an interactive chat interface supporting multiple AI providers (Claude, Codex, Gemini) through a unified AIProvider interface. Features a right-side panel with real-time streaming responses, provider/model selection, markdown rendering, error handling, and panel resize. The architecture uses provider-specific implementations (WebSocket + node-pty for Claude, custom protocols for others) abstracted behind a common interface.
 
 ## Technical Context
 
 **Language/Version**: TypeScript 5.6+ with Nuxt 3 (v3.16+), Vue 3 (v3.5+)
-**Primary Dependencies**: `@anthropic-ai/claude-code` (v1.0.108), node-pty (v1.1.0), Pinia (v2.2+), `@heroicons/vue`, marked + dompurify (markdown rendering)
+**Primary Dependencies**: Provider SDKs (`@anthropic-ai/claude-code`, codex CLI, future: `@google/generative-ai`), node-pty (v1.1.0), Pinia (v2.2+), `@heroicons/vue`, marked + dompurify (markdown rendering)
 **Storage**: localStorage (panel width), in-memory (session/stream state)
 **Testing**: Manual testing, TypeScript type checking
 **Target Platform**: Browser (Nuxt SSR/SPA) + Nitro server (WebSocket)
@@ -36,7 +36,7 @@ Provide an interactive chat interface to Claude using the local Claude Code CLI 
 | Gate | Status | Notes |
 |------|--------|-------|
 | Streaming-Native | PASS | WebSocket + node-pty for real-time streaming; text appears incrementally |
-| CLI Parity | PASS | Runs full Claude Code CLI via PTY; supports all CLI features including --resume |
+| Provider Parity | PASS | Runs provider CLIs/SDKs with full feature support; provider-specific capabilities preserved |
 | Keyboard-Driven | PASS | Enter to send, Shift+Enter for newline |
 | Simplicity Over Complexity | PASS | Direct WebSocket, single composable for streaming |
 | Type Safety | PASS | All types in `types/chat.ts` with discriminated unions and type guards |
@@ -46,13 +46,14 @@ Provide an interactive chat interface to Claude using the local Claude Code CLI 
 ### Documentation (this feature)
 
 ```text
-specs/007-claude-code-chat/
+specs/007-ai-provider-chat/
 ├── plan.md              # This file
-├── spec.md              # Chat UI core specification
+├── spec.md              # Multi-provider chat specification
 ├── research.md          # Technology decisions (15 decisions)
 ├── data-model.md        # Entity definitions and store schema (shared with 009-012)
 ├── quickstart.md        # Implementation guide with code snippets
-└── tasks.md             # Task breakdown
+├── tasks.md             # Task breakdown
+└── refactor-proposal.md # Provider-agnostic refactoring plan
 ```
 
 ### Source Code (repository root)
@@ -87,8 +88,12 @@ server/routes/_ws.ts                 # Claude CLI streaming: PTY, session handli
 
 # Server Utilities
 server/utils/
-├── claude.ts                        # Claude CLI path detection (system, which, node_modules)
-└── claudeService.ts                 # Claude SDK query() for one-off operations
+├── aiProvider.ts                    # AIProvider interface and streamChatWithProvider()
+├── aiProviderRegistry.ts            # Provider registration and management
+├── aiProviderSelection.ts           # Provider/model selection logic
+├── claudeProvider.ts                # Claude provider implementation
+├── codexProvider.ts                 # Codex provider implementation
+└── claude.ts                        # Claude CLI path detection (legacy)
 ```
 
 **Note**: Additional components and server APIs exist in shared files (`stores/chat.ts`, `types/chat.ts`, `useChatStream.ts`) that also implement requirements from specs 009-012. See those specs for their specific coverage.
@@ -124,6 +129,12 @@ server/utils/
 | FR-016b | Grow input area with textarea | `components/chat/ChatInput.vue` (autoResize function, min-h-[40px], items-start) | Done |
 | FR-017 | Panel resize | `composables/useChatPanel.ts` (useResize with drag), `stores/chat.ts` (setPanelWidth) | Done |
 | FR-019 | Virtualized message rendering | `components/chat/ChatMessages.vue`, `composables/useVirtualMessageList.ts` | Done |
+| FR-020 | Support multiple AI providers | `server/utils/aiProviderRegistry.ts`, provider implementations | Done |
+| FR-021 | Provider/model selection | `components/settings/ProviderSelector.vue`, `stores/settings.ts` | Done |
+| FR-022 | Display provider capabilities | `components/settings/ProviderSelector.vue` (capability badges) | Done |
+| FR-023 | Disable incompatible providers | `components/settings/ProviderSelector.vue` (isProviderCompatible) | Done |
+| FR-024 | Persist provider selection | `stores/settings.ts` (setProviderSelection) | Done |
+| FR-025 | AIProvider interface usage | `server/utils/aiProvider.ts`, all provider implementations | Done |
 
 ## Complexity Tracking
 

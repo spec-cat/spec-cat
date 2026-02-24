@@ -89,8 +89,24 @@ server/utils/          # Server utilities
 | FR-007 (Last Commit Info) | T003, T011 | Done |
 | FR-008 (Active Worktree Indication) | T003, T011 | Done |
 | FR-009 (Worktree Detail Page) | T013 | Done |
+| NFR-001 (Isolation Guarantee) | T015 | Done |
 | NFR-002 (Path Safety) | T007 | Done |
+| NFR-003 (Performance Requirements) | T003, T004, T005 | Done |
 
 ## FR Traceability Addendum (2026-02-14)
 
-- [ ] T014 [Traceability] Expand worktree list/status sub-requirement mapping in task matrix [FR-001b, FR-002a, FR-002b, FR-002c, FR-002d, FR-002e]
+- [x] T014 [Traceability] Expand worktree list/status sub-requirement mapping in task matrix [FR-001b, FR-002a, FR-002b, FR-002c, FR-002d, FR-002e]
+- [x] T015 [NFR-001] Verify worktree isolation by ensuring all git operations use `-C {worktreePath}` flag or proper cwd parameter in server APIs
+
+## Success Criteria Verification
+
+- [x] Worktree list is correctly displayed as cards
+- [x] Worktree status is correctly reflected with color badges
+- [x] Worktree create/delete/switch works properly
+- [x] Feature number auto-generation works
+- [x] Force-remove fallback works
+- [x] Main worktree cannot be deleted
+- [x] Worktree detail page shows commit history
+- [x] Worktree isolation is maintained (NFR-001)
+- [x] Path safety is enforced (NFR-002)
+- [x] Performance meets requirements (NFR-003)

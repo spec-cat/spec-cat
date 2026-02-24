@@ -2,17 +2,17 @@
 
 **Feature**: 009-conversation-management
 **Date**: 2026-02-08
-**Dependency**: 007-claude-code-chat (core chat infrastructure)
+**Dependency**: 007-ai-provider-chat (core chat infrastructure)
 
 ## Overview
 
-This guide covers implementing conversation list management: CRUD operations, localStorage persistence, search/filter, inline rename, delete confirmation, and streaming status badges. This feature was split from 007-claude-code-chat and focuses on the conversation sidebar experience.
+This guide covers implementing conversation list management: CRUD operations, localStorage persistence, search/filter, inline rename, delete confirmation, and streaming status badges. This feature was split from 007-ai-provider-chat and focuses on the conversation sidebar experience.
 
 ---
 
 ## Prerequisites
 
-- [x] 007-claude-code-chat fully implemented (chat store, types, streaming)
+- [x] 007-ai-provider-chat fully implemented (chat store, types, streaming)
 - [x] Pinia store (`stores/chat.ts`) with basic conversation state
 - [x] Types (`types/chat.ts`) with Conversation and ChatMessage interfaces
 

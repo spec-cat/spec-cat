@@ -2,7 +2,7 @@
 
 **Feature**: 011-chat-worktree-integration
 **Date**: 2026-02-08
-**Extends**: [007-claude-code-chat/data-model.md](../007-claude-code-chat/data-model.md)
+**Extends**: [007-ai-provider-chat/data-model.md](../007-ai-provider-chat/data-model.md)
 
 ## Entity Overview
 
@@ -48,13 +48,13 @@ Filesystem
 
 ### 1. Conversation (Extended with Worktree Fields)
 
-Extends the base Conversation from 007-claude-code-chat with worktree lifecycle fields.
+Extends the base Conversation from 007-ai-provider-chat with worktree lifecycle fields.
 
 ```typescript
 // types/chat.ts — extended fields
 
 interface Conversation {
-  // --- Base fields (from 007-claude-code-chat) ---
+  // --- Base fields (from 007-ai-provider-chat) ---
   id: string                      // Unique conversation ID
   title: string                   // Display title
   messages: ChatMessage[]         // All messages

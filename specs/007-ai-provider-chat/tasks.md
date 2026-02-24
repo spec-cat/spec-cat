@@ -1,6 +1,6 @@
-# Tasks: Claude Code Chat
+# Tasks: AI Provider Chat
 
-**Input**: Design documents from `/specs/007-claude-code-chat/`
+**Input**: Design documents from `/specs/007-ai-provider-chat/`
 **Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/chat-api.yaml
 
 **Tests**: Manual testing only (per constitution - no automated tests requested)

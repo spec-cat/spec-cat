@@ -4,7 +4,7 @@
 **Created**: 2026-02-14  
 **Status**: In Progress  
 **Input**: User request: "In the chat window, display read/write/edit contents in a human-readable way, ideally like GitHub Copilot"
-**Dependencies**: 007-claude-code-chat, 017-ai-provider-abstraction, 018-codex-provider-integration
+**Dependencies**: 007-ai-provider-chat, 017-ai-provider-abstraction, 018-codex-provider-integration
 
 ## User Scenarios & Testing
 
