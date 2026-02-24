@@ -6,7 +6,6 @@ import {
   QuestionMarkCircleIcon,
   ClipboardDocumentListIcon,
   ListBulletIcon,
-  ChartBarIcon,
   DocumentCheckIcon,
   PuzzlePieceIcon,
   DocumentMagnifyingGlassIcon,
@@ -182,15 +181,6 @@ const cardClass = computed(() => {
           @click.stop="emit('cascade', $event, feature.id, 'implement')"
         >
           <PlayIcon class="h-3.5 w-3.5" />
-        </button>
-        <button
-          v-if="feature.hasTasks"
-          type="button"
-          class="flex items-center justify-center p-1 bg-retro-orange/20 text-retro-orange rounded hover:bg-retro-orange/30 transition-colors"
-          title="Analyze spec/plan/tasks consistency (Shift+click: new conversation)"
-          @click.stop="emit('cascade', $event, feature.id, 'analyze')"
-        >
-          <ChartBarIcon class="h-3.5 w-3.5" />
         </button>
 
         <!-- Skill action buttons (visually separated) -->

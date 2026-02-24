@@ -117,7 +117,6 @@ When a developer has an active conversation linked to a feature, the correspondi
 - What happens when a spec file fails to load (network error, file permission)? The content viewer shows an error message with a retry button.
 - What happens when a feature's `spec.md` has no "Feature Specification:" heading? The feature name falls back to the directory name converted to title case (e.g., `007-claude-code-chat` → `Claude Code Chat`).
 - What happens when the user clicks an action button while the feature's conversation is already streaming? The existing streaming conversation is not reused, and a new conversation is created instead.
-- What happens when Analyze prerequisite (`skill:better-spec`) fails to render? The cascade is not started for analyze and an error toast is shown.
 - What happens when a file path contains path traversal characters (`..`)? The server rejects the request with a 400 error.
 - What happens when a non-`.md` file is requested? The server rejects the request with a 400 error.
 

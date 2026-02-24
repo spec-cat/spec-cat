@@ -28,10 +28,10 @@ import type {
 
 const log = logger.autoMode
 
-/** Speckit steps to run per feature (stop before implement — spec updates only, analyze at the end).
+/** Speckit steps to run per feature (stop before implement — spec updates only).
  *  Skips 'specify' because Auto Mode runs on features that already have specs.
- *  'skill:better-spec' runs the better-spec skill validation before analyze. */
-const SPECKIT_STEPS = ['plan', 'tasks', 'skill:better-spec', 'analyze'] as const
+ *  'skill:better-spec' validates spec documents and ensures cross-artifact consistency. */
+const SPECKIT_STEPS = ['plan', 'tasks', 'skill:better-spec'] as const
 
 /** Default concurrency for concurrent processing */
 const DEFAULT_CONCURRENCY = 3

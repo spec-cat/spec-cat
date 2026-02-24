@@ -5,7 +5,7 @@
 
 ## Summary
 
-Auto Mode is a background scheduler that automatically runs the speckit workflow (plan → tasks → skill:better-spec → analyze) for all spec units. It reuses the existing conversation system, worktree isolation, and cascade pipeline. The implementation extends the existing `AutoModeScheduler` with concurrent processing (configurable, default 3), adds session persistence for page-refresh resilience, adds an `autoMode` badge to conversations, and provides a concurrency setting in the settings page. All spec changes remain in worktree branches for human review via the standard preview/finalize flow.
+Auto Mode is a background scheduler that automatically runs the speckit workflow (plan → tasks → skill:better-spec) for all spec units. It reuses the existing conversation system, worktree isolation, and cascade pipeline. The implementation extends the existing `AutoModeScheduler` with concurrent processing (configurable, default 3), adds session persistence for page-refresh resilience, adds an `autoMode` badge to conversations, and provides a concurrency setting in the settings page. All spec changes remain in worktree branches for human review via the standard preview/finalize flow.
 
 ## Technical Context
 
@@ -103,7 +103,7 @@ pages/
 | FR-002 | Persist enabled state | Already implemented (localStorage) | — |
 | FR-003 | Scan spec dirs, build queue | autoModeScheduler.ts `discoverFeatures()` — already implemented | — |
 | FR-004 | Create conversation per feature | autoModeScheduler.ts `processFeature()` — needs conversation creation | data-model.md |
-| FR-005 | Run plan → tasks → skill:better-spec → analyze cascade | autoModeScheduler.ts `runSpeckitStep()` + skill prerequisite flow | — |
+| FR-005 | Run plan → tasks → skill:better-spec cascade | autoModeScheduler.ts `runSpeckitStep()` + skill prerequisite flow | — |
 | FR-006 | Isolated worktree per conversation | worktreeResolver.ts `resolveWorktree()` — already implemented | — |
 | FR-007 | Update specs via cascade (no impl changes) | Auto Mode sequence updates only specs and stops before implement | — |
 | FR-008 | "auto" badge on conversations | ConversationItem.vue — needs `autoMode` field check | data-model.md |

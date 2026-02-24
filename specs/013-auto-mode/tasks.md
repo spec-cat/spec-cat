@@ -43,7 +43,7 @@
 
 ## Phase 3: User Story 1 — Enable Auto Mode (Priority: P1) 🎯 MVP
 
-**Goal**: User clicks Auto Mode toggle → system scans specs, creates conversations per feature, runs cascade (plan → tasks → skill:better-spec → analyze) concurrently, updates specs in worktree branches
+**Goal**: User clicks Auto Mode toggle → system scans specs, creates conversations per feature, runs cascade (plan → tasks → skill:better-spec) concurrently, updates specs in worktree branches
 
 **Independent Test**: Toggle Auto Mode on → verify conversations appear per spec unit, cascade messages are sent, spec files are updated in each conversation's worktree. Toggle off → verify graceful stop.
 
