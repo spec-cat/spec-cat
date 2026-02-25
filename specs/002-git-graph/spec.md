@@ -4,32 +4,7 @@
 **Created**: 2026-02-01
 **Updated**: 2026-02-08
 **Status**: In Progress (Redesign)
-**Execution Model**: Parent spec with active child execution lanes
-**Reference**: [vscode-git-graph](https://github.com/mhutchie/vscode-git-graph) - UI/UX design reference
-**Input**: Full-featured git graph visualization modeled after vscode-git-graph
-
-## Structure Notice
-
-This spec acts as the parent requirement container.
-Active implementation lanes are split into:
-
-- `specs/021-git-graph-rendering-core/`
-- `specs/022-git-graph-operations/`
-- `specs/023-git-graph-diff-viewer/`
-- `specs/024-git-graph-search-filter-ux/`
-
-Plan and execute new work in child specs to keep lanes independent.
-
-## Design Reference
-
-The UI and interaction design follows vscode-git-graph as closely as possible:
-
-- **Table-based layout**: Commit list rendered as an HTML table with columns: Graph, Description, Date, Author, Commit Hash
-- **SVG graph column**: Branch lines rendered as SVG with Bezier curves (rounded style) or straight lines (angular style)
-- **Column resizing**: Users can drag column borders to resize
-- **Commit Details View**: Expandable panel (inline or docked to bottom) showing full commit info and file changes
-- **Reference labels**: Branch and tag labels displayed inline on commit rows with color coding
-- **Dark terminal aesthetic**: Consistent with the existing Spec Cat retro-terminal theme
+**Input**: Full-featured git graph visualization with professional version control interface
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -185,11 +160,11 @@ As a developer, I want the graph to automatically update when the repository sta
 
 **Acceptance Scenarios**:
 
-1. **Given** the graph is open, **When** the repository state changes (new commits, branch updates), **Then** the graph refreshes automatically within ~1 second via WebSocket push (chokidar watches `.git/` directory on server, notifies client via `/git-watcher-ws` WebSocket endpoint). 10-second polling serves as fallback when WebSocket is disconnected
+1. **Given** the graph is open, **When** the repository state changes (new commits, branch updates), **Then** the graph refreshes automatically within ~1 second
 2. **Given** auto-refresh triggers, **When** the graph updates, **Then** my current selection, scroll position, and open details panel are preserved
 3. **Given** I'm actively scrolling or a context menu is open, **When** auto-refresh would trigger, **Then** it defers until interaction ends
 4. **Given** no changes detected, **When** the polling interval fires, **Then** no UI redraw occurs (lightweight state check only)
-5. **Given** the WebSocket connection drops, **When** the client detects disconnection, **Then** it auto-reconnects after 5 seconds and falls back to 10-second polling in the meantime
+5. **Given** the auto-refresh mechanism loses connection, **When** the disconnection is detected, **Then** it automatically recovers and continues updating the graph
 
 ---
 
@@ -307,7 +282,7 @@ As a developer, I want to click on a file in the commit detail's file list to se
 - **FR-008**: System MUST display tags as visually distinct badges (different shape/color from branch labels)
 - **FR-009**: System MUST show the current HEAD position with distinct highlighting (cyan/bold or configurable)
 - **FR-010**: System MUST display uncommitted changes as a special row at the top with open-circle indicator and change count
-- **FR-011**: System MUST support muting (reduced opacity) for merge commits and/or commits not ancestral to HEAD (configurable)
+- **FR-011**: System MUST support muting (50% opacity) for merge commits and/or commits not ancestral to HEAD (configurable)
 - **FR-012**: System MUST support High DPI / Retina rendering for the graph SVG
 
 #### Commit Details View
@@ -377,7 +352,7 @@ As a developer, I want to click on a file in the commit detail's file list to se
 - **FR-062**: System MUST cache search results (max 10 entries) for performance
 
 #### Auto-refresh & Performance
-- **FR-063**: System MUST poll for repository state changes every 10 seconds using a lightweight state endpoint
+- **FR-063**: System MUST poll for repository state changes every 10 seconds using a state endpoint that returns only HEAD commit hash, branch list hash, and uncommitted file count
 - **FR-064**: System MUST preserve scroll position, selection, and open panels during auto-refresh
 - **FR-065**: System MUST defer refresh during active user interaction (scrolling, context menu open, dialog open)
 - **FR-066**: System MUST skip UI redraw when no state changes are detected

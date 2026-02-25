@@ -1,8 +1,8 @@
 # Tasks: Project Source File Explorer Modal
 
-**Input**: Design documents from `/specs/001-source-file-explorer/`
+**Input**: Design documents from `/specs/032-source-file-explorer/`
 **Prerequisites**: spec.md, plan.md
-**Feature Branch**: `001-source-file-explorer`
+**Feature Branch**: `032-source-file-explorer`
 
 **Tests**: Manual testing only (no automated tests explicitly required by spec).
 
@@ -52,7 +52,7 @@
 
 - [ ] T016 [P] Guard edge case when project has no readable files (empty tree state) in `components/project/SourceExplorerModal.vue` [FR-006, FR-007]
 - [ ] T017 [P] Enforce and verify path traversal protections (`..`, absolute paths) via `server/utils/projectDir.ts`, `server/api/project/tree.get.ts`, and `server/api/project/file.get.ts` [FR-006, FR-008]
-- [ ] T018 Run manual acceptance checks against all scenarios and edge cases in `specs/001-source-file-explorer/spec.md` [FR-001, FR-002, FR-003, FR-004, FR-005, FR-006, FR-007, FR-008]
+- [ ] T018 Run manual acceptance checks against all scenarios and edge cases in `specs/032-source-file-explorer/spec.md` [FR-001, FR-002, FR-003, FR-004, FR-005, FR-006, FR-007, FR-008]
 - [ ] T019 Measure and verify tree-load/file-open response behavior against the 2-second target in representative local repositories and capture pass/fail notes [FR-009]
 
 ## Dependencies & Parallel Opportunities

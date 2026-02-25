@@ -1,7 +1,7 @@
 # Implementation Plan: Project Source File Explorer Modal
 
-**Branch**: `001-source-file-explorer` | **Date**: 2026-02-14 | **Spec**: [specs/001-source-file-explorer/spec.md](./spec.md)
-**Input**: Feature specification from `/specs/001-source-file-explorer/spec.md`
+**Branch**: `032-source-file-explorer` | **Date**: 2026-02-14 | **Spec**: [specs/032-source-file-explorer/spec.md](./spec.md)
+**Input**: Feature specification from `/specs/032-source-file-explorer/spec.md`
 **Status**: Draft (not yet implemented)
 
 ## Summary
@@ -34,7 +34,7 @@ Add a project source file explorer modal with a split layout: navigable file tre
 ### Documentation (this feature)
 
 ```text
-specs/001-source-file-explorer/
+specs/032-source-file-explorer/
 ├── spec.md
 ├── plan.md
 └── tasks.md
@@ -86,7 +86,7 @@ components/project/SourceViewer.vue         # Read-only content pane + empty/err
 
 ## Design Artifacts
 
-- `specs/001-source-file-explorer/spec.md` is the authoritative definition of user stories, acceptance scenarios, and requirements for this feature.
+- `specs/032-source-file-explorer/spec.md` is the authoritative definition of user stories, acceptance scenarios, and requirements for this feature.
 - No additional generated artifacts (`research.md`, `data-model.md`, or `contracts/`) are required for this scope.
 
 ## Complexity Tracking

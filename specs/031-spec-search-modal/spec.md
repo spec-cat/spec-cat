@@ -1,9 +1,9 @@
 # Feature Specification: Command Palette Spec Search
 
-**Feature Branch**: `031-spec-search-modal`  
+**Feature Branch**: `031-spec search-modal`  
 **Created**: 2026-02-22  
 **Status**: Draft  
-**Input**: User description: "add modal from ctrl + K / cmd + K with search form, it executes spec-search and shows the result and links to features, so we can click the link to select the feature on the feature panel"
+**Input**: User description: "add modal from ctrl + K / cmd + K with search form, it executes spec search and shows the result and links to features, so we can click the link to select the feature on the feature panel"
 
 ## Clarifications
 
@@ -33,13 +33,13 @@
 - Replacing existing feature panel navigation outside of search-driven selection.
 - Introducing saved searches, search history, or ranking personalization.
 
-### Owned Files
+### Owned Scope
 
-- `specs/031-spec-search-modal/spec.md` - Feature specification source of truth for this work.
+- Command palette spec search feature specification and requirements.
 
-### Do Not Edit
+### Out of Scope for This Feature
 
-- `specs/018-codex-provider-integration/` - Existing feature lane tracked separately.
+- Codex provider integration features.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -96,8 +96,8 @@ A user gets clear feedback when the search query is empty, invalid, or returns n
 
 - User presses `Ctrl+K`/`Cmd+K` while the modal is already open.
 - User enters a query with only whitespace characters.
-- Search returns multiple features with similar names and users must distinguish them.
-- User selects a result for a feature that is no longer available by the time selection occurs; modal stays open and shows an inline “feature unavailable” error.
+- Search returns multiple features with matching keywords (e.g., "auth" matching both "authentication" and "authorization") requiring users to distinguish them using additional context.
+- User selects a result for a feature that is no longer available (covered in User Story 2, Acceptance Scenario 3).
 - Search execution fails and the user needs a recoverable error state.
 
 ## Requirements *(mandatory)*
@@ -129,7 +129,7 @@ A user gets clear feedback when the search query is empty, invalid, or returns n
 ### Measurable Outcomes
 
 - **SC-001**: 95% of users can open the search modal and run a query in under 10 seconds on first attempt.
-- **SC-002**: 90% of successful searches display results (or a clear no-result message) within 2 seconds of submission.
+- **SC-002**: 90% of successful searches display results (or a clear no-result message) within 2 seconds from the end of the 400ms debounce period.
 - **SC-003**: 95% of result selections update the feature panel to the intended feature on the first try.
 - **SC-004**: In usability checks, at least 90% of users report that feature search and selection is clear and predictable.
 

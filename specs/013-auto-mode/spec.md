@@ -127,6 +127,10 @@ Auto Mode also keeps project-wide configuration files up to date. It creates a d
 - **FR-018**: System MUST store SHA-256 hashes of spec.md, plan.md, and tasks.md files only after successful cascade completion (all steps finished without errors) for a feature, enabling incremental execution on subsequent runs. Failed cascades do not update stored hashes.
 - **FR-019**: System MUST allow any authenticated user to toggle Auto Mode on/off without requiring special permissions or authorization.
 - **FR-020**: System MUST cancel any running Auto Mode cascade when a user manually sends a message in that conversation, marking the task as failed with reason "Manual interaction".
+<<<<<<< HEAD
+=======
+- **FR-021**: System MUST display Auto Mode messages using structured content blocks (text, tool_use, tool_result) to ensure proper formatting with tool boxes, markdown rendering, and visual consistency with regular chat conversations.
+>>>>>>> 268b0a7 (fix: markdown view on automode)
 
 ### Key Entities
 
@@ -144,6 +148,10 @@ Auto Mode also keeps project-wide configuration files up to date. It creates a d
 - **SC-005**: Disabling Auto Mode stops new cascade processing. Active streams complete naturally. No orphaned processes.
 - **SC-006**: Users can review, approve, or reject each Auto Mode result independently using the standard preview/finalize flow per conversation.
 - **SC-007**: Auto Mode conversations are fully functional conversations — users can click into them, see the chat history, manually interact, preview, and finalize.
+<<<<<<< HEAD
+=======
+- **SC-008**: Auto Mode messages display with proper formatting including tool boxes, markdown rendering, and structured content blocks — identical to regular chat conversations.
+>>>>>>> 268b0a7 (fix: markdown view on automode)
 
 ## Assumptions
 

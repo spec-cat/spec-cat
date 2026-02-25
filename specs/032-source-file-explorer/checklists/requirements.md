@@ -2,7 +2,7 @@
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning
 **Created**: 2026-02-10
-**Feature**: [specs/001-source-file-explorer/spec.md](specs/001-source-file-explorer/spec.md)
+**Feature**: [specs/032-source-file-explorer/spec.md](specs/032-source-file-explorer/spec.md)
 
 ## Content Quality
 

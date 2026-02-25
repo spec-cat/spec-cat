@@ -123,21 +123,21 @@ Add a command palette modal opened by `Ctrl+K` / `Cmd+K` from any focus context,
 
 ## FR Coverage Matrix
 
-| FR | Requirement Summary | Planned Coverage |
-|----|---------------------|------------------|
-| FR-001 | Open modal from shortcut | `FeaturesPanel.vue`, `FeatureSearchModal.vue` |
-| FR-002 | Focus search input on open | `FeatureSearchModal.vue` |
-| FR-003 | Debounced query trigger (400ms) | `FeatureSearchModal.vue` |
-| FR-004 | Search all features by default | `FeatureSearchModal.vue` + `/api/specs/search` usage |
-| FR-005 | Render selectable result links | `FeatureSearchModal.vue` |
-| FR-006 | Show identifying result details | `FeatureSearchModal.vue`, `types/specSearch.ts` |
-| FR-007 | Sync selected result to feature panel | `FeaturesPanel.vue` via existing selection function |
-| FR-008 | Pointer + ArrowUp/ArrowDown + Enter behavior | `FeatureSearchModal.vue` |
-| FR-009 | Empty/no-result/error feedback states | `FeatureSearchModal.vue` |
-| FR-010 | Dismiss without selection preserves current selection | `FeaturesPanel.vue`, `FeatureSearchModal.vue` |
-| FR-011 | Unavailable feature selection error, keep modal open | `FeatureSearchModal.vue`, `FeaturesPanel.vue` |
-| FR-012 | Escape closes modal and preserves selection if no pick | `FeatureSearchModal.vue`, `FeaturesPanel.vue` |
-| FR-013 | Shortcut opens regardless of focus target | `FeaturesPanel.vue` shortcut handler |
+| FR | Planned Coverage |
+|----|------------------|
+| FR-001 | `FeaturesPanel.vue`, `FeatureSearchModal.vue` |
+| FR-002 | `FeatureSearchModal.vue` |
+| FR-003 | `FeatureSearchModal.vue` |
+| FR-004 | `FeatureSearchModal.vue` + `/api/specs/search` usage |
+| FR-005 | `FeatureSearchModal.vue` |
+| FR-006 | `FeatureSearchModal.vue`, `types/specSearch.ts` |
+| FR-007 | `FeaturesPanel.vue` via existing selection function |
+| FR-008 | `FeatureSearchModal.vue` |
+| FR-009 | `FeatureSearchModal.vue` |
+| FR-010 | `FeaturesPanel.vue`, `FeatureSearchModal.vue` |
+| FR-011 | `FeatureSearchModal.vue`, `FeaturesPanel.vue` |
+| FR-012 | `FeatureSearchModal.vue`, `FeaturesPanel.vue` |
+| FR-013 | `FeaturesPanel.vue` shortcut handler |
 
 ## Post-Design Constitution Re-Check
 

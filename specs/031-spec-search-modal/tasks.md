@@ -1,26 +1,15 @@
 # Tasks: Command Palette Spec Search
 
 **Input**: Design documents from `/home/khan/src/brick2/specs/031-spec-search-modal/`
-**Prerequisites**: `/home/khan/src/brick2/specs/031-spec-search-modal/plan.md`, `/home/khan/src/brick2/specs/031-spec-search-modal/spec.md`, `/home/khan/src/brick2/specs/031-spec-search-modal/research.md`, `/home/khan/src/brick2/specs/031-spec-search-modal/data-model.md`, `/home/khan/src/brick2/specs/031-spec-search-modal/contracts/spec-search-modal-api.yaml`
+**Prerequisites**: Completed spec.md, plan.md, and associated design artifacts
 
 **Tests**: Not explicitly requested in the specification; implementation tasks include manual validation and typecheck checkpoints.
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing.
 
-## Scope Guardrails *(mandatory)*
+## Scope Reference
 
-### Owned Files (from plan.md)
-
-- `/home/khan/src/brick2/components/features/FeaturesPanel.vue`
-- `/home/khan/src/brick2/components/features/FeatureSearchModal.vue`
-- `/home/khan/src/brick2/types/specSearch.ts`
-- `/home/khan/src/brick2/specs/031-spec-search-modal/*`
-
-### Do Not Edit (from plan.md)
-
-- `/home/khan/src/brick2/specs/018-codex-provider-integration/`
-- `/home/khan/src/brick2/server/utils/specSearch/*`
-- `/home/khan/src/brick2/components/git/*`
+See plan.md for owned files and scope boundaries.
 
 ## Phase 1: Setup (Shared Infrastructure)
 

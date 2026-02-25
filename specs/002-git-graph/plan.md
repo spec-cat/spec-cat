@@ -1,306 +1,300 @@
-# Implementation Plan: [FEATURE]
+# Implementation Plan: Git Graph Visualization
 
-**Branch**: `[###-feature-name]` | **Date**: [DATE] | **Spec**: [link]
-**Input**: Feature specification from `/specs/[###-feature-name]/spec.md`
-
-**Note**: This template is filled in by the `/speckit.plan` command. See `.specify/templates/commands/plan.md` for the execution workflow.
+**Branch**: `002-git-graph` | **Date**: 2026-02-08 | **Spec**: `/specs/002-git-graph/spec.md`
+**Input**: Full-featured git graph visualization with professional version control interface
 
 ## Summary
 
-[Extract from feature spec: primary requirement + technical approach from research]
+Implement a comprehensive git graph visualization feature modeled after vscode-git-graph, providing developers with a visual commit history graph, branch management, and git operations directly from the UI. The implementation uses SVG rendering in a table-based layout with 95 functional requirements covering visualization, operations, and workflow management.
 
 ## Technical Context
 
-<!--
-  ACTION REQUIRED: Replace the content in this section with the technical details
-  for the project. The structure here is presented in advisory capacity to guide
-  the iteration process.
--->
-
-**Language/Version**: [e.g., Python 3.11, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION]  
-**Primary Dependencies**: [e.g., FastAPI, UIKit, LLVM or NEEDS CLARIFICATION]  
-**Storage**: [if applicable, e.g., PostgreSQL, CoreData, files or N/A]  
-**Testing**: [e.g., pytest, XCTest, cargo test or NEEDS CLARIFICATION]  
-**Target Platform**: [e.g., Linux server, iOS 15+, WASM or NEEDS CLARIFICATION]
-**Project Type**: [single/web/mobile - determines source structure]  
-**Performance Goals**: [domain-specific, e.g., 1000 req/s, 10k lines/sec, 60 fps or NEEDS CLARIFICATION]  
-**Constraints**: [domain-specific, e.g., <200ms p95, <100MB memory, offline-capable or NEEDS CLARIFICATION]  
-**Scale/Scope**: [domain-specific, e.g., 10k users, 1M LOC, 50 screens or NEEDS CLARIFICATION]
+**Language/Version**: TypeScript 5.6+, Node.js 18+ (via Nuxt 3.16+ runtime)
+**Primary Dependencies**: Nuxt 3.16+, Vue 3.5+, Pinia 2.2+, Tailwind CSS, @heroicons/vue
+**Storage**: Git repository (filesystem), localStorage (UI preferences)
+**Testing**: Vitest (existing test framework)
+**Target Platform**: Desktop browsers (Chrome, Firefox, Safari)
+**Project Type**: web - Nuxt 3 application with server-side git operations
+**Performance Goals**: 300 commits initial load, <100ms UI response, 10s auto-refresh
+**Constraints**: No external git libraries (direct CLI only), maintain scroll position on refresh
+**Scale/Scope**: Support repos with 1000+ commits, 12-branch color palette, virtual scrolling
 
 ## Constitution Check
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+- ✓ Uses existing stack (Nuxt 3, Vue 3, Pinia, Tailwind)
+- ✓ No new external dependencies (git CLI wrapping only)
+- ✓ Follows existing patterns (components/, stores/, server/api/)
+- ✓ Maintains Spec Cat design system (retro-terminal theme)
 
 ## Project Structure
 
 ### Documentation (this feature)
 
 ```text
-specs/[###-feature]/
-├── plan.md              # This file (/speckit.plan command output)
-├── research.md          # Phase 0 output (/speckit.plan command)
-├── data-model.md        # Phase 1 output (/speckit.plan command)
-├── quickstart.md        # Phase 1 output (/speckit.plan command)
-├── contracts/           # Phase 1 output (/speckit.plan command)
-└── tasks.md             # Phase 2 output (/speckit.tasks command - NOT created by /speckit.plan)
+specs/002-git-graph/
+├── plan.md              # This file (implementation design)
+├── research.md          # Technical decisions and approach
+├── data-model.md        # Type definitions and data structures
+├── quickstart.md        # Implementation guide
+├── spec.md              # Requirements specification
+└── tasks.md             # Execution lanes index
+
+specs/021-git-graph-rendering-core/  # Child execution lane
+specs/022-git-graph-operations/      # Child execution lane
+specs/023-git-graph-diff-viewer/     # Child execution lane
+specs/024-git-graph-search-filter-ux/ # Child execution lane
 ```
 
 ### Source Code (repository root)
-<!--
-  ACTION REQUIRED: Replace the placeholder tree below with the concrete layout
-  for this feature. Delete unused options and expand the chosen structure with
-  real paths (e.g., apps/admin, packages/something). The delivered plan must
-  not include Option labels.
--->
 
 ```text
-# [REMOVE IF UNUSED] Option 1: Single project (DEFAULT)
-src/
-├── models/
-├── services/
-├── cli/
-└── lib/
+types/
+└── git.ts                 # Expanded with Tag, Stash, Remote, operations
 
-tests/
-├── contract/
-├── integration/
-└── unit/
+server/
+├── utils/
+│   └── git.ts            # Git CLI wrapper functions
+└── api/
+    └── git/
+        ├── log.get.ts    # Existing
+        ├── show.get.ts   # Existing
+        ├── status.get.ts # Existing
+        ├── branch-*.ts   # NEW: 6 branch operation endpoints
+        ├── cherry-pick.post.ts # NEW
+        ├── revert.post.ts      # NEW
+        ├── reset.post.ts       # NEW
+        ├── tag*.ts             # NEW: 4 tag endpoints
+        ├── stash*.ts           # NEW: 6 stash endpoints
+        ├── remote*.ts          # NEW: 4 remote endpoints
+        └── diff.get.ts         # NEW: comparison endpoint
 
-# [REMOVE IF UNUSED] Option 2: Web application (when "frontend" + "backend" detected)
-backend/
-├── src/
-│   ├── models/
-│   ├── services/
-│   └── api/
-└── tests/
+components/
+└── git/
+    ├── GitGraph.vue              # Main container
+    ├── GitCommitList.vue         # Virtual scrolling table
+    ├── GitCommitRow.vue          # Row with SVG graph
+    ├── GitCommitDetail.vue       # Detail panel
+    ├── GitBranchMenu.vue         # Expanded context menu
+    ├── GitCommitMenu.vue         # Expanded context menu
+    ├── GitTagMenu.vue            # NEW
+    ├── GitStashMenu.vue          # NEW
+    ├── GitUncommittedMenu.vue    # NEW
+    ├── GitContextMenu.vue        # NEW: Shared menu component
+    ├── GitDialog.vue             # NEW: Shared dialog component
+    └── dialogs/                  # NEW: Operation-specific dialogs
+        ├── MergeDialog.vue
+        ├── DeleteBranchDialog.vue
+        ├── PushDialog.vue
+        ├── CherryPickDialog.vue
+        ├── ResetDialog.vue
+        ├── TagCreateDialog.vue
+        ├── TagDeleteDialog.vue
+        └── StashDialog.vue
 
-frontend/
-├── src/
-│   ├── components/
-│   ├── pages/
-│   └── services/
-└── tests/
+stores/
+└── gitGraph.ts           # Expanded with new state
 
-# [REMOVE IF UNUSED] Option 3: Mobile + API (when "iOS/Android" detected)
-api/
-└── [same as backend above]
+composables/
+├── useGitGraph.ts        # SVG layout algorithm (migrate from Canvas)
+├── useAutoRefresh.ts     # Existing polling mechanism
+└── useKeyboardShortcuts.ts # NEW: Keyboard handling
 
-ios/ or android/
-└── [platform-specific structure: feature modules, UI flows, platform tests]
+utils/
+└── commitMessage.ts      # NEW: Message rendering utilities
 ```
 
-**Structure Decision**: [Document the selected structure and reference the real
-directories captured above]
+**Structure Decision**: Web application structure leveraging existing Nuxt 3 patterns. Server-side git operations via CLI wrappers, client-side Vue components with Pinia state management.
+
+## Implementation Approach
+
+### 1. Graph Rendering (FR-001 to FR-012)
+- **SVG-based rendering**: Each table row contains inline SVG for its graph segment
+- **Table layout**: CSS Grid with columns: Graph | Description | Date | Author | Commit
+- **Lane algorithm**: Mainline-first with lane recycling, HEAD chain on lane 0
+- **Bezier curves** for rounded style, straight lines for angular style
+- **12-color palette** with deterministic assignment via string hashing
+
+### 2. Git Operations Architecture (FR-023 to FR-076)
+- **Server-side execution**: All git commands via `child_process.execFileSync`
+- **30+ new API endpoints** for branch, commit, tag, stash, and remote operations
+- **Request validation**: Zod schemas for operation parameters
+- **Error handling**: Git command errors propagated with user-friendly messages
+- **Confirmation dialogs** for destructive operations
+
+### 3. UI Component Architecture
+- **Context menus**: 6 entity-specific menus with shared base component
+- **Modal dialogs**: 9 operation-specific dialogs for user input
+- **Virtual scrolling**: Only visible rows render, 300 initial + 100 incremental
+- **Column resizing**: Drag handles with mousemove tracking
+- **Keyboard shortcuts**: Non-overriding shortcuts, preserve browser defaults
+
+### 4. State Management
+- **Pinia store**: Central state for commits, branches, tags, stashes, UI state
+- **Lazy loading**: Commit details fetched on selection
+- **Cache layer**: Search results cached (max 10 entries)
+- **Auto-refresh**: 10-second polling with interaction deferral
+
+### 5. Performance Optimizations
+- **Progressive loading**: 300 initial commits, 100 on scroll
+- **Virtual scrolling**: Render only visible rows
+- **SVG pre-computation**: Path data calculated once per layout
+- **Debounced search**: 300ms delay on input
+- **State comparison**: Skip redraws when no changes detected
+
+## Key Design Decisions
+
+1. **SVG over Canvas**: Per-element interactivity for tooltips, cleaner High DPI support
+2. **Table over custom layout**: Matches vscode-git-graph, native column resize
+3. **CLI over libraries**: Direct git execution, no abstraction layer
+4. **Polling over WebSocket**: Simpler implementation, adequate for 10s refresh
+5. **Child execution lanes**: Parallel development of rendering, operations, diff viewer, search/filter
+
+## Generated Artifacts
+
+- `research.md`: Technical decisions on rendering, algorithms, architecture
+- `data-model.md`: Complete type definitions for 95 FRs
+- `quickstart.md`: Step-by-step implementation guide
+- Child spec lanes for parallel execution
 
 ## Complexity Tracking
 
-> **Fill ONLY if Constitution Check has violations that must be justified**
+No violations - implementation uses existing stack and patterns.
 
-| Violation | Why Needed | Simpler Alternative Rejected Because |
-|-----------|------------|-------------------------------------|
-| [e.g., 4th project] | [current need] | [why 3 projects insufficient] |
-| [e.g., Repository pattern] | [specific problem] | [why direct DB access insufficient] |
+## FR Coverage Matrix
 
-## FR Coverage Addendum (2026-02-14)
+This matrix maps functional requirements to implementation components and design decisions.
 
-This addendum restores explicit FR traceability for this legacy plan artifact.
+### Graph Rendering & Display (FR-001 to FR-012)
+| FR | Implementation | Component/File |
+|----|----------------|----------------|
+| FR-001 | CSS Grid table with SVG graph column | GitCommitList.vue, GitCommitRow.vue |
+| FR-002 | SVG path rendering with configurable style | useGitGraph.ts (Bezier/straight paths) |
+| FR-003 | 12-color palette with string hashing | types/git.ts (BRANCH_COLORS constant) |
+| FR-004 | Commit metadata display formatting | GitCommitRow.vue (truncation, date format) |
+| FR-005 | SVG circle nodes with type indicators | GitCommitRow.vue (nodeType styling) |
+| FR-006 | Reference label badges | GitCommitRow.vue (branch/tag badges) |
+| FR-007 | Branch label grouping logic | GitCommitRow.vue (local/remote grouping) |
+| FR-008 | Tag badge styling | GitCommitRow.vue (distinct from branches) |
+| FR-009 | HEAD highlighting | gitGraph.ts store (isHead flag) |
+| FR-010 | Uncommitted changes row | GitCommitList.vue (special first row) |
+| FR-011 | Opacity muting for commits | GitCommitRow.vue (50% opacity CSS) |
+| FR-012 | SVG High DPI support | Native SVG scaling |
 
-| FR | Coverage Note |
-|----|---------------|
-| FR-01 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-02 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-03 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-04 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-05 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-06 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-07 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-08 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-09 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-10 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-11 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-12 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-13 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-14 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-15 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-16 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-17 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-18 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-19 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-20 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-21 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-22 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-23 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-24 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-25 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-26 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-27 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-28 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-29 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-30 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-31 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-32 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-33 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-34 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-35 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-36 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-37 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-38 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-39 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-40 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-41 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-42 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-43 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-44 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-45 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-46 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-47 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-48 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-49 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-50 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-51 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-52 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-53 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-54 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-55 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-56 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-57 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-58 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-59 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-60 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-61 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-62 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-63 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-64 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-65 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-66 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-67 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-68 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-69 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-70 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-71 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-72 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-73 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-74 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-75 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-76 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-77 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-78 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-79 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-80 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-81 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-82 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-83 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-84 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-85 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-86 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-87 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-88 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-89 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-90 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-91 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-92 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-93 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-94 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
-| FR-95 | Covered by implementation and tasks traceability in specs/002-git-graph/tasks.md |
+### Commit Details View (FR-013 to FR-022)
+| FR | Implementation | Component/File |
+|----|----------------|----------------|
+| FR-013 | Full commit details display | GitCommitDetail.vue |
+| FR-014 | File Tree/List toggle | GitCommitDetail.vue (viewMode state) |
+| FR-015 | File status color badges | GitCommitDetail.vue (FILE_STATUS_CONFIG) |
+| FR-016 | Rename path display | GitCommitDetail.vue (oldPath → newPath) |
+| FR-017 | Commit statistics | GitCommitDetail.vue (stats section) |
+| FR-018 | Arrow key navigation | GitCommitDetail.vue (keyboard handler) |
+| FR-019 | Parent/child navigation | useKeyboardShortcuts.ts |
+| FR-020 | Detail view positioning | GitCommitDetail.vue (position prop) |
+| FR-021 | Two-commit comparison | gitGraph.ts (comparisonCommit state) |
+| FR-022 | Uncommitted comparison | server/api/git/diff.get.ts |
 
-## FR Coverage Addendum v2 (2026-02-14)
+### Branch Operations (FR-023 to FR-032)
+| FR | Implementation | Component/File |
+|----|----------------|----------------|
+| FR-023 | Checkout branch | GitBranchMenu.vue → branch-checkout.post.ts |
+| FR-024 | Rename branch | GitBranchMenu.vue → branch-rename.post.ts |
+| FR-025 | Delete branch | DeleteBranchDialog.vue → branch-delete.post.ts |
+| FR-026 | Merge branch | MergeDialog.vue → merge.post.ts |
+| FR-027 | Rebase branch | GitBranchMenu.vue → rebase.post.ts |
+| FR-028 | Push branch | PushDialog.vue → push.post.ts |
+| FR-029 | Pull branch | GitBranchMenu.vue → pull.post.ts |
+| FR-030 | Fetch branch | GitBranchMenu.vue → fetch.post.ts |
+| FR-031 | Create branch | GitCommitMenu.vue → branch-create.post.ts |
+| FR-032 | Copy branch name | GitBranchMenu.vue (clipboard API) |
 
-The table above used two-digit FR IDs. This section explicitly enumerates canonical IDs.
+### Commit Operations (FR-033 to FR-039)
+| FR | Implementation | Component/File |
+|----|----------------|----------------|
+| FR-033 | Checkout commit | GitCommitMenu.vue → checkout.post.ts |
+| FR-034 | Cherry-pick | CherryPickDialog.vue → cherry-pick.post.ts |
+| FR-035 | Revert commit | GitCommitMenu.vue → revert.post.ts |
+| FR-036 | Merge commit | GitCommitMenu.vue → merge.post.ts |
+| FR-037 | Reset to commit | ResetDialog.vue → reset.post.ts |
+| FR-038 | Copy commit hash | GitCommitMenu.vue (clipboard API) |
+| FR-039 | Copy subject | GitCommitMenu.vue (clipboard API) |
 
-- FR-001: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-002: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-003: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-004: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-005: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-006: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-007: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-008: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-009: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-010: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-011: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-012: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-013: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-014: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-015: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-016: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-017: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-018: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-019: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-020: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-021: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-022: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-023: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-024: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-025: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-026: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-027: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-028: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-029: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-030: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-031: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-032: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-033: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-034: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-035: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-036: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-037: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-038: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-039: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-040: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-041: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-042: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-043: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-044: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-045: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-046: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-047: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-048: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-049: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-050: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-051: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-052: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-053: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-054: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-055: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-056: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-057: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-058: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-059: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-060: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-061: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-062: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-063: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-064: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-065: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-066: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-067: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-068: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-069: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-070: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-071: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-072: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-073: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-074: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-075: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-076: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-077: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-078: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-079: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-080: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-081: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-082: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-083: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-084: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-085: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-086: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-087: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-088: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-089: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-090: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-091: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-092: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-093: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-094: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
-- FR-095: Covered by implementation and task traceability in `specs/002-git-graph/tasks.md`
+### Tag Operations (FR-040 to FR-044)
+| FR | Implementation | Component/File |
+|----|----------------|----------------|
+| FR-040 | Create tag | TagCreateDialog.vue → tag.post.ts |
+| FR-041 | Delete tag | TagDeleteDialog.vue → tag.delete.ts |
+| FR-042 | Push tag | GitTagMenu.vue → tag-push.post.ts |
+| FR-043 | View tag details | GitTagMenu.vue → tag/[name].get.ts |
+| FR-044 | Copy tag name | GitTagMenu.vue (clipboard API) |
+
+### Stash Operations (FR-045 to FR-051)
+| FR | Implementation | Component/File |
+|----|----------------|----------------|
+| FR-045 | Display stashes | server/api/git/stash.get.ts |
+| FR-046 | Apply stash | GitStashMenu.vue → stash-apply.post.ts |
+| FR-047 | Pop stash | GitStashMenu.vue → stash-pop.post.ts |
+| FR-048 | Drop stash | GitStashMenu.vue → stash-drop.post.ts |
+| FR-049 | Branch from stash | GitStashMenu.vue → stash-branch.post.ts |
+| FR-050 | Create stash | StashDialog.vue → stash.post.ts |
+| FR-051 | Copy stash info | GitStashMenu.vue (clipboard API) |
+
+### Uncommitted Changes & Staging (FR-052 to FR-057)
+| FR | Implementation | Component/File |
+|----|----------------|----------------|
+| FR-052 | Separate sections | GitUncommittedDetail.vue |
+| FR-053 | Stage/unstage files | stage.post.ts, unstage.post.ts |
+| FR-054 | Stage/unstage all | stage-all.post.ts, unstage-all.post.ts |
+| FR-055 | Commit with Ctrl+Enter | GitUncommittedDetail.vue → commit.post.ts |
+| FR-056 | Rename detection | server/utils/git.ts (git status parsing) |
+| FR-057 | Uncommitted menu | GitUncommittedMenu.vue |
+
+### Search & Filter (FR-058 to FR-062)
+| FR | Implementation | Component/File |
+|----|----------------|----------------|
+| FR-058 | Find Widget | GitFindWidget.vue |
+| FR-059 | Search highlighting | GitCommitList.vue (match highlighting) |
+| FR-060 | Branch filter | GitBranchFilter.vue (multi-select) |
+| FR-061 | Search debounce | useDebounce composable (300ms) |
+| FR-062 | Search cache | gitGraph.ts (searchCache Map) |
+
+### Auto-refresh & Performance (FR-063 to FR-069)
+| FR | Implementation | Component/File |
+|----|----------------|----------------|
+| FR-063 | State polling | useAutoRefresh.ts → state.get.ts |
+| FR-064 | Preserve UI state | gitGraph.ts (selection preservation) |
+| FR-065 | Defer during interaction | useAutoRefresh.ts (interaction flags) |
+| FR-066 | Skip unchanged redraws | useAutoRefresh.ts (state comparison) |
+| FR-067 | Progressive loading | GitCommitList.vue (300/100 constants) |
+| FR-068 | Virtual scrolling | GitCommitList.vue (vue-virtual-scroller) |
+| FR-069 | Last updated indicator | GitGraph.vue (relative time display) |
+
+### Toolbar & Controls (FR-070 to FR-076)
+| FR | Implementation | Component/File |
+|----|----------------|----------------|
+| FR-070 | Toolbar components | GitToolbar.vue |
+| FR-071 | Column visibility | gitGraph.ts (columns state) |
+| FR-072 | Column resizing | GitCommitList.vue (resize handlers) |
+| FR-073 | Label alignment | gitGraph.ts (refLabelAlignment) |
+| FR-074 | Remote list | server/api/git/remotes.get.ts |
+| FR-075 | Fetch all | server/api/git/fetch-all.post.ts |
+| FR-076 | Remote management | remote.post/put/delete.ts |
+
+### Keyboard & UI Features (FR-077 to FR-095)
+| FR | Implementation | Component/File |
+|----|----------------|----------------|
+| FR-077 | Find via toolbar | GitToolbar.vue (no Ctrl+F override) |
+| FR-078 | Ctrl+H scroll | useKeyboardShortcuts.ts |
+| FR-079 | Refresh via toolbar | GitToolbar.vue (no Ctrl+R override) |
+| FR-080 | Ctrl+S stash scroll | useKeyboardShortcuts.ts |
+| FR-081 | Escape handling | useKeyboardShortcuts.ts (cascade) |
+| FR-082 | Enter submit | Dialog components |
+| FR-083 | URL linkification | utils/commitMessage.ts |
+| FR-084 | Emoji shortcodes | utils/commitMessage.ts (emoji map) |
+| FR-085 | Markdown rendering | utils/commitMessage.ts (marked) |
+| FR-086 | GPG signatures | GitCommitRow.vue (signature badge) |
+| FR-087-094 | Diff viewer | GitDiffViewer.vue → diff/[file].get.ts |
+| FR-095 | Feature highlight | GitCommitList.vue (feature branch styling) |
+

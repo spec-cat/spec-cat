@@ -19,7 +19,7 @@ This dashboard normalizes feature status across all `specs/*` folders using:
 | Feature | Declared Status | Tasks | Lifecycle | Notes |
 |---|---|---:|---|---|
 | `001-app-layout` | In Progress | 29/30 | `review` | Functionally near-complete; one header naming task remains. |
-| `001-source-file-explorer` | Draft | 0/18 | `backlog` | Planned but not started in tracked tasks. |
+| `032-source-file-explorer` | Draft | 0/18 | `backlog` | Planned but not started in tracked tasks. |
 | `002-git-graph` | In Progress (Redesign) | 0/0 | `in_progress` | Parent redesign spec; child specs `021`-`024` split out. |
 | `003-worktree-management` | Implemented | 13/14 | `done` | Core worktree feature shipped; minor validation task open. |
 | `004-spec-viewer` | Draft | 0/0 | `review` | Legacy parent; effectively split/covered by `028`-`030`. |

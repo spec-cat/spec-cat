@@ -1,6 +1,6 @@
 # Feature Specification: Project Source File Explorer Modal
 
-**Feature Branch**: `001-source-file-explorer`  
+**Feature Branch**: `032-source-file-explorer`  
 **Created**: 2026-02-10  
 **Status**: Draft  
 **Input**: User description: "Project source file explorer modal: a file explorer with a file tree on the left and a file content viewer on the right."

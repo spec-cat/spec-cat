@@ -10,18 +10,9 @@ Deliver a `Ctrl+K`/`Cmd+K` command palette that always opens regardless of curre
 - Existing endpoints: `GET /api/specs/search`, `GET /api/specs/features`
 - Features panel available in the UI
 
-## Implementation Steps
+## Getting Started
 
-1. Build `/home/khan/src/brick2/components/features/FeatureSearchModal.vue` for query input, result rendering, and keyboard navigation.
-2. Add shortcut open/close orchestration in `/home/khan/src/brick2/components/features/FeaturesPanel.vue`.
-3. Ensure `Ctrl+K`/`Cmd+K` opens modal regardless of current focus target.
-4. Implement 400ms debounced search requests to `/api/specs/search` with `mode=keyword`, `limit=20`, and no default `featureId` filter.
-5. Render each result with feature-identifying context (feature ID + source/snippet).
-6. Implement pointer selection and keyboard selection (`ArrowUp`/`ArrowDown` + `Enter`).
-7. Wire result selection to existing feature panel selection flow.
-8. Handle stale/unavailable result selection with inline error while keeping modal open.
-9. Implement explicit empty-query, no-results, and request-failure states.
-10. Validate with `pnpm typecheck` and targeted tests/manual checks.
+For detailed implementation steps, see tasks.md. The implementation follows a phased approach with Setup, Foundational, and User Story phases.
 
 ## Manual Validation Checklist
 
@@ -42,9 +33,9 @@ Deliver a `Ctrl+K`/`Cmd+K` command palette that always opens regardless of curre
 - Success criteria SC-001 through SC-004 remain testable and aligned with UI behavior.
 - No regressions in feature panel selection and existing modal interactions.
 
-## Implementation Notes
+## Key Implementation Points
 
-- Command palette UI lives in `/home/khan/src/brick2/components/features/FeatureSearchModal.vue`.
-- Global shortcut wiring is implemented in `/home/khan/src/brick2/components/features/FeaturesPanel.vue`.
-- Debounce is fixed at 400ms and search defaults to all features (no default `featureId` filter).
-- Unavailable selections are handled inline while keeping modal open.
+- Fixed 400ms debounce for search
+- Global search scope (all features)
+- Inline error handling for unavailable features
+- See plan.md for technical architecture details
