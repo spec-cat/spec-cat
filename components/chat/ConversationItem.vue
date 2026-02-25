@@ -13,14 +13,12 @@ import {
   FolderIcon,
 } from '@heroicons/vue/24/outline'
 import type { Conversation } from '~/types/chat'
-import type { AutoModeTask } from '~/types/autoMode'
 
 const props = defineProps<{
   conversation: Conversation
   isActive: boolean
   isStreaming?: boolean
   isPreviewing?: boolean
-  autoModeTask?: AutoModeTask
 }>()
 
 const emit = defineEmits<{
@@ -147,32 +145,6 @@ const formattedDate = computed(() => {
           >
             previewing
           </span>
-          <!-- Auto Mode badge with task state (T014: FR-008) -->
-          <span
-            v-if="conversation.autoMode && autoModeTask"
-            class="text-xs font-mono px-1.5 py-0.5 rounded flex-shrink-0"
-            :class="{
-              'text-retro-yellow bg-retro-yellow/10': autoModeTask.state === 'running' || autoModeTask.state === 'queued',
-              'text-retro-green bg-retro-green/10': autoModeTask.state === 'completed',
-              'text-retro-red bg-retro-red/10': autoModeTask.state === 'failed',
-              'text-retro-muted bg-retro-muted/10': autoModeTask.state === 'skipped',
-            }"
-          >
-            <template v-if="autoModeTask.state === 'running' && autoModeTask.currentStep">
-              {{ autoModeTask.currentStep }}
-            </template>
-            <template v-else-if="autoModeTask.state === 'queued'">queued</template>
-            <template v-else-if="autoModeTask.state === 'completed'">done</template>
-            <template v-else-if="autoModeTask.state === 'failed'">failed</template>
-            <template v-else-if="autoModeTask.state === 'skipped'">skipped</template>
-            <template v-else>auto</template>
-          </span>
-          <span
-            v-else-if="conversation.autoMode"
-            class="text-xs font-mono text-retro-yellow bg-retro-yellow/10 px-1.5 py-0.5 rounded flex-shrink-0"
-          >
-            auto
-          </span>
           <!-- Streaming badge -->
           <span
             v-if="isStreaming"
@@ -182,14 +154,6 @@ const formattedDate = computed(() => {
           </span>
         </div>
 
-        <!-- Auto mode error message -->
-        <p
-          v-if="autoModeTask?.state === 'failed' && autoModeTask.error"
-          class="text-xs text-retro-red mt-1 truncate pl-6"
-          :title="autoModeTask.error"
-        >
-          {{ autoModeTask.error }}
-        </p>
 
         <!-- Preview and timestamp -->
         <p class="text-xs text-retro-muted mt-1 truncate pl-6">

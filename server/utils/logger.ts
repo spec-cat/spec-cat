@@ -28,6 +28,5 @@ export const logger = {
   api: createLogger("api"),
   git: createLogger("git"),
   chat: createLogger("chat"),
-  autoMode: createLogger("auto-mode"),
   specSearch: createLogger("spec-search"),
 };

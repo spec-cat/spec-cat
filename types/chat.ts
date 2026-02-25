@@ -409,7 +409,6 @@ export interface Conversation {
   previewBranch?: string        // Temp preview branch name (set when preview is active)
   featureId?: string            // Associated feature ID (for cascade reuse)
   finalized?: boolean           // True after successful finalize (read-only mode)
-  autoMode?: boolean            // True if created/used by Auto Mode (FR-008)
   lastCommitTime?: string       // ISO 8601 timestamp of last worktree commit (for UI refresh)
   restoredFromArchiveId?: string // Archive snapshot source ID when restored
 }

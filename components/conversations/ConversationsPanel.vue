@@ -9,41 +9,12 @@ import {
   ChatBubbleLeftRightIcon,
 } from '@heroicons/vue/24/outline'
 import { useChatStore } from '~/stores/chat'
-import { useAutoModeStore } from '~/stores/autoMode'
 import ConversationItem from '~/components/chat/ConversationItem.vue'
 import NewConversationModal from '~/components/conversations/NewConversationModal.vue'
 import type { ArchivedConversation, Conversation } from '~/types/chat'
-import type { AutoModeTask } from '~/types/autoMode'
 
 const chatStore = useChatStore()
-const autoModeStore = useAutoModeStore()
 const toast = useToast()
-
-const autoModeTaskMap = computed(() => {
-  const map = new Map<string, AutoModeTask>()
-  for (const task of autoModeStore.tasks) {
-    map.set(task.featureId, task)
-  }
-  return map
-})
-
-const autoModeTaskMemoKeyMap = computed(() => {
-  const map = new Map<string, string>()
-  for (const task of autoModeStore.tasks) {
-    map.set(task.featureId, `${task.state}|${task.currentStep || ''}|${task.error || ''}`)
-  }
-  return map
-})
-
-function getAutoModeTask(featureId?: string) {
-  if (!featureId) return undefined
-  return autoModeTaskMap.value.get(featureId)
-}
-
-function getAutoModeTaskMemoKey(featureId?: string) {
-  if (!featureId) return ''
-  return autoModeTaskMemoKeyMap.value.get(featureId) || ''
-}
 
 const searchQuery = ref('')
 const debouncedQuery = ref('')
@@ -333,7 +304,6 @@ function getArchivePreview(messages: Array<{ content?: string }>) {
                 conv.id === chatStore.activeConversationId,
                 chatStore.isConversationStreaming(conv.id),
                 previewingId === conv.id,
-                getAutoModeTaskMemoKey(conv.featureId),
               ]"
             >
               <ConversationItem
@@ -341,7 +311,6 @@ function getArchivePreview(messages: Array<{ content?: string }>) {
                 :is-active="conv.id === chatStore.activeConversationId"
                 :is-streaming="chatStore.isConversationStreaming(conv.id)"
                 :is-previewing="previewingId === conv.id"
-                :auto-mode-task="conv.autoMode ? getAutoModeTask(conv.featureId) : undefined"
                 @select="handleSelect(conv.id)"
                 @archive="handleArchive(conv.id)"
                 @rename="(title) => handleRename(conv.id, title)"

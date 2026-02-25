@@ -75,8 +75,6 @@ This project uses **Vibe Kanban** for orchestrating AI coding agents with isolat
 - Pinia (v2.2+), server-side file storage (`~/.spec-cat/projects/{hash}/settings.json`) for permission mode (010-chat-permission-system)
 - Git worktrees at `/tmp/`, server APIs for worktree/preview/finalize lifecycle (011-chat-worktree-integration)
 - Cascade pipeline integration with 015-features-panel (012-cascade-automation)
-- TypeScript 5.6+ with Nuxt 3 (v3.16+), Vue 3 (v3.5+) + Pinia (v2.2+), @anthropic-ai/claude-code (v1.0.108), @heroicons/vue, Tailwind CSS (013-auto-mode)
-- Server-side file storage (`~/.spec-cat/projects/{hash}/settings.json`, `conversations.json`, `auto-mode-session.json`) (013-auto-mode)
 - TypeScript 5.6+ with Nuxt 3 (v3.16+), Vue 3 (v3.5+) + Pinia (v2.2+), @heroicons/vue, git CLI (child_process), chokidar (011-chat-worktree-integration)
 - Server-side file storage (`~/.spec-cat/projects/{hash}/conversations.json` for conversation persistence including worktree fields), git branches/worktrees on filesystem (`/tmp/br-*`) (011-chat-worktree-integration)
 - TypeScript 5.6+ with Nuxt 3 (v3.16+), Vue 3 (v3.5+) + Pinia (v2.2+), @heroicons/vue (SunIcon/MoonIcon), Tailwind CSS (v3.4+) (014-theme-system)

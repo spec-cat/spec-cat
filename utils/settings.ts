@@ -7,7 +7,6 @@ type Theme = 'dark' | 'light'
 export interface NormalizedSettings {
   providerId?: string
   providerModelKey?: string
-  autoModeConcurrency?: number
   theme?: Theme
   permissionMode?: PermissionMode
   autoGenerateCommitMessages?: boolean
@@ -36,9 +35,6 @@ export function normalizeSettings(raw: Record<string, unknown> | null | undefine
     normalized.providerModelKey = claudeModel
   }
 
-  if (typeof raw.autoModeConcurrency === 'number' && raw.autoModeConcurrency >= 1) {
-    normalized.autoModeConcurrency = raw.autoModeConcurrency
-  }
 
   if (raw.theme === 'dark' || raw.theme === 'light') {
     normalized.theme = raw.theme

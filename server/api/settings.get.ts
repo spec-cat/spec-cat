@@ -11,10 +11,8 @@ export interface SpecCatSettings {
   providerId: string
   providerModelKey: string
   claudeModel?: string
-  autoModeConcurrency: number
   panelWidth: number
   permissionMode: string
-  autoModeEnabled: boolean
   autoGenerateCommitMessages: boolean
 }
 
@@ -23,10 +21,8 @@ const DEFAULTS: SpecCatSettings = {
   providerId: DEFAULT_PROVIDER_ID,
   providerModelKey: DEFAULT_MODEL_KEY,
   claudeModel: 'sonnet',
-  autoModeConcurrency: 3,
   panelWidth: 400,
   permissionMode: 'ask',
-  autoModeEnabled: false,
   autoGenerateCommitMessages: false,
 }
 

@@ -1684,15 +1684,6 @@ export const useChatStore = defineStore('chat', () => {
     )[0] || null
   }
 
-  /**
-   * Add a pre-built conversation from Auto Mode (T007: FR-004, FR-008)
-   * Worktree is already created server-side by the scheduler.
-   */
-  function addAutoModeConversation(conv: Conversation) {
-    conversations.value.unshift(conv)
-    sortConversations()
-    saveAllConversations()
-  }
 
   /**
    * Rename a conversation (T049)
@@ -1891,7 +1882,6 @@ export const useChatStore = defineStore('chat', () => {
     setConversationViewMode,
     findConversationByFeature,
     syncConversationFeatureFromBranch,
-    addAutoModeConversation,
     renameConversation,
     checkStorageLimits,
     finalizeConversation,

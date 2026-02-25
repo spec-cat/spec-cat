@@ -104,13 +104,6 @@ const handlePermissionModeChange = (mode: PermissionMode) => {
   toast.success('Settings saved')
 }
 
-const handleConcurrencyChange = (event: Event) => {
-  const value = parseInt((event.target as HTMLInputElement).value, 10)
-  if (!isNaN(value)) {
-    settingsStore.setAutoModeConcurrency(value)
-    toast.success('Settings saved')
-  }
-}
 
 const handleAutoGenerateCommitMessagesChange = (enabled: boolean) => {
   settingsStore.setAutoGenerateCommitMessages(enabled)
@@ -317,32 +310,6 @@ onUnmounted(() => {
 
               <div class="border-t border-retro-border" />
 
-              <!-- Auto Mode Concurrency Section -->
-              <section>
-            <h3 class="text-sm font-mono font-semibold text-retro-text mb-1">Auto Mode</h3>
-            <p class="text-xs text-retro-muted mb-3">
-              Configure how many spec cascades can run in parallel during Auto Mode.
-            </p>
-
-            <div class="flex items-center gap-4 px-3 py-2 rounded border border-retro-border bg-retro-panel">
-              <label class="font-mono text-retro-text text-sm whitespace-nowrap" for="concurrency-modal">
-                Concurrency
-              </label>
-              <input
-                id="concurrency-modal"
-                type="range"
-                min="1"
-                max="10"
-                step="1"
-                :value="settingsStore.autoModeConcurrency"
-                class="flex-1 accent-retro-cyan"
-                @change="handleConcurrencyChange"
-              >
-              <span class="font-mono text-retro-cyan text-sm w-6 text-center">
-                {{ settingsStore.autoModeConcurrency }}
-              </span>
-            </div>
-              </section>
             </div>
           </section>
 

@@ -21,16 +21,14 @@ describe('settings utils', () => {
 
   it('normalizes other optional values with validation', () => {
     expect(normalizeSettings({
-      autoModeConcurrency: 4,
       theme: 'light',
       permissionMode: 'auto',
       autoGenerateCommitMessages: true,
     })).toMatchObject({
-      autoModeConcurrency: 4,
       theme: 'light',
       permissionMode: 'auto',
       autoGenerateCommitMessages: true,
     })
-    expect(normalizeSettings({ autoModeConcurrency: 0, theme: 'blue', permissionMode: 'invalid' })).toEqual({})
+    expect(normalizeSettings({ theme: 'blue', permissionMode: 'invalid' })).toEqual({})
   })
 })

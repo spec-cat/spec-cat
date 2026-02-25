@@ -78,7 +78,6 @@ const showFinalizeConfirm = ref(false)
 const finalizeStatus = ref<{ type: 'success' | 'error'; message: string } | null>(null)
 
 const isFinalized = computed(() => chatStore.activeConversation?.finalized === true)
-const isAutoMode = computed(() => chatStore.activeConversation?.autoMode === true)
 const isReadOnly = computed(() => isFinalized.value)
 
 // Compare worktree HEAD vs base branch

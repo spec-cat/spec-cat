@@ -14,7 +14,6 @@ export type Theme = 'dark' | 'light'
 interface SettingsStoreState {
   providerId: string
   providerModelKey: string
-  autoModeConcurrency: number
   theme: Theme
   permissionMode: PermissionMode
   autoGenerateCommitMessages: boolean
@@ -25,7 +24,6 @@ export const useSettingsStore = defineStore('settings', {
   state: (): SettingsStoreState => ({
     providerId: DEFAULT_PROVIDER_ID,
     providerModelKey: DEFAULT_MODEL_KEY,
-    autoModeConcurrency: 3,
     theme: 'dark',
     permissionMode: 'ask',
     autoGenerateCommitMessages: false,
@@ -51,9 +49,6 @@ export const useSettingsStore = defineStore('settings', {
         }
         if (normalized.providerModelKey !== undefined) {
           this.providerModelKey = normalized.providerModelKey
-        }
-        if (normalized.autoModeConcurrency !== undefined) {
-          this.autoModeConcurrency = normalized.autoModeConcurrency
         }
         if (normalized.theme !== undefined) {
           this.theme = normalized.theme
@@ -83,10 +78,6 @@ export const useSettingsStore = defineStore('settings', {
       this._saveToServer(true)
     },
 
-    setAutoModeConcurrency(value: number) {
-      this.autoModeConcurrency = Math.max(1, Math.min(10, Math.floor(value)))
-      this._saveToServer()
-    },
 
     setPermissionMode(mode: PermissionMode) {
       this.permissionMode = mode
@@ -101,7 +92,6 @@ export const useSettingsStore = defineStore('settings', {
     resetToDefaults() {
       this.providerId = DEFAULT_PROVIDER_ID
       this.providerModelKey = DEFAULT_MODEL_KEY
-      this.autoModeConcurrency = 3
       this.theme = 'dark'
       this.permissionMode = 'ask'
       this.autoGenerateCommitMessages = false
@@ -115,7 +105,6 @@ export const useSettingsStore = defineStore('settings', {
         providerId: this.providerId,
         providerModelKey: this.providerModelKey,
         claudeModel: this.providerId === 'claude' ? this.providerModelKey : undefined,
-        autoModeConcurrency: this.autoModeConcurrency,
         theme: this.theme,
         permissionMode: this.permissionMode,
         autoGenerateCommitMessages: this.autoGenerateCommitMessages,

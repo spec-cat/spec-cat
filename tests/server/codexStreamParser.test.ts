@@ -375,7 +375,7 @@ describe('codexStreamParser', () => {
       type: 'item.started',
       thread_id: 'thread-16c',
       call_id: 'call_read_4',
-      path: 'specs/001-source-file-explorer/spec.md',
+      path: 'specs/032-source-file-explorer/spec.md',
       item_type: 'function_call',
     })
 
