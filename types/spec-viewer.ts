@@ -23,3 +23,42 @@ export interface SpecFileContentResponse {
   filename: string
   featureId: string
 }
+
+export type TraceabilitySeverity = 'critical' | 'major' | 'minor'
+
+export interface TraceabilityAlert {
+  id: string
+  severity: TraceabilitySeverity
+  message: string
+  requirementId?: string
+}
+
+export interface TraceabilityRequirement {
+  id: string
+  inPlan: boolean
+  inTasks: boolean
+  taskTotal: number
+  taskCompleted: number
+  status: 'missing' | 'partial' | 'covered'
+  locations: {
+    specLine?: number
+    planLine?: number
+    taskLines: number[]
+  }
+}
+
+export interface TraceabilitySummary {
+  frTotal: number
+  frWithPlan: number
+  frWithTasks: number
+  frFullyCovered: number
+  taskTotal: number
+  taskCompleted: number
+}
+
+export interface TraceabilityResponse {
+  featureId: string
+  summary: TraceabilitySummary
+  requirements: TraceabilityRequirement[]
+  alerts: TraceabilityAlert[]
+}

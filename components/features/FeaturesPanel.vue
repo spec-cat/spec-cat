@@ -5,7 +5,7 @@ import { useGitGraphStore } from '~/stores/gitGraph'
 import { useChatStream } from '~/composables/useChatStream'
 import { useToast } from '~/composables/useToast'
 import NewConversationModal from '~/components/conversations/NewConversationModal.vue'
-import type { Feature } from '~/types/spec-viewer'
+import type { Feature, TraceabilityResponse } from '~/types/spec-viewer'
 import type { SkillMetadata, SkillPromptResponse } from '~/types/skill'
 
 const chatStore = useChatStore()
@@ -22,6 +22,7 @@ const selectedFileName = ref<string | null>(null)
 const features = ref<Feature[]>([])
 const skills = ref<SkillMetadata[]>([])
 const loading = ref(false)
+const featureRiskMap = ref<Record<string, { critical: number; major: number }>>({})
 
 // Modal state
 const showModal = ref(false)
@@ -105,12 +106,41 @@ async function fetchFeatures() {
   try {
     const data = await $fetch<{ features: Feature[] }>('/api/specs/features')
     features.value = data.features
+    void fetchFeatureRisks(data.features)
   } catch {
     toast.error('Failed to load features')
     features.value = []
+    featureRiskMap.value = {}
   } finally {
     loading.value = false
   }
+}
+
+async function fetchFeatureRisks(featureList: Feature[]) {
+  if (featureList.length === 0) {
+    featureRiskMap.value = {}
+    return
+  }
+
+  const settled = await Promise.allSettled(
+    featureList.map(async (feature) => {
+      const response = await $fetch<TraceabilityResponse>(`/api/specs/traceability/${feature.id}`)
+      const critical = response.alerts.filter(alert => alert.severity === 'critical').length
+      const major = response.alerts.filter(alert => alert.severity === 'major').length
+      return { featureId: feature.id, critical, major }
+    }),
+  )
+
+  const nextMap: Record<string, { critical: number; major: number }> = {}
+  for (const result of settled) {
+    if (result.status === 'fulfilled') {
+      nextMap[result.value.featureId] = {
+        critical: result.value.critical,
+        major: result.value.major,
+      }
+    }
+  }
+  featureRiskMap.value = nextMap
 }
 
 // Fetch skills from API
@@ -194,6 +224,10 @@ function openFeatureSearchModal() {
 }
 
 const availableFeatureIds = computed(() => features.value.map(feature => feature.id))
+
+function getFeatureRisk(featureId: string): { critical: number; major: number } {
+  return featureRiskMap.value[featureId] ?? { critical: 0, major: 0 }
+}
 
 // Cascade pipeline
 const CASCADE_STEPS: Record<string, string[]> = {
@@ -487,6 +521,8 @@ async function handleCreateConfirm(baseBranch: string) {
             :feature="feature"
             :skills="skills"
             :is-active="highlightedFeatureId === feature.id"
+            :critical-alerts="getFeatureRisk(feature.id).critical"
+            :major-alerts="getFeatureRisk(feature.id).major"
             @select="(featureId) => handleSelectFeature(featureId, { openViewer: true })"
             @cascade="handleCascade"
             @open-chat="handleOpenChat"
