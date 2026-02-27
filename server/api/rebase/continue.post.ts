@@ -73,7 +73,7 @@ export default defineEventHandler(async (event): Promise<FinalizeResponse> => {
         const statusOutput = await git(worktreePath, 'status --porcelain')
         conflictFiles = statusOutput
           .split('\n')
-          .filter(line => /^(UU|AA|DU|UD)\s/.test(line))
+          .filter(line => /^(UU|AA|DU|UD|UA|AU|DD)\s/.test(line))
           .map(line => line.substring(3).trim())
       } catch { /* ignore */ }
 

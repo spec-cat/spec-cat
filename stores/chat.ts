@@ -1326,8 +1326,9 @@ export const useChatStore = defineStore('chat', () => {
         conv.finalized = true
         conv.updatedAt = new Date().toISOString()
         saveAllConversations()
-      } else if (res.rebaseInProgress && res.conflictFiles?.length) {
-        // Enter conflict resolution mode
+      } else if (res.rebaseInProgress) {
+        // Enter conflict resolution mode even when conflictFiles is empty.
+        // The conflict list API is the source of truth for current unresolved files.
         await startConflictResolution(id, conv.worktreePath!, baseBranch || 'main', commitMessage)
       }
 
@@ -1362,8 +1363,9 @@ export const useChatStore = defineStore('chat', () => {
         },
       })
 
-      if (res.rebaseInProgress && res.conflictFiles?.length) {
+      if (res.rebaseInProgress) {
         // Enter conflict resolution mode (sync mode — keep worktree after)
+        // Conflict list is fetched from API to avoid relying on partial payloads.
         await startConflictResolution(id, conv.worktreePath!, rebaseBranch || 'main', '', 'sync')
       } else if (res.success) {
         await syncPreviewBranchIfActive(conv)
@@ -1498,8 +1500,8 @@ export const useChatStore = defineStore('chat', () => {
           }
         }
         conflictState.value = null
-      } else if (res.rebaseInProgress && res.conflictFiles?.length) {
-        // More conflicts — refresh
+      } else if (res.rebaseInProgress) {
+        // More conflicts — refresh from source of truth
         await startConflictResolution(conversationId, worktreePath, baseBranch, commitMessage, mode)
       }
 

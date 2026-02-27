@@ -134,8 +134,8 @@ export default defineEventHandler(async (event): Promise<FinalizeResponse> => {
           const statusOutput = await git(worktreePath, 'status --porcelain')
           conflictFiles = statusOutput
             .split('\n')
-            .filter(line => line.startsWith('UU') || line.startsWith('AA') || line.startsWith('DU') || line.startsWith('UD'))
-            .map(line => line.substring(3))
+            .filter(line => /^(UU|AA|DU|UD|UA|AU|DD)\s/.test(line))
+            .map(line => line.substring(3).trim())
         } catch { /* ignore */ }
       }
 
