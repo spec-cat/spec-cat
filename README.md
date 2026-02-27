@@ -3,7 +3,7 @@ Spec Cat is a local development workbench designed to make spec-driven developme
 
 It brings spec writing/editing, Git graph inspection, interactive AI coding, worktree isolation, and cascade automation into a single screen.
 
-<img width="3300" height="1848" alt="image" src="https://github.com/user-attachments/assets/0012524e-5337-470e-a005-8f36a97ea9ad" />
+<img width="3127" height="1503" alt="image" src="https://github.com/user-attachments/assets/81f6a813-d769-4765-804a-ac3159d7eadb" />
 
 ## Project Overview
 In large codebases, a "one-line prompt" might be fast, but it does not guarantee maintainable results.
