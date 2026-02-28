@@ -2,7 +2,7 @@
 
 **Feature Branch**: `013-auto-mode`
 **Created**: 2026-02-08
-**Status**: In Review (implementation complete; final manual validation pending)
+**Status**: Draft (planning artifacts in review; implementation pending)
 **Input**: User description: "Auto Mode - Background scheduler that automatically runs speckit workflow per spec unit, finds discrepancies between implementation and specs, and updates specs (not implementation). Reuses existing chat UI and conversation system — each spec unit gets its own conversation with cascade pipeline. Features on/off toggle in UI, keeps constitution and .speckit files up to date, requires human review before merging to main."
 
 ## User Scenarios & Testing *(mandatory)*
@@ -99,12 +99,20 @@ Auto Mode also keeps project-wide configuration files up to date. It creates a d
 - Q: Should there be a way to force re-processing of unchanged specs? → A: No force option - users must modify a file to trigger reprocessing
 - Q: What should happen to Auto Mode cascade when user manually interacts? → A: Cancel current cascade entirely - mark task as failed with reason "Manual interaction"
 
+### Session 2026-02-28
+
+- Q: When Auto Mode starts, what branch baseline should it use? → A: User selects a base branch (same UX pattern as existing conversation branch selection), then Auto Mode creates/updates shared branch `sc/automode` from that base and starts feature conversations from `sc/automode`.
+- Q: How should completed feature results be accumulated without manual branch maintenance? → A: After each feature completes, Auto Mode immediately integrates it into `sc/automode` by rebasing/merging in sequence. Conflicts are resolved automatically via AI-assisted rebase resolution.
+- Q: Should Auto Mode apply any special chat-only rules or custom prompt policy? → A: No. Auto Mode must reuse existing chat/conversation rules and rendering exactly; only orchestration differs.
+- Q: What is the quality gate for completion? → A: `skill:better-spec` runs as the final step, and traceability/spec consistency must have no remaining errors before a feature is marked successful.
+- Q: Why rerun full chain when `spec.md` changes? → A: Because `spec.md` edits can break traceability, Auto Mode must regenerate dependent artifacts (`plan.md`, `tasks.md`) and finish with `better-spec` to restore full consistency.
+
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
 
 - **FR-001**: System MUST provide an on/off toggle control in the sidebar, near the conversation list header, to enable or disable Auto Mode.
-- **FR-002**: System MUST persist the Auto Mode enabled/disabled state so it survives page refreshes (localStorage).
+- **FR-002**: System MUST persist the Auto Mode enabled/disabled state via the existing project settings persistence (`/api/settings` backed by project-scoped `.spec-cat` storage) so it survives page refreshes.
 - **FR-003**: When Auto Mode is enabled, the system MUST scan `specs/` and build a processing queue ordered alphabetically by directory name.
 - **FR-003a**: A feature directory MUST be eligible only when it matches `NNN-*` and contains `spec.md`.
 - **FR-003b**: Queue discovery MUST use SHA-256 hash comparison on spec.md, plan.md, and tasks.md files. Features are skipped entirely if all three files match stored hashes from previous successful runs.
@@ -118,24 +126,33 @@ Auto Mode also keeps project-wide configuration files up to date. It creates a d
 - **FR-010a**: Tasks already in running state when Auto Mode is disabled MUST be allowed to complete naturally.
 - **FR-011**: System MUST skip features that already have an active worktree for the same feature.
 - **FR-012**: System MUST process and update constitution and .speckit memory files by creating a dedicated conversation with featureId "constitution".
-- **FR-013**: System MUST process specs concurrently, running up to N conversation cascades in parallel, where N is a user-configurable concurrency limit (default: 3).
-- **FR-016**: System MUST provide a concurrency setting in the settings page that controls how many Auto Mode cascades can run simultaneously (default: 3). The setting MUST be persisted (localStorage).
+- **FR-013**: System MUST process specs concurrently, running up to the active concurrency limit in parallel (default: 3).
+- **FR-016**: System MUST provide a concurrency setting in the settings page that controls the Auto Mode active concurrency limit (default: 3). The setting MUST be persisted via the existing project settings persistence.
 - **FR-014**: Auto Mode conversations MUST support the full existing conversation lifecycle: rename, delete, preview, finalize, search/filter.
 - **FR-015**: The Auto Mode queue state MUST be persisted so that if the page is refreshed while Auto Mode is on, it can resume processing unfinished tasks.
 - **FR-015a**: During resume, tasks persisted as `running` MUST be reset to `queued` and restarted from the beginning of the feature sequence.
 - **FR-017**: Auto Mode MUST operate as a single cycle per activation — once all queued features have been processed, the system transitions to an idle state (toggle remains "on" but no re-scanning occurs). The user must toggle off and on again to trigger a new cycle.
 - **FR-018**: System MUST store SHA-256 hashes of spec.md, plan.md, and tasks.md files only after successful cascade completion (all steps finished without errors) for a feature, enabling incremental execution on subsequent runs. Failed cascades do not update stored hashes.
-- **FR-019**: System MUST allow any authenticated user to toggle Auto Mode on/off without requiring special permissions or authorization.
+- **FR-019**: System MUST allow any active application user session to toggle Auto Mode on/off without requiring special permissions or role-based authorization.
 - **FR-020**: System MUST cancel any running Auto Mode cascade when a user manually sends a message in that conversation, marking the task as failed with reason "Manual interaction".
-<<<<<<< HEAD
-=======
 - **FR-021**: System MUST display Auto Mode messages using structured content blocks (text, tool_use, tool_result) to ensure proper formatting with tool boxes, markdown rendering, and visual consistency with regular chat conversations.
->>>>>>> 268b0a7 (fix: markdown view on automode)
+- **FR-022**: When Auto Mode is enabled, the system MUST require/select a base branch (same interaction model as existing conversation branch selection), and create or fast-forward `sc/automode` from that selected base before starting feature processing.
+- **FR-023**: Auto Mode feature conversations/worktrees MUST be created using `sc/automode` as the branch baseline for the cycle, so all automated spec-update commits share a common integration branch.
+- **FR-024**: After each feature cascade completes successfully, the system MUST immediately integrate that feature result into `sc/automode` in-cycle (rebase/merge flow), so `sc/automode` continuously accumulates Auto Mode commits without manual branch maintenance.
+- **FR-025**: If conflicts occur during in-cycle integration to `sc/automode`, the system MUST attempt AI-assisted automatic conflict resolution using the existing rebase conflict-resolution capabilities.
+- **FR-026**: Auto Mode MUST NOT introduce extra chat-specific rules, prompt policies, or rendering behavior; it MUST reuse the exact existing chat pipeline/rules and only automate command sequencing.
+- **FR-027**: `skill:better-spec` MUST run as the final step for any processed feature, and a feature MUST only be marked successful when traceability/spec-consistency checks report no remaining errors.
 
 ### Key Entities
 
 - **AutoModeState**: The Auto Mode runtime state managed in the chat store. Contains: enabled (boolean), queue (list of featureIds to process), activeFeatureIds (set of featureIds currently being processed, up to concurrency limit), processedFeatures (set of completed featureIds in this cycle), concurrency (number, default 3), idle (boolean, true when cycle completes — all features processed, no active cascades).
 - **Conversation** (existing, extended): The existing Conversation entity gains an optional `autoMode: boolean` field to indicate it was created/used by Auto Mode, enabling the "auto" badge in the conversation list.
+
+### Non-Functional Requirements
+
+- **NFR-001 (Performance)**: Queue discovery over eligible specs SHOULD complete within 3 seconds for normal project sizes, and first cascade kickoff SHOULD begin within 5 seconds of activation.
+- **NFR-002 (Reliability)**: Auto Mode SHOULD preserve queue/session progress across refresh/reconnect and recover to a consistent state (resetting persisted `running` tasks to `queued` before restart).
+- **NFR-003 (UX Consistency)**: Auto Mode rendering and interaction semantics SHOULD remain visually and behaviorally consistent with existing chat/conversation UI patterns.
 
 ## Success Criteria *(mandatory)*
 
@@ -148,10 +165,9 @@ Auto Mode also keeps project-wide configuration files up to date. It creates a d
 - **SC-005**: Disabling Auto Mode stops new cascade processing. Active streams complete naturally. No orphaned processes.
 - **SC-006**: Users can review, approve, or reject each Auto Mode result independently using the standard preview/finalize flow per conversation.
 - **SC-007**: Auto Mode conversations are fully functional conversations — users can click into them, see the chat history, manually interact, preview, and finalize.
-<<<<<<< HEAD
-=======
 - **SC-008**: Auto Mode messages display with proper formatting including tool boxes, markdown rendering, and structured content blocks — identical to regular chat conversations.
->>>>>>> 268b0a7 (fix: markdown view on automode)
+- **SC-009**: On Auto Mode activation, `sc/automode` is created/updated from the user-selected base branch before the first feature starts.
+- **SC-010**: For each successfully processed feature, `sc/automode` is updated in-cycle, and no unresolved traceability errors remain after final `skill:better-spec` execution.
 
 ## Assumptions
 

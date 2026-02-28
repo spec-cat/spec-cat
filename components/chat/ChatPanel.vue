@@ -119,11 +119,12 @@ const isSameAsBase = computed(() =>
 
 const canPreview = computed(() => {
   const conv = chatStore.activeConversation
-  return conv?.hasWorktree && !conv?.finalized && !chatStore.isActiveConversationStreaming
+  return conv?.hasWorktree && !conv?.finalized
 })
 
 const canFinalize = computed(() => {
-  return canPreview.value && !isSameAsBase.value
+  const conv = chatStore.activeConversation
+  return !!conv?.hasWorktree && !conv?.finalized && !chatStore.isActiveConversationStreaming && !isSameAsBase.value
 })
 
 function handleFinalizeClick() {

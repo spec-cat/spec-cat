@@ -1,104 +1,98 @@
-# Research: Auto Mode (013-auto-mode)
+# Research: Auto Mode
 
-**Date**: 2026-02-24
-**Phase**: 0 — Outline & Research
+**Date**: 2026-02-28  
+**Feature**: `/home/khan/src/brick/specs/013-auto-mode/spec.md`
 
-## R-001: How does Auto Mode integrate with existing conversation system?
+## Decision: Queue Eligibility and Discovery
 
-**Decision**: Extend the existing Conversation entity with an `autoMode?: boolean` field. Auto Mode creates conversations via `chatStore.createConversation({ featureId })` — the same API used by cascade automation (012).
+**Decision**: Discover features from `/home/khan/src/brick/specs`, include only directories matching `NNN-*` with `spec.md`, then sort lexicographically.
 
-**Rationale**: The spec explicitly states "reuses existing chat UI and conversation system." The `Conversation` interface already has `featureId?: string` which is the primary key for feature-to-conversation association. Adding `autoMode: boolean` enables UI differentiation (badge) without any structural change.
-
-**Alternatives considered**:
-- Separate data structure for Auto Mode sessions → Rejected because it would duplicate conversation management, violate Simplicity principle, and prevent reuse of preview/finalize flow.
-- Using conversation title prefix (e.g., "[AUTO]") instead of a flag → Rejected because it's fragile, pollutes user-visible titles, and breaks search.
-
-## R-002: Server-side vs client-side cascade orchestration
-
-**Decision**: Client-side orchestration using existing cascade automation infrastructure with server-side queue management.
-
-**Rationale**: The spec states "reuses existing chat UI and conversation system — each spec unit gets its own conversation with cascade pipeline." The existing cascade automation (012) already handles client-side cascade execution through the chat streaming infrastructure. Auto Mode will trigger these cascades programmatically.
+**Rationale**: This exactly satisfies FR-003 and FR-003a while reusing existing feature scanning behavior from `/api/specs/features`.
 
 **Alternatives considered**:
-- Pure server-side orchestration → Rejected because it would duplicate cascade logic and break consistency with manual cascade execution.
-- Hybrid model → This is actually what we're implementing: server manages the queue, client executes cascades.
+- Include all directories under `specs/` (rejected: violates FR-003a).
+- Use filesystem order (rejected: nondeterministic processing sequence).
 
-## R-003: Concurrency model for parallel spec processing
+## Decision: Incremental Execution and Skip Logic
 
-**Decision**: Process up to N features concurrently using Promise-based concurrency control (default N=3, configurable via settings).
+**Decision**: Persist SHA-256 hashes for `spec.md`, `plan.md`, and `tasks.md` after successful cascades only; skip when all hashes match; otherwise choose first changed file as cascade start (`spec -> plan -> tasks -> skill:better-spec`).
 
-**Rationale**: FR-013 requires concurrent processing. JavaScript's Promise.all with chunking provides simple concurrency control. The existing conversation system can handle multiple concurrent sessions.
-
-**Alternatives considered**:
-- Worker threads → Rejected; unnecessary complexity for this scale.
-- Sequential processing only → Rejected; FR-013 explicitly requires configurable concurrency.
-
-**Implementation pattern**:
-```typescript
-async function processWithConcurrency(queue: string[], concurrency: number) {
-  const active = new Set<Promise<void>>()
-
-  for (const featureId of queue) {
-    while (active.size >= concurrency) {
-      await Promise.race(active)
-    }
-
-    const promise = processFeature(featureId)
-      .finally(() => active.delete(promise))
-    active.add(promise)
-  }
-
-  await Promise.all(active)
-}
-```
-
-## R-004: Queue state persistence for page refresh resilience
-
-**Decision**: Dual persistence - runtime state in Pinia store, durable state in localStorage.
-
-**Rationale**: FR-015 requires queue state persistence. LocalStorage provides sufficient durability for queue metadata (feature IDs, states). The chat store already follows this pattern for other persistent state.
+**Rationale**: Matches FR-003b, FR-005, and FR-018 while minimizing unnecessary AI runs.
 
 **Alternatives considered**:
-- Server-side file storage → Rejected as more complex than needed for simple queue state.
-- IndexedDB → Rejected; localStorage is simpler and sufficient for queue metadata.
-- In-memory only → Rejected; doesn't survive page refresh per FR-015.
+- Always rerun full chain (rejected: wastes cycles and conflicts with incremental requirement).
+- Hash only `spec.md` (rejected: misses plan/tasks-only drift).
 
-## R-005: Constitution conversation handling
+## Decision: Runtime Scheduler Model
 
-**Decision**: Create a dedicated conversation with `featureId: 'constitution'`. This conversation runs the constitution update workflow.
+**Decision**: Use a bounded-concurrency queue scheduler (`queued/running/success/failed/skipped`) with default concurrency `3`, user-configurable in settings.
 
-**Rationale**: FR-012 specifies a dedicated conversation with featureId "constitution". The constitution workflow is different from feature specs — it updates project-wide configuration. Treating it as a special case in the queue keeps the architecture clean.
-
-**Alternatives considered**:
-- Processing constitution as part of every feature cascade → Rejected; constitution is project-wide, not per-feature.
-- Separate background job → Rejected; the spec explicitly says it should be a conversation visible in the list.
-
-## R-006: Concurrency settings storage
-
-**Decision**: Add `autoModeConcurrency: number` to the existing settings store in Pinia. Persist via localStorage like other settings.
-
-**Rationale**: FR-016 requires a settings page control. The existing settings infrastructure provides the established pattern for user preferences.
+**Rationale**: Satisfies FR-013 and FR-016 and aligns with existing Pinia-driven UI status updates.
 
 **Alternatives considered**:
-- Separate localStorage key → Rejected; settings should be centralized.
-- Server-side config → Rejected; this is a user preference that should follow the user.
+- Sequential execution only (rejected: violates FR-013).
+- Separate worker process manager (rejected: unnecessary complexity for current architecture).
 
-## R-007: Spec discovery and change detection
+## Decision: Toggle-Off and Manual-Interaction Cancellation
 
-**Decision**: Server endpoint to list specs with SHA-256 hashes, client-side comparison with previous run.
+**Decision**: On toggle-off, mark queued tasks failed with reason `Auto Mode disabled`, allow active tasks to complete; when a user manually sends a message in a running auto conversation, abort cascade and mark failed `Manual interaction`.
 
-**Rationale**: FR-003b requires SHA-256 hash comparison to skip unchanged specs. Server has filesystem access to compute hashes efficiently.
-
-**Alternatives considered**:
-- Client-side hashing → Rejected; would require fetching all spec content.
-- File modification times → Rejected; less reliable than content hashing.
-
-## R-008: "Auto" badge implementation
-
-**Decision**: Add badge in ConversationListItem.vue component, styled with retro terminal theme colors.
-
-**Rationale**: FR-008 requires visual distinction. Following existing badge patterns (streaming indicator) ensures consistency.
+**Rationale**: Directly implements FR-010, FR-010a, and FR-020 with clear user control semantics.
 
 **Alternatives considered**:
-- Different background color → Rejected; badges are clearer.
-- Separate list section → Rejected; spec says normal conversation list.
+- Hard-stop all running tasks immediately (rejected: conflicts with FR-010a).
+- Ignore manual user input during auto run (rejected: conflicts with clarified behavior).
+
+## Decision: Conversation and UI Reuse
+
+**Decision**: Extend existing `Conversation` with `autoMode?: boolean`, render `auto` badge in conversation list items, and keep full existing lifecycle actions unchanged.
+
+**Rationale**: Meets FR-004, FR-008, and FR-014 while preserving established workflows.
+
+**Alternatives considered**:
+- New Auto Mode-specific conversation type/list (rejected: duplicates lifecycle and review UX).
+- Title prefix markers only (rejected: brittle and user-editable).
+
+## Decision: Base Branch and `sc/automode` Integration
+
+**Decision**: Require base-branch selection at activation, initialize/fast-forward `sc/automode` from that base, create feature conversations from `sc/automode`, and after each successful feature cascade integrate it into `sc/automode` immediately.
+
+**Rationale**: Implements FR-022, FR-023, and FR-024 while keeping a continuously accumulated integration branch for the cycle.
+
+**Alternatives considered**:
+- Use per-feature base branches directly (rejected: no shared accumulation branch).
+- Integrate only at cycle end (rejected: conflicts with FR-024).
+
+## Decision: Conflict Handling During In-Cycle Integration
+
+**Decision**: Reuse existing AI-assisted rebase conflict-resolution capabilities for `sc/automode` integration conflicts.
+
+**Rationale**: Satisfies FR-025 with existing server/chat conflict tooling rather than introducing new resolver logic.
+
+**Alternatives considered**:
+- Fail immediately on conflict (rejected: violates FR-025 expectation).
+- Manual-only conflict resolution (rejected: does not meet automatic attempt requirement).
+
+## Decision: Constitution and `.speckit` Synchronization
+
+**Decision**: Add a dedicated queue unit with `featureId="constitution"`, run constitution update workflow in a normal conversation/worktree, and require normal preview/finalize review.
+
+**Rationale**: Fulfills FR-012 and preserves parity with feature-level Auto Mode outputs.
+
+**Alternatives considered**:
+- Fold constitution updates into every feature task (rejected: excessive duplication).
+- Hidden background process outside conversations (rejected: breaks visibility/review model).
+
+## Decision: Persistence for Resume Semantics
+
+**Decision**: Persist Auto Mode enabled flag, concurrency, task queue state, and file-hash records in project-scoped storage; on resume convert persisted `running` tasks back to `queued` before restart.
+
+**Rationale**: Covers FR-002, FR-015, and FR-015a with deterministic recovery.
+
+**Alternatives considered**:
+- Memory-only runtime state (rejected: cannot resume after refresh).
+- Persist only queue order without task state (rejected: cannot correctly normalize `running` state).
+
+## Clarification Resolution Summary
+
+All technical context unknowns are resolved. No `NEEDS CLARIFICATION` items remain for Phase 1 design.

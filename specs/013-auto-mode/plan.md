@@ -1,176 +1,192 @@
 # Implementation Plan: Auto Mode
 
-**Branch**: `013-auto-mode` | **Date**: 2026-02-24 | **Spec**: [spec.md](./spec.md)
-**Input**: Feature specification from `/specs/013-auto-mode/spec.md`
-
-**Note**: This template is filled in by the `/speckit.plan` command. See `.specify/templates/commands/plan.md` for the execution workflow.
+**Branch**: `013-auto-mode` | **Date**: 2026-02-28 | **Spec**: [/home/khan/src/brick/specs/013-auto-mode/spec.md](/home/khan/src/brick/specs/013-auto-mode/spec.md)
+**Input**: Feature specification from `/home/khan/src/brick/specs/013-auto-mode/spec.md`
 
 ## Summary
 
-Auto Mode provides a background scheduler that automatically runs the speckit workflow for each spec unit, finds discrepancies between implementation and specs, and updates specs to match the current codebase. It reuses the existing chat UI and conversation system, creating one conversation per spec unit with a cascade pipeline (plan → tasks → skill:better-spec). The feature includes an on/off toggle in the UI, processes specs concurrently (configurable limit), and requires human review via the standard preview/finalize flow before merging to main.
-
-## Scope Guardrails *(mandatory)*
-
-### Owned Files
-
-- `stores/chat.ts` - AutoModeState type and auto mode state management methods only
-- `components/chat/ChatSidebar.vue` - Auto Mode toggle button addition only
-- `components/conversations/ConversationListItem.vue` - Auto Mode badge display logic only
-- `composables/useAutoMode.ts` - New file, fully owned by this feature
-- `server/api/automode/[...].ts` - New API endpoints, fully owned by this feature
-- `pages/settings.vue` - Auto Mode concurrency setting addition only
-
-### Do Not Edit
-
-- `009-conversation-management` owned files (conversation core logic)
-- `011-chat-worktree-integration` owned files (worktree integration logic)
-- `012-cascade-automation` owned files (cascade pipeline logic)
-- `server/api/claude/` - Claude integration endpoints
-- `server/api/conversations/` - Conversation management endpoints
-- `server/api/worktrees/` - Worktree management endpoints
-- Core constitution files or .speckit configuration
-
-### Parallelization Notes
-
-- Auto Mode toggle UI can be developed independently of queue management logic
-- Conversation badge display can be implemented separately from Auto Mode state management
-- Settings page concurrency control can be added in parallel with main feature
-- Constitution conversation handling can be implemented as a separate task after core queue processing works
+Implement a background Auto Mode orchestrator that scans eligible feature specs, skips unchanged features by SHA-256 hashes, runs incremental speckit cascade steps (`plan -> tasks -> skill:better-spec`) in per-feature conversations/worktrees, integrates successful feature outputs into `sc/automode` in-cycle, and leaves all spec updates for human preview/finalize before main-branch merge.
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.6+, Node.js runtime via Nuxt 3.16+
-**Primary Dependencies**: Nuxt 3.16+, Vue 3.5+, Pinia 2.2+, @anthropic-ai/claude-code SDK
-**Storage**: localStorage for settings persistence, existing chat store for runtime state, filesystem-backed conversation persistence
-**Testing**: Manual testing via UI interactions, TypeScript type checking
-**Target Platform**: Web browser (Chrome/Firefox/Safari), Linux server for Nitro backend
-**Project Type**: web - Nuxt 3 universal application
-**Performance Goals**: Sub-second UI response for toggle actions, concurrent processing of up to N specs (configurable, default 3)
-**Constraints**: Must reuse existing conversation/cascade infrastructure, no new backend services, human review required before main branch merge
-**Scale/Scope**: Typical project has 10-50 spec directories, each cascade takes 30s-5min depending on complexity
+**Language/Version**: TypeScript 5.6+, Vue 3.5+, Nuxt 3.16+, Node.js runtime in Nitro server handlers  
+**Primary Dependencies**: Pinia chat/settings stores, existing chat streaming pipeline (`composables/useChatStream.ts`), Nitro APIs under `server/api/*`, git/worktree utilities in `server/utils/*`, `@anthropic-ai/claude-code` provider stack  
+**Storage**: Project-scoped JSON under `~/.spec-cat/projects/{hash}/` via `/home/khan/src/brick/server/utils/specCatStore.ts` plus existing conversation/settings persistence contracts (`/api/conversations`, `/api/settings`)  
+**Testing**: Manual end-to-end UI validation, `pnpm typecheck`, targeted Vitest for new state-machine utilities if extracted  
+**Target Platform**: Browser UI + local filesystem-backed Nitro server on developer workstation  
+**Project Type**: Nuxt full-stack web application  
+**Performance Goals**: Queue discovery under 3s (SC-002), first cascade kick-off within 5s (SC-001), bounded concurrency default 3 active cascades  
+**Constraints**: Never modify implementation code (FR-007); reuse existing chat rendering/rules (FR-021, FR-026); single-cycle per activation (FR-017); no dev server run in AI session  
+**Scale/Scope**: All eligible `specs/NNN-*` directories plus dedicated `constitution` unit, each as first-class conversation with preview/finalize lifecycle
 
 ## Constitution Check
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-### Core Principles Compliance
+### Pre-Research Gate Check
 
-- **I. User Control First**: ✅ PASS - Auto Mode has explicit on/off toggle, all changes require human review via preview/finalize
-- **II. Streaming-Native Architecture**: ✅ PASS - Reuses existing streaming conversation infrastructure
-- **III. CLI Parity**: ✅ PASS - Uses same underlying conversation and cascade mechanisms as CLI
-- **IV. Multi-Project & History Support**: ✅ PASS - Creates standard conversations that integrate with history system
-- **V. Keyboard-Driven Experience**: ✅ PASS - No new keyboard shortcuts needed, existing shortcuts work in Auto Mode conversations
-- **VI. Simplicity Over Complexity**: ✅ PASS - Reuses existing systems, minimal new code, no over-engineering
-- **VII. Type Safety**: ✅ PASS - Will use TypeScript with strict mode for all new code
-
-### Technology Constraints
-
-- **Stack Requirements**: ✅ PASS - Uses Nuxt 3, Vue 3, TypeScript, Pinia, Tailwind CSS
-- **Dependencies**: ✅ PASS - No new external dependencies, uses @anthropic-ai/claude-code SDK via existing integration
-
-### Development Standards
-
-- **Code Organization**: ✅ PASS - Follows established patterns (composables, components, stores, server utils)
-- **Testing Approach**: ✅ PASS - Manual testing for UI, TypeScript type checking
-
-**GATE RESULT**: ✅ ALL CHECKS PASS - No constitution violations
-
-### Post-Design Re-check (Phase 1 Complete)
-
-All constitution principles remain satisfied after design phase:
-- Data model follows existing patterns (minimal Conversation extension)
-- API contracts use standard REST patterns
-- No new external dependencies introduced
-- Architecture reuses existing infrastructure
-- Type safety maintained throughout
-
-**FINAL GATE RESULT**: ✅ ALL CHECKS PASS - Design compliant with constitution
+| Gate | Status | Notes |
+|------|--------|-------|
+| User Control First | PASS | Sidebar toggle is explicit; disabling blocks new tasks and preserves manual stop authority. |
+| Streaming-Native Architecture | PASS | Auto Mode uses existing conversation streaming pipeline and content block rendering. |
+| CLI Parity | PASS | No new provider path; reuses current chat/tool execution semantics. |
+| Multi-Project & History Support | PASS | State persists through project-scoped store APIs and conversation history model. |
+| Keyboard-Driven Experience | PASS | No shortcut regressions; existing controls remain operable. |
+| Simplicity Over Complexity | PASS | Reuse existing conversations, worktrees, and cascade primitives; add orchestration layer only. |
+| Type Safety | PASS | New Auto Mode state/contracts will be typed and validated through existing TS patterns. |
+| Stack Constraints | PASS | Nuxt/Vue/Pinia/Tailwind + existing Node/Nitro utilities only. |
 
 ## Project Structure
 
 ### Documentation (this feature)
 
 ```text
-specs/[###-feature]/
-├── plan.md              # This file (/speckit.plan command output)
-├── research.md          # Phase 0 output (/speckit.plan command)
-├── data-model.md        # Phase 1 output (/speckit.plan command)
-├── quickstart.md        # Phase 1 output (/speckit.plan command)
-├── contracts/           # Phase 1 output (/speckit.plan command)
-└── tasks.md             # Phase 2 output (/speckit.tasks command - NOT created by /speckit.plan)
+/home/khan/src/brick/specs/013-auto-mode/
+├── plan.md
+├── research.md
+├── data-model.md
+├── quickstart.md
+├── contracts/
+│   └── automode-api.yaml
+└── tasks.md
 ```
 
 ### Source Code (repository root)
 
 ```text
-# Nuxt 3 Web Application Structure
-components/
-├── chat/
-│   └── ChatSidebar.vue         # Add Auto Mode toggle button
-├── conversations/
-│   └── ConversationListItem.vue # Add Auto Mode badge display
-└── settings/
-    └── AutoModeSettings.vue     # New component for concurrency control
+/home/khan/src/brick/components/
+├── features/FeaturesPanel.vue
+├── features/AutoModeToggle.vue
+├── settings/SettingsModal.vue
+└── chat/
+   ├── ConversationList.vue
+   └── ConversationItem.vue
 
-composables/
-└── useAutoMode.ts              # New composable for Auto Mode logic
+/home/khan/src/brick/composables/
+└── useChatStream.ts
 
-stores/
-└── chat.ts                     # Extend with AutoModeState
+/home/khan/src/brick/stores/
+├── chat.ts
+├── autoMode.ts
+└── settings.ts
 
-server/
-├── api/
-│   └── automode/              # New directory
-│       ├── queue.get.ts       # Get current queue state
-│       ├── toggle.post.ts     # Enable/disable Auto Mode
-│       └── settings.post.ts   # Update concurrency settings
-└── utils/
-    └── automode.ts            # New utility for server-side Auto Mode logic
+/home/khan/src/brick/types/
+├── autoMode.ts
+└── chat.ts
 
-pages/
-└── settings.vue               # Add Auto Mode settings section
+/home/khan/src/brick/server/api/
+├── automode/
+│  ├── state.get.ts
+│  ├── start.post.ts
+│  ├── stop.post.ts
+│  ├── status.get.ts
+│  └── integration/
+│     ├── prepare.post.ts
+│     └── feature.post.ts
+├── specs/features.get.ts
+├── settings.get.ts
+├── settings.post.ts
+└── chat/worktree.post.ts
 
-types/
-└── automode.ts               # New types for Auto Mode
+/home/khan/src/brick/server/utils/
+├── autoModeStore.ts
+├── autoModeHash.ts
+├── autoModeDiscovery.ts
+├── autoModeScheduler.ts
+├── autoModeStepPlanner.ts
+├── autoModeConversation.ts
+├── autoModeIntegration.ts
+├── specCatStore.ts
+├── ensureChatWorktree.ts
+└── git.ts
+
+/home/khan/src/brick/server/plugins/
+└── autoModeScheduler.ts
 ```
 
-**Structure Decision**: Nuxt 3 web application structure selected. All new Auto Mode functionality integrates into the existing component/composable/store architecture. Server-side logic uses Nitro API routes for state management and queue processing. No separate backend service needed - leverages existing conversation and cascade infrastructure.
+**Structure Decision**: Keep current Nuxt component/store/server split; add Auto Mode orchestration with minimal new modules and focused extensions to existing chat/settings contracts.
 
-## Complexity Tracking
+## Phase 0: Research Plan
 
-> **Fill ONLY if Constitution Check has violations that must be justified**
+### Research Tasks
 
-| Violation | Why Needed | Simpler Alternative Rejected Because |
-|-----------|------------|-------------------------------------|
-| [e.g., 4th project] | [current need] | [why 3 projects insufficient] |
-| [e.g., Repository pattern] | [specific problem] | [why direct DB access insufficient] |
+- Research bounded-concurrency scheduler patterns for per-feature chat cascade dispatch in Pinia-driven UI workflows.
+- Research SHA-256 hash persistence and incremental step restart rules (`spec.md`, `plan.md`, `tasks.md`) for deterministic queue skipping.
+- Research branch-baseline orchestration for `sc/automode` lifecycle: base selection, fast-forward/reset preparation, in-cycle integration, and conflict recovery.
+- Research safe cancellation semantics when manual user messages interrupt running automated cascades.
+- Research constitution and `.speckit` synchronization strategy as a dedicated conversation unit with full review parity.
+
+### Phase 0 Output
+
+- `/home/khan/src/brick/specs/013-auto-mode/research.md`
+
+## Phase 1: Design & Contracts
+
+### Data Model Deliverable
+
+- `/home/khan/src/brick/specs/013-auto-mode/data-model.md`
+
+### Contracts Deliverable
+
+- `/home/khan/src/brick/specs/013-auto-mode/contracts/automode-api.yaml`
+
+### Quickstart Deliverable
+
+- `/home/khan/src/brick/specs/013-auto-mode/quickstart.md`
+
+### Agent Context Update
+
+- Run `/home/khan/src/brick/.specify/scripts/bash/update-agent-context.sh codex`
 
 ## FR Coverage Matrix
 
-All functional requirements from the spec are addressed in this plan:
+| FR | Planned Coverage |
+|----|------------------|
+| FR-001 | Sidebar toggle component and feature panel header integration (`FeaturesPanel.vue` + new toggle component/store action). |
+| FR-002 | Persist `autoModeEnabled` in existing settings API + project-scoped store persistence and restore on hydrate. |
+| FR-003 | Queue builder scanning `specs/` and sorting alphabetically before dispatch. |
+| FR-003a | Eligibility filter for `NNN-*` directories requiring `spec.md`. |
+| FR-003b | SHA-256 comparison over `spec.md`, `plan.md`, `tasks.md` against stored successful hashes. |
+| FR-004 | Conversation creation/reuse via existing `chatStore.findConversationByFeature` and `createConversation`. |
+| FR-005 | Incremental cascade step resolver selecting start step from changed files; always stop before implement. |
+| FR-006 | Per-conversation worktree reuse through existing `/api/chat/worktree` and conversation worktree fields. |
+| FR-007 | Auto Mode command guardrails enforcing spec-only command chain and disallowing implementation edits. |
+| FR-008 | Conversation list auto badge field (`Conversation.autoMode`) and item rendering updates. |
+| FR-009 | Keep changes in conversation worktree until preview/finalize by user. |
+| FR-010 | On disable: queued tasks moved to failed (`Auto Mode disabled`) and scheduler stops new starts. |
+| FR-010a | Running tasks are allowed to complete and report terminal state normally. |
+| FR-011 | Skip queue entries where feature already has active worktree conversation. |
+| FR-012 | Dedicated `featureId: constitution` queue entry with constitution/.speckit command sequence. |
+| FR-013 | Bounded parallel worker scheduler honoring configurable max active cascades. |
+| FR-014 | No lifecycle fork; auto conversations remain standard rename/delete/preview/finalize/search entries. |
+| FR-015 | Persist queue/session state and resume unfinished tasks after refresh. |
+| FR-015a | Rehydrate logic resets persisted `running` tasks to `queued` before restart. |
+| FR-016 | Settings page concurrency control (default 3) with persistence and validation. |
+| FR-017 | Single-cycle engine transitions to idle after queue drain; no automatic re-scan until toggle restart. |
+| FR-018 | Persist new hashes only on successful full cascade completion. |
+| FR-019 | Toggle access unrestricted for authenticated users (no additional role checks). |
+| FR-020 | Manual user message while auto cascade active aborts cascade and marks failed (`Manual interaction`). |
+| FR-021 | Auto messages continue using structured `contentBlocks` pipeline (`text/tool_use/tool_result`). |
+| FR-022 | Activation flow requires base branch selection then initializes/fast-forwards `sc/automode`. |
+| FR-023 | Feature worktrees/conversations created from `sc/automode` baseline for the activation cycle. |
+| FR-024 | Successful feature result integrated immediately into `sc/automode` before next completion bookkeeping. |
+| FR-025 | Integration conflicts route through existing AI-assisted rebase resolution path. |
+| FR-026 | No alternate prompt policy; auto mode invokes existing chat execution pipeline unchanged. |
+| FR-027 | `skill:better-spec` is mandatory terminal step and success gate before marking feature success. |
 
-| FR ID | Requirement Summary | Implementation Approach |
-|-------|---------------------|------------------------|
-| FR-001 | On/off toggle in sidebar | Add toggle button to ChatSidebar.vue component |
-| FR-002 | Persist Auto Mode state | Store enabled state in localStorage via chat store |
-| FR-003 | Scan specs and build queue | Server endpoint to list specs with SHA-256 hashes |
-| FR-003a | Eligible directory pattern | Validate NNN-* pattern server-side |
-| FR-003b | SHA-256 change detection | Server computes hashes, client stores for comparison |
-| FR-004 | Create conversation per feature | Use existing createConversation API with featureId |
-| FR-005 | Run cascade sequence | Programmatically trigger cascade with plan,tasks,skill:better-spec |
-| FR-006 | Isolated worktree per conversation | Automatic via existing worktree integration |
-| FR-007 | Update specs via Claude analysis | skill:better-spec execution handles this |
-| FR-008 | Auto badge in conversation list | Add badge display logic to ConversationListItem.vue |
-| FR-009 | Human review required | Standard preview/finalize flow unchanged |
-| FR-010 | Disable stops queued tasks | Queue state management in useAutoMode composable |
-| FR-010a | Running tasks complete naturally | Cascade completion tracked in conversation |
-| FR-011 | Skip active worktrees | Server checks worktree existence before queueing |
-| FR-012 | Constitution conversation | Special featureId "constitution" handling |
-| FR-013 | Concurrent processing | Promise-based concurrency control in composable |
-| FR-016 | Concurrency setting | Add setting to settings page and store |
-| FR-014 | Full conversation lifecycle | No changes needed - Auto Mode uses standard conversations |
-| FR-015 | Queue persistence | LocalStorage for queue state |
-| FR-015a | Resume resets running to queued | State recovery logic in useAutoMode |
-| FR-017 | Single cycle operation | Idle state tracking in AutoModeState |
+## Post-Design Constitution Re-Check
 
-**Coverage**: 100% - All 20 functional requirements have implementation paths defined.
+| Gate | Status | Notes |
+|------|--------|-------|
+| User Control First | PASS | Explicit toggle state, disable semantics, and manual-interaction cancellation are defined. |
+| Streaming-Native Architecture | PASS | Design keeps all Auto Mode execution inside existing streaming conversation runtime. |
+| CLI Parity | PASS | No provider bypass; same request/permission/tool channels as normal chat. |
+| Multi-Project & History Support | PASS | Uses project-scoped persistent stores and existing conversation records. |
+| Keyboard-Driven Experience | PASS | No keyboard regression introduced by Auto Mode additions. |
+| Simplicity Over Complexity | PASS | Extends current chat/worktree abstractions without alternate orchestration stack. |
+| Type Safety | PASS | Data model defines strict typed states, transitions, and validation boundaries. |
+| Stack Constraints | PASS | No non-approved frameworks or external services added. |
+
+## Complexity Tracking
+
+No constitution violations identified.

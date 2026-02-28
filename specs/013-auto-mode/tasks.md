@@ -1,155 +1,142 @@
 # Tasks: Auto Mode
 
-**Input**: Design documents from `/specs/013-auto-mode/`
-**Prerequisites**: plan.md (required), spec.md (required), research.md, data-model.md, contracts/api.md, quickstart.md
+**Input**: Design documents from `/home/khan/src/brick/specs/013-auto-mode/`  
+**Prerequisites**: `/home/khan/src/brick/specs/013-auto-mode/plan.md`, `/home/khan/src/brick/specs/013-auto-mode/spec.md`, `/home/khan/src/brick/specs/013-auto-mode/research.md`, `/home/khan/src/brick/specs/013-auto-mode/data-model.md`, `/home/khan/src/brick/specs/013-auto-mode/contracts/automode-api.yaml`
 
-**Tests**: Not requested — manual testing per CLAUDE.md.
+**Tests**: No explicit TDD/automated-test requirement in the feature spec; tasks emphasize implementation plus explicit manual validation.
 
-**Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
+**Organization**: Tasks are grouped by user story to support independent implementation and verification.
 
-## Task Format Requirements
+## Format: `[ID] [P?] [Story] Description`
 
-**MANDATORY**: Every task MUST follow this exact format:
-```text
-- [ ] [TaskID] [P?] [Story?] Description with file path
-```
-
-Components:
-- **Checkbox**: `- [ ]` (required)
-- **Task ID**: Sequential (T001, T002...)
-- **[P]**: Present only if parallelizable
-- **[Story]**: Required for user story tasks ([US1], [US2], [US3], [US4])
-- **File path**: Must be included in description
-
----
+- **[P]**: Can run in parallel (different files, no direct dependency)
+- **[Story]**: User story mapping label (`[US1]`, `[US2]`, `[US3]`, `[US4]`)
+- Every task includes explicit `[FR-XXX]` or `[SC-XXX]` traceability tags and absolute file paths
 
 ## Phase 1: Setup (Shared Infrastructure)
 
-**Purpose**: Extend data model types and shared store state needed by all user stories
+**Purpose**: Establish Auto Mode primitives and persistence helpers used across all stories.
 
-- [X] T001 [P] Add `autoMode?: boolean` field to `Conversation` interface in types/chat.ts
-- [X] T002 [P] Add `concurrency: number` field to `AutoModeConfig` interface in types/autoMode.ts
-- [X] T003 [P] Add `AutoModePersistedSession` interface to types/autoMode.ts
-- [X] T004 [P] Add `autoModeConcurrency: number` field to SettingsStoreState in stores/settings.ts
-- [X] T005 [P] Add `setAutoModeConcurrency(value: number)` action to settings store in stores/settings.ts
-- [X] T006 Update `resetToDefaults()` in stores/settings.ts to reset autoModeConcurrency to 3
-- [X] T007 Update `hydrate()` in stores/settings.ts to load autoModeConcurrency from localStorage
+- [ ] T001 Create Auto Mode shared type definitions (`AutoModeState`, `AutoModeTask`, hash records) in `/home/khan/src/brick/types/autoMode.ts` [FR-003] [FR-003b] [FR-013] [FR-015]
+- [ ] T002 Create Auto Mode project-store read/write helpers in `/home/khan/src/brick/server/utils/autoModeStore.ts` [FR-002] [FR-015] [FR-018]
+- [ ] T003 [P] Create SHA-256 hash helper for `spec.md/plan.md/tasks.md` in `/home/khan/src/brick/server/utils/autoModeHash.ts` [FR-003b] [FR-018]
+- [ ] T004 [P] Create queue discovery helper for eligible `NNN-*` + `spec.md` directories in `/home/khan/src/brick/server/utils/autoModeDiscovery.ts` [FR-003] [FR-003a]
 
 ---
 
 ## Phase 2: Foundational (Blocking Prerequisites)
 
-**Purpose**: Core scheduler upgrades that MUST be complete before user story features work
+**Purpose**: Build scheduler, API surface, persistence normalization, and `sc/automode` integration core required for MVP behavior.
 
-**⚠️ CRITICAL**: No user story work can begin until this phase is complete
+**⚠️ CRITICAL**: No user-story phase starts before this is complete.
 
-- [X] T008 Add concurrency parameter to `toggle()` method signature in server/utils/autoModeScheduler.ts
-- [X] T009 Store concurrency value on scheduler instance in server/utils/autoModeScheduler.ts
-- [X] T010 Replace sequential processing loop with Promise.race-based concurrent queue in runCycle() method in server/utils/autoModeScheduler.ts
-- [X] T011 Implement processWithConcurrency helper function using pattern from research.md R-003 in server/utils/autoModeScheduler.ts
-- [X] T012 Create session persistence file at ~/.spec-cat/projects/{hash}/auto-mode-session.json on session start in server/utils/autoModeScheduler.ts
-- [X] T013 Update session persistence file on each task state change in server/utils/autoModeScheduler.ts
-- [X] T014 Delete session persistence file on session completion or stop in server/utils/autoModeScheduler.ts
-- [X] T015 Restore session from persistence file on server startup in server/utils/autoModeScheduler.ts
-- [X] T016 Create conversation via chat store when task enters running state in stores/autoMode.ts
-- [X] T017 Set autoMode: true on created conversations in stores/autoMode.ts
-- [X] T018 Link worktree to conversation when created in stores/autoMode.ts
-- [X] T019 Accept concurrency parameter in request body of server/api/auto-mode/toggle.post.ts
-- [X] T020 Pass concurrency parameter from API to autoModeScheduler.toggle() in server/api/auto-mode/toggle.post.ts
+- [ ] T005 Implement scheduler state machine (single-cycle lifecycle + bounded concurrency) in `/home/khan/src/brick/server/utils/autoModeScheduler.ts` [FR-013] [FR-017]
+- [ ] T006 Implement incremental step planner (`plan/tasks/skill:better-spec`) with spec-only guardrails in `/home/khan/src/brick/server/utils/autoModeStepPlanner.ts` [FR-005] [FR-007] [FR-027]
+- [ ] T007 Implement conversation creation/reuse and active-worktree skip checks in `/home/khan/src/brick/server/utils/autoModeConversation.ts` [FR-004] [FR-006] [FR-011]
+- [ ] T008 [P] Add runtime state API `GET /api/automode/state` in `/home/khan/src/brick/server/api/automode/state.get.ts` [FR-015] [FR-017] [NFR-002]
+- [ ] T009 [P] Add start API `POST /api/automode/start` in `/home/khan/src/brick/server/api/automode/start.post.ts` [FR-001] [FR-003] [FR-022]
+- [ ] T010 [P] Add stop API `POST /api/automode/stop` in `/home/khan/src/brick/server/api/automode/stop.post.ts` [FR-010] [FR-010a]
+- [ ] T011 [P] Add status API `GET /api/automode/status` in `/home/khan/src/brick/server/api/automode/status.get.ts` [FR-015] [FR-015a]
+- [ ] T012 Implement scheduler startup recovery (`running -> queued`) in `/home/khan/src/brick/server/plugins/autoModeScheduler.ts` [FR-015] [FR-015a] [NFR-002]
+- [ ] T013 Extend settings normalization/types with Auto Mode fields in `/home/khan/src/brick/utils/settings.ts` [FR-002] [FR-016]
+- [ ] T014 Persist and expose Auto Mode settings in `/home/khan/src/brick/server/api/settings.get.ts` [FR-002] [FR-016]
+- [ ] T015 Persist and validate Auto Mode settings writes in `/home/khan/src/brick/server/api/settings.post.ts` [FR-002] [FR-016] [FR-019]
+- [ ] T016 Implement integration-branch preparation API (`sc/automode` from selected base) in `/home/khan/src/brick/server/api/automode/integration/prepare.post.ts` [FR-022]
+- [ ] T017 Implement feature integration API for in-cycle accumulation to `sc/automode` in `/home/khan/src/brick/server/api/automode/integration/feature.post.ts` [FR-024]
+- [ ] T018 Implement AI-assisted integration conflict resolver in `/home/khan/src/brick/server/utils/autoModeIntegration.ts` [FR-025]
+- [ ] T019 Implement worktree baseline creation from `sc/automode` in `/home/khan/src/brick/server/utils/autoModeConversation.ts` [FR-023]
+- [ ] T020 Implement scheduler hook to integrate each successful feature in-cycle via integration API in `/home/khan/src/brick/server/utils/autoModeScheduler.ts` [FR-024]
 
-**Checkpoint**: Foundation ready — concurrent processing, session persistence, and conversation creation all work. User story implementation can now begin.
+**Checkpoint**: Core runtime supports queueing, persistence, branch baseline, and in-cycle integration.
 
 ---
 
-## Phase 3: User Story 1 — Enable Auto Mode (Priority: P1) 🎯 MVP
+## Phase 3: User Story 1 - Enable Auto Mode (Priority: P1) 🎯 MVP
 
-**Goal**: User clicks Auto Mode toggle → system scans specs, creates conversations per feature, runs cascade (plan → tasks → skill:better-spec) concurrently, updates specs in worktree branches
+**Goal**: Toggle Auto Mode in sidebar, select base branch, execute incremental cascades, and enforce disable/manual-cancel semantics.
 
-**Independent Test**: Toggle Auto Mode on → verify conversations appear per spec unit, cascade messages are sent, spec files are updated in each conversation's worktree. Toggle off → verify graceful stop.
+**Independent Test**: Toggle on with base branch selection; verify first cascade starts within 5s; disable behavior fails queued tasks but allows running tasks to finish.
 
 ### Implementation for User Story 1
 
-- [X] T021 [US1] Read autoModeConcurrency from settings store in autoModeStore.toggle() method in stores/autoMode.ts
-- [X] T022 [US1] Pass concurrency parameter in POST /api/auto-mode/toggle request body in stores/autoMode.ts
-- [X] T023 [US1] Handle "no specs to process" edge case in discoverFeatures() method in server/utils/autoModeScheduler.ts
-- [X] T024 [US1] Broadcast auto_mode_error WebSocket message when no specs found in server/utils/autoModeScheduler.ts
-- [X] T025 [US1] Transition session to idle state when no specs found in server/utils/autoModeScheduler.ts
-- [X] T026 [US1] Check for existing active worktree before processing feature in processFeature() method in server/utils/autoModeScheduler.ts
-- [X] T027 [US1] Mark task as skipped when active worktree exists in server/utils/autoModeScheduler.ts
-- [X] T028 [US1] Implement single-cycle operation - set session state to idle after all features processed in server/utils/autoModeScheduler.ts
-- [X] T029 [US1] Prevent re-scanning when toggle remains on but session is idle in server/utils/autoModeScheduler.ts
-- [X] T030 [US1] Call GET /api/auto-mode/status on store initialization in stores/autoMode.ts
-- [X] T031 [US1] Restore client state from server session if found in stores/autoMode.ts
-- [X] T032 [US1] Implement SHA-256 hash comparison to skip unchanged specs in server/utils/autoModeScheduler.ts
+- [ ] T021 [US1] Add `autoMode?: boolean` to conversation model in `/home/khan/src/brick/types/chat.ts` [FR-004] [FR-008]
+- [ ] T022 [US1] Extend chat-store conversation metadata handling for Auto Mode in `/home/khan/src/brick/stores/chat.ts` [FR-004] [FR-014]
+- [ ] T023 [US1] Create Auto Mode client store for enabled/idle/queue/concurrency state in `/home/khan/src/brick/stores/autoMode.ts` [FR-002] [FR-013] [FR-017]
+- [ ] T024 [US1] Implement start/stop/status client orchestration and hydration resume in `/home/khan/src/brick/stores/autoMode.ts` [FR-002] [FR-010] [FR-015]
+- [ ] T025 [US1] Create sidebar toggle with base-branch selection flow in `/home/khan/src/brick/components/features/AutoModeToggle.vue` [FR-001] [FR-022]
+- [ ] T026 [US1] Wire Auto Mode toggle into features panel header in `/home/khan/src/brick/components/features/FeaturesPanel.vue` [FR-001] [FR-019]
+- [ ] T027 [US1] Implement queue build + skip + incremental step assignment in scheduler in `/home/khan/src/brick/server/utils/autoModeScheduler.ts` [FR-003] [FR-003a] [FR-003b] [FR-005] [FR-018]
+- [ ] T028 [US1] Implement queued-task failure reason `Auto Mode disabled` while letting running tasks complete in `/home/khan/src/brick/server/utils/autoModeScheduler.ts` [FR-010] [FR-010a]
+- [ ] T029 [US1] Add manual-message cancellation hook for active auto cascades in `/home/khan/src/brick/composables/useChatStream.ts` [FR-020]
+- [ ] T030 [US1] Persist feature hashes only after successful final cascade completion in `/home/khan/src/brick/server/utils/autoModeScheduler.ts` [FR-018] [FR-027]
+- [ ] T031 [US1] Add explicit no-specs-found transition to idle with user notification in `/home/khan/src/brick/components/features/AutoModeToggle.vue` [FR-017]
+- [ ] T032 [US1] Add scheduler resilience path for worktree-creation failure while continuing remaining queue in `/home/khan/src/brick/server/utils/autoModeScheduler.ts` [FR-006] [FR-021]
 
-**Checkpoint**: User Story 1 fully functional — Auto Mode can be toggled on/off, processes all specs concurrently, creates conversations, and survives page refresh.
+**Checkpoint**: US1 is independently functional and testable.
 
 ---
 
-## Phase 4: User Story 2 — Monitor Auto Mode Progress (Priority: P2)
+## Phase 4: User Story 2 - Monitor Auto Mode Progress (Priority: P2)
 
-**Goal**: Auto Mode conversations appear in the conversation list with "auto" badge and streaming indicators. User can click into any conversation to see cascade chat history.
+**Goal**: Show Auto Mode conversation identity and progress inside existing conversation UI.
 
-**Independent Test**: Enable Auto Mode → verify conversations in list show "auto" badge, streaming indicators for active ones. Click into a conversation → verify cascade chat history is visible.
+**Independent Test**: With Auto Mode running, user sees `auto` badge + streaming/progress visibility and can inspect full structured conversation history.
 
 ### Implementation for User Story 2
 
-- [X] T033 [P] [US2] Add auto badge container div to components/conversations/ConversationListItem.vue
-- [X] T034 [US2] Add v-if="conversation.autoMode" condition for badge display in components/conversations/ConversationListItem.vue
-- [X] T035 [US2] Style auto badge with retro-yellow colors matching AutoModeToggle in components/conversations/ConversationListItem.vue
-- [X] T036 [US2] Position auto badge next to existing streaming indicator in components/conversations/ConversationListItem.vue
-- [X] T037 [US2] Verify conversation search works with autoMode conversations in conversation list
+- [ ] T033 [US2] Render `auto` badge for Auto Mode conversations in `/home/khan/src/brick/components/chat/ConversationItem.vue` [FR-008]
+- [ ] T034 [US2] Keep Auto Mode conversations first-class in list search/filter and ordering in `/home/khan/src/brick/components/chat/ConversationList.vue` [FR-014]
+- [ ] T035 [US2] Add Auto Mode status summary strip (running/idle/task counts) in `/home/khan/src/brick/components/chat/ConversationList.vue` [FR-003] [FR-017]
+- [ ] T036 [US2] Preserve structured Auto Mode content blocks for rendering parity in `/home/khan/src/brick/composables/useChatStream.ts` [FR-021] [FR-026] [NFR-003]
+- [ ] T037 [US2] Surface per-feature Auto Mode errors in conversation message history in `/home/khan/src/brick/server/utils/autoModeScheduler.ts` [FR-021]
 
-**Checkpoint**: User Story 2 complete — Auto Mode conversations are visually distinguishable and fully browsable.
+**Checkpoint**: US2 independently testable using existing conversation list/chat UI.
 
 ---
 
-## Phase 5: User Story 3 — Review and Merge Auto Mode Results (Priority: P2)
+## Phase 5: User Story 3 - Review and Merge Auto Mode Results (Priority: P2)
 
-**Goal**: User reviews Auto Mode spec changes using the standard preview/finalize flow — no new review UI needed.
+**Goal**: Ensure Auto Mode outputs remain review-gated with standard preview/finalize/discard lifecycle.
 
-**Independent Test**: Complete an Auto Mode run for one feature → click preview on that conversation → verify diffs are shown → finalize → verify merge to main.
+**Independent Test**: Complete Auto Mode task; preview, finalize, and discard operate exactly like normal conversations.
 
 ### Implementation for User Story 3
 
-- [X] T038 [US3] Ensure worktreePath is set correctly on Auto Mode conversations in server/utils/autoModeScheduler.ts
-- [X] T039 [US3] Ensure worktreeBranch is set correctly on Auto Mode conversations in server/utils/autoModeScheduler.ts
-- [X] T040 [US3] Verify POST /api/chat/preview works with Auto Mode conversations
-- [X] T041 [US3] Verify POST /api/chat/finalize works with Auto Mode conversations
-- [X] T042 [US3] Verify conversation delete cleans up Auto Mode worktrees in stores/chat.ts
+- [ ] T038 [US3] Keep Auto Mode conversations compatible with preview/finalize metadata in `/home/khan/src/brick/stores/chat.ts` [FR-009] [FR-014]
+- [ ] T039 [US3] Ensure Auto Mode conversation records preserve worktree/base branch review fields in `/home/khan/src/brick/server/utils/autoModeConversation.ts` [FR-006] [FR-009]
+- [ ] T040 [US3] Enforce no automatic merge-to-main behavior in scheduler completion path in `/home/khan/src/brick/server/utils/autoModeScheduler.ts` [FR-009] [FR-014]
+- [ ] T041 [US3] Update completion summary/readiness messaging for review gating in `/home/khan/src/brick/components/chat/ChatResultSummary.vue` [FR-009] [FR-014]
 
-**Checkpoint**: User Story 3 complete — standard preview/finalize/delete flow works for Auto Mode conversations.
+**Checkpoint**: US3 independently testable with standard review flow.
 
 ---
 
-## Phase 6: User Story 4 — Constitution and .speckit Sync (Priority: P3)
+## Phase 6: User Story 4 - Constitution and .speckit Sync (Priority: P3)
 
-**Goal**: Auto Mode creates a dedicated "constitution" conversation that runs the constitution update workflow, reviewable via the same preview/finalize flow.
+**Goal**: Process constitution updates as dedicated Auto Mode conversations with the same review lifecycle.
 
-**Independent Test**: Enable Auto Mode → verify a conversation with featureId "constitution" is created → verify /speckit.constitution command is run instead of plan/tasks/skill:better-spec cascade.
+**Independent Test**: Trigger stale constitution path; verify `featureId="constitution"` queue item executes and remains preview/finalize reviewable.
 
 ### Implementation for User Story 4
 
-- [X] T043 [US4] Add "constitution" entry to feature queue in discoverFeatures() method in server/utils/autoModeScheduler.ts
-- [X] T044 [US4] Detect featureId === "constitution" in processFeature() method in server/utils/autoModeScheduler.ts
-- [X] T045 [US4] Run /speckit.constitution command for constitution feature instead of normal cascade in server/utils/autoModeScheduler.ts
-- [X] T046 [US4] Set working directory to project root for constitution conversation in server/utils/autoModeScheduler.ts
-- [X] T047 [US4] Ensure constitution worktree targets .speckit/memory/constitution.md in server/utils/autoModeScheduler.ts
+- [ ] T042 [US4] Add constitution queue-item generation and ordering in `/home/khan/src/brick/server/utils/autoModeDiscovery.ts` [FR-012] [FR-017]
+- [ ] T043 [US4] Add constitution-specific cascade chain resolution in `/home/khan/src/brick/server/utils/autoModeStepPlanner.ts` [FR-012] [FR-027]
+- [ ] T044 [US4] Ensure constitution conversation creation/reuse via `featureId: constitution` in `/home/khan/src/brick/server/utils/autoModeConversation.ts` [FR-004] [FR-012]
+- [ ] T045 [US4] Expose constitution task state in Auto Mode status APIs for UI visibility in `/home/khan/src/brick/server/api/automode/status.get.ts` [FR-012]
 
-**Checkpoint**: User Story 4 complete — constitution sync works as a first-class conversation.
+**Checkpoint**: US4 independently testable and review-gated.
 
 ---
 
 ## Phase 7: Polish & Cross-Cutting Concerns
 
-**Purpose**: Settings UI and final integration
+**Purpose**: Final UX/settings polish and explicit success-criteria validation.
 
-- [X] T048 [P] Add AutoModeSettings.vue component to components/settings/
-- [X] T049 [P] Add concurrency number input (range 1-10, default 3) to AutoModeSettings.vue
-- [X] T050 [P] Connect concurrency input to settings store autoModeConcurrency in AutoModeSettings.vue
-- [X] T051 [P] Import and use AutoModeSettings component in components/settings/SettingsModal.vue
-- [X] T052 [P] Add Auto Mode section with concurrency control to pages/settings.vue
-- [ ] T053 Run all 7 manual test scenarios from quickstart.md
+- [ ] T046 [P] Add settings UI control for Auto Mode concurrency in `/home/khan/src/brick/components/settings/SettingsModal.vue` [FR-016]
+- [ ] T047 [P] Add settings-store actions/hydration for Auto Mode enable+concurrency in `/home/khan/src/brick/stores/settings.ts` [FR-002] [FR-016]
+- [ ] T048 [P] Run type safety gate and resolve Auto Mode typing issues from `pnpm typecheck` in `/home/khan/src/brick/types/autoMode.ts` [FR-021] [FR-026]
+- [ ] T049 Validate performance success criteria (`SC-001`, `SC-002`, `SC-009`, `SC-010`) and document results in `/home/khan/src/brick/specs/013-auto-mode/quickstart.md` [SC-001] [SC-002] [SC-009] [SC-010] [NFR-001]
+- [ ] T050 Validate UX/review success criteria (`SC-003`..`SC-008`) and document results in `/home/khan/src/brick/specs/013-auto-mode/quickstart.md` [SC-003] [SC-004] [SC-005] [SC-006] [SC-007] [SC-008] [NFR-003]
 
 ---
 
@@ -157,47 +144,61 @@ Components:
 
 ### Phase Dependencies
 
-```
-Phase 1 (Setup) ──────────┐
-                          ▼
-Phase 2 (Foundational) ───┬──→ Phase 3 (US1)
-                          ├──→ Phase 4 (US2)
-                          ├──→ Phase 5 (US3)
-                          └──→ Phase 6 (US4)
-                                    │
-Phase 1 ─────────────────────────→ Phase 7 (Polish)
-```
+- **Phase 1 (Setup)**: No dependencies.
+- **Phase 2 (Foundational)**: Depends on Phase 1; blocks all user stories and includes `sc/automode` integration core.
+- **Phase 3 (US1)**: Depends on Phase 2; MVP behavior phase.
+- **Phase 4 (US2)**: Depends on Phase 2 and US1 runtime state.
+- **Phase 5 (US3)**: Depends on Phase 2 and US1 conversation/worktree behavior.
+- **Phase 6 (US4)**: Depends on Phase 2 and US1 scheduler/conversation primitives.
+- **Phase 7 (Polish)**: Depends on targeted story completion.
 
-### Critical Path
-1. **Phase 1**: T001-T007 (all parallel)
-2. **Phase 2**: T008→T009→T010→T011 (sequential), then T012-T020 (parallel)
-3. **Phase 3**: T021-T032 (US1 implementation)
-4. **Parallel options**: US2, US3, US4 can run simultaneously after Phase 2
-5. **Phase 7**: Can start after Phase 1, complete after all stories
+### User Story Dependency Graph
+
+- **US1 (P1)**: first deliverable.
+- **US2 (P2)**: depends on US1 runtime data.
+- **US3 (P2)**: depends on US1 conversation/worktree behavior.
+- **US4 (P3)**: depends on US1 scheduler/conversation primitives.
+
+Graph:
+
+`US1 -> US2`  
+`US1 -> US3`  
+`US1 -> US4`
 
 ### Parallel Opportunities
 
-**Phase 1 (Setup)** - All tasks in parallel:
+- Setup: `T003`, `T004`.
+- Foundational APIs/settings: `T008-T011`, `T013-T015`.
+- US1 split: `T023-T026` (client/UI) in parallel with `T027-T030` (server scheduler).
+- US2 split: `T033-T035` (UI) parallel with `T036-T037` (stream/scheduler).
+- Polish: `T046-T048` parallel.
+
+---
+
+## Parallel Execution Examples
+
+## Parallel Example: User Story 1
+
 ```bash
-T001: Add autoMode field to types/chat.ts
-T002: Add concurrency to types/autoMode.ts
-T003: Add AutoModePersistedSession to types/autoMode.ts
-T004: Add autoModeConcurrency to stores/settings.ts
-T005: Add setAutoModeConcurrency to stores/settings.ts
+Task: "T023 [US1] Add Auto Mode client store in /home/khan/src/brick/stores/autoMode.ts"
+Task: "T025 [US1] Create Auto Mode toggle in /home/khan/src/brick/components/features/AutoModeToggle.vue"
+Task: "T027 [US1] Implement queue and incremental logic in /home/khan/src/brick/server/utils/autoModeScheduler.ts"
 ```
 
-**After T011 in Phase 2** - Parallel execution:
+## Parallel Example: User Story 2
+
 ```bash
-T012-T015: Session persistence tasks
-T016-T018: Conversation creation tasks
-T019-T020: API parameter tasks
+Task: "T033 [US2] Render auto badge in /home/khan/src/brick/components/chat/ConversationItem.vue"
+Task: "T035 [US2] Add status summary strip in /home/khan/src/brick/components/chat/ConversationList.vue"
+Task: "T036 [US2] Preserve structured blocks in /home/khan/src/brick/composables/useChatStream.ts"
 ```
 
-**User Stories 2-4** - Can run in parallel:
+## Parallel Example: User Story 4
+
 ```bash
-US2: T033-T037 (Auto badges)
-US3: T038-T042 (Preview/finalize)
-US4: T043-T047 (Constitution)
+Task: "T042 [US4] Add constitution queue generation in /home/khan/src/brick/server/utils/autoModeDiscovery.ts"
+Task: "T044 [US4] Add constitution conversation reuse in /home/khan/src/brick/server/utils/autoModeConversation.ts"
+Task: "T045 [US4] Expose constitution task in /home/khan/src/brick/server/api/automode/status.get.ts"
 ```
 
 ---
@@ -206,64 +207,26 @@ US4: T043-T047 (Constitution)
 
 ### MVP First (User Story 1 Only)
 
-1. **Phase 1**: Setup infrastructure (7 tasks, all parallel) - 30 min
-2. **Phase 2**: Core scheduler (13 tasks) - 2 hours
-3. **Phase 3**: User Story 1 (12 tasks) - 1.5 hours
-4. **Validate MVP**: Toggle works, specs process, conversations created
+1. Complete Phase 1 (Setup).
+2. Complete Phase 2 (Foundational, including `sc/automode` integration core).
+3. Complete Phase 3 (US1).
+4. Validate US1 independent test criteria before expanding scope.
 
 ### Incremental Delivery
 
-- **Milestone 1**: Setup + Foundational = Working infrastructure
-- **Milestone 2**: + User Story 1 = Core Auto Mode (MVP) ✅
-- **Milestone 3**: + User Story 2 = Visual monitoring
-- **Milestone 4**: + User Story 3 = Review workflow
-- **Milestone 5**: + User Story 4 = Constitution sync
-- **Milestone 6**: + Polish = Complete feature
+1. Ship US1 as MVP.
+2. Add US2 monitoring visibility.
+3. Add US3 review/finalize hardening.
+4. Add US4 constitution sync flow.
+5. Complete Phase 7 validation/polish.
+
+### Validation Rule
+
+- Mark each story complete only after its independent test criteria pass.
+- Mark feature complete only after SC-001 through SC-010 validations are documented.
 
 ---
 
-## FR Traceability Matrix
+## Notes
 
-| FR ID | Requirement | Tasks |
-|-------|-------------|-------|
-| FR-001 | On/off toggle in sidebar | Already implemented |
-| FR-002 | Persist enabled state | Already implemented |
-| FR-003 | Scan specs and build queue | Already implemented |
-| FR-003a | Eligible directory pattern | Already implemented |
-| FR-003b | SHA-256 change detection | T032 |
-| FR-004 | Create conversation per feature | T016, T017 |
-| FR-005 | Run cascade sequence | Already implemented |
-| FR-006 | Isolated worktree | Already implemented |
-| FR-007 | Update specs via Claude | Already implemented |
-| FR-008 | Auto badge in conversations | T001, T033-T036 |
-| FR-009 | Human review required | T038-T041 |
-| FR-010 | Disable stops queued tasks | Already implemented |
-| FR-010a | Running tasks complete | Already implemented |
-| FR-011 | Skip active worktrees | T026, T027 |
-| FR-012 | Constitution conversation | T043-T047 |
-| FR-013 | Concurrent processing | T002, T008-T011, T019, T021 |
-| FR-014 | Full conversation lifecycle | T037, T042 |
-| FR-015 | Queue persistence | T003, T012-T015, T030-T031 |
-| FR-015a | Resume resets running | T015 |
-| FR-016 | Concurrency setting | T004-T007, T019-T022, T048-T052 |
-| FR-017 | Single cycle operation | T028, T029 |
-
-**Coverage**: 100% - All functional requirements have implementing tasks.
-
----
-
-## Summary
-
-- **Total Tasks**: 53
-- **By User Story**:
-  - Setup/Foundation: 20 tasks
-  - User Story 1: 12 tasks
-  - User Story 2: 5 tasks
-  - User Story 3: 5 tasks
-  - User Story 4: 5 tasks
-  - Polish: 6 tasks
-- **Parallel Opportunities**:
-  - Phase 1: 7 tasks in parallel
-  - Phase 2: 9 tasks in parallel after T011
-  - US2/US3/US4: All can run in parallel
-- **MVP Scope**: Phases 1-3 (32 tasks) delivers core Auto Mode functionality
+- All tasks follow strict checklist format with Task ID, optional `[P]`, required `[USx]` for story phases, traceability tags, and absolute file paths.

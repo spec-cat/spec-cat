@@ -1,155 +1,50 @@
-# Quickstart: Auto Mode (013-auto-mode)
+# Quickstart: Auto Mode
 
-**Date**: 2026-02-24
+## Goal
 
-## Overview
+Enable Auto Mode from the sidebar, process eligible spec units in one automated cycle with incremental cascade logic, and review resulting spec changes through the standard preview/finalize conversation workflow.
 
-Auto Mode is a background scheduler that automatically runs the speckit workflow (specify → plan → tasks) for all spec units in the project. It reuses the existing conversation system, worktree isolation, and cascade pipeline — extending them with a toggle control, concurrency support, and session persistence.
+## Prerequisites
 
-## Architecture
+- Branch: `013-auto-mode`
+- Existing spec directories under `/home/khan/src/brick/specs`
+- Chat/worktree features already functioning in the workspace
+- Settings page available for concurrency configuration
 
-```
-┌──────────────────────────────────────────────────────────┐
-│ Client (Browser)                                          │
-│                                                           │
-│  ┌─────────────┐  ┌────────────────┐  ┌───────────────┐ │
-│  │AutoModeToggle│  │ConversationList│  │SettingsModal  │ │
-│  │(FeaturesPanel│  │(auto badge)    │  │(concurrency)  │ │
-│  │toolbar)      │  │                │  │               │ │
-│  └──────┬───────┘  └───────┬────────┘  └──────┬────────┘ │
-│         │                  │                   │          │
-│  ┌──────▼──────────────────▼───────────────────▼────────┐│
-│  │                    Pinia Stores                       ││
-│  │  autoMode.ts ──── chat.ts ──── settings.ts           ││
-│  └──────┬──────────────────────────────────────┬────────┘│
-│         │ WebSocket                            │ HTTP    │
-└─────────┼──────────────────────────────────────┼─────────┘
-          │                                      │
-┌─────────▼──────────────────────────────────────▼─────────┐
-│ Server (Nitro)                                            │
-│                                                           │
-│  ┌────────────────┐  ┌─────────────────────────────────┐ │
-│  │auto-mode-ws    │  │ POST /api/auto-mode/toggle      │ │
-│  │(status updates)│  │ GET  /api/auto-mode/status      │ │
-│  └────────┬───────┘  └──────────────┬──────────────────┘ │
-│           │                         │                     │
-│  ┌────────▼─────────────────────────▼──────────────────┐ │
-│  │            AutoModeScheduler (singleton)              │ │
-│  │                                                       │ │
-│  │  ┌─────────────────────────────────────────────────┐ │ │
-│  │  │  Concurrent Queue (up to N workers)              │ │ │
-│  │  │                                                  │ │ │
-│  │  │  Worker 1: query(/speckit.specify 001-feature)   │ │ │
-│  │  │  Worker 2: query(/speckit.plan 002-feature)      │ │ │
-│  │  │  Worker 3: query(/speckit.tasks 003-feature)     │ │ │
-│  │  └─────────────────────────────────────────────────┘ │ │
-│  │                                                       │ │
-│  │  Session File: ~/.spec-cat/projects/{hash}/auto-mode-session.json          │ │
-│  └───────────────────────────────────────────────────────┘ │
-│                                                           │
-│  ┌───────────────────────────────────────────────────────┐ │
-│  │  worktreeResolver.ts                                  │ │
-│  │  Creates /tmp/spec-cat-worktrees/{featureId}-{randomId}  │ │
-│  └───────────────────────────────────────────────────────┘ │
-└───────────────────────────────────────────────────────────┘
-```
+## Implementation Sequence (Phase 2-ready)
 
-## Key Flows
+1. Add Auto Mode state model and persistence layer (enabled state, queue snapshot, hash records, concurrency).
+2. Add sidebar toggle interaction that requires base-branch selection on activation.
+3. Implement queue discovery + eligibility filter (`NNN-*` + `spec.md`) + SHA-256 skip logic.
+4. Implement incremental step resolver (`plan/tasks/skill:better-spec`) and scheduler with max concurrency.
+5. Reuse/create feature conversations flagged as auto, with existing worktree creation and stream pipeline.
+6. Prepare `sc/automode` from selected base and create feature worktrees from `sc/automode`.
+7. After each successful feature, integrate into `sc/automode` and attempt AI-assisted conflict resolution when needed.
+8. Implement disable and manual-interaction cancellation semantics.
+9. Add conversation-list auto badge and preserve all existing lifecycle actions.
+10. Add dedicated `constitution` task path and include it in cycle processing.
 
-### 1. Enable Auto Mode
+## Manual Validation Checklist
 
-```
-User clicks AutoModeToggle (BoltIcon)
-  │
-  ├─ autoModeStore.toggle()
-  │   └─ POST /api/auto-mode/toggle { enabled: true, concurrency: 3 }
-  │
-  ├─ AutoModeScheduler.toggle(true, 3)
-  │   ├─ discoverFeatures() — scan specs/*/spec.md
-  │   ├─ Create session with all features queued
-  │   ├─ Persist session to ~/.spec-cat/projects/{hash}/auto-mode-session.json
-  │   ├─ Broadcast auto_mode_status via WebSocket
-  │   └─ Start concurrent processing pool
-  │       ├─ For each feature (up to N concurrent):
-  │       │   ├─ Check for existing worktree → skip if found
-  │       │   ├─ resolveWorktree() → create isolated worktree
-  │       │   ├─ Run specify → auto-commit
-  │       │   ├─ Run plan → auto-commit
-  │       │   ├─ Run tasks → auto-commit
-  │       │   ├─ Mark task completed
-  │       │   └─ Broadcast task_update
-  │       └─ When all done → session state = 'completed'
-  │
-  └─ Client receives WebSocket updates → autoModeStore updates
+1. Toggle Auto Mode on and verify base-branch selection is required before processing begins.
+2. Confirm queue is alphabetically ordered and excludes directories missing `spec.md` or non-`NNN-*` names.
+3. Confirm unchanged features are skipped when all stored hashes match.
+4. Modify only `tasks.md` for a feature and verify Auto Mode runs only `skill:better-spec` for that feature.
+5. Modify only `plan.md` and verify Auto Mode runs `tasks -> skill:better-spec`.
+6. Modify `spec.md` and verify Auto Mode runs full `plan -> tasks -> skill:better-spec`.
+7. Verify conversations are created/reused per feature and show an `auto` indicator in the conversation list.
+8. Verify messages render with standard structured blocks (tool boxes + markdown) identical to normal chat.
+9. Disable Auto Mode mid-run and verify queued tasks fail with `Auto Mode disabled` while currently running tasks complete.
+10. Send a manual message in an active Auto Mode conversation and verify task fails with `Manual interaction`.
+11. Verify successful feature completion immediately updates `sc/automode` in-cycle.
+12. Force an integration conflict and verify AI-assisted resolution is attempted.
+13. Refresh during running cycle and verify persisted tasks resume with prior `running` tasks reset to `queued`.
+14. Verify `constitution` conversation is created/processed and reviewable through preview/finalize.
+15. Verify cycle ends in idle state with toggle still on and no automatic re-scan until off/on.
 
-User sees:
-  - AutoModeToggle turns yellow with pulse
-  - AutoModeStatus shows progress bar + task list
-  - Conversations appear in ConversationList with "auto" badge
-```
+## Done Criteria
 
-### 2. Disable Auto Mode
-
-```
-User clicks AutoModeToggle again
-  │
-  ├─ POST /api/auto-mode/toggle { enabled: false }
-  ├─ AutoModeScheduler.toggle(false)
-  │   ├─ Abort signal sent to running tasks
-  │   ├─ Running tasks complete current Claude query naturally
-  │   ├─ Queued tasks marked as failed ("Auto Mode disabled")
-  │   ├─ Session state → 'stopped'
-  │   └─ Delete ~/.spec-cat/projects/{hash}/auto-mode-session.json
-  │
-  └─ Client receives status update → toggle goes gray
-```
-
-### 3. Review Auto Mode Results
-
-```
-User clicks Auto Mode conversation in ConversationList
-  │
-  ├─ See full chat history (specify/plan/tasks commands + Claude responses)
-  ├─ Click Preview (eye icon) → standard preview flow
-  │   └─ POST /api/chat/preview → checkout worktree changes
-  ├─ Review diffs in main worktree
-  └─ Click Finalize → standard finalize flow
-      └─ POST /api/chat/finalize → squash + merge to main
-```
-
-## Files to Create/Modify
-
-### New Files
-- None — all changes go into existing files
-
-### Modified Files
-
-| File | Change | FR |
-|------|--------|-----|
-| `types/chat.ts` | Add `autoMode?: boolean` to `Conversation` | FR-008 |
-| `types/autoMode.ts` | Add `AutoModePersistedSession`, extend `AutoModeConfig` | FR-015, FR-013 |
-| `stores/settings.ts` | Add `autoModeConcurrency` field | FR-016 |
-| `stores/autoMode.ts` | Pass concurrency in toggle, persist on page | FR-013, FR-002 |
-| `server/utils/autoModeScheduler.ts` | Concurrent processing, session persistence, constitution support | FR-013, FR-015, FR-012 |
-| `server/api/auto-mode/toggle.post.ts` | Accept `concurrency` in body | FR-013 |
-| `components/chat/ConversationItem.vue` | Show "auto" badge when `conversation.autoMode` | FR-008 |
-| `components/settings/SettingsModal.vue` | Add concurrency slider/input | FR-016 |
-| `pages/settings.vue` | Add concurrency setting | FR-016 |
-
-## Development Order
-
-1. **Data model changes** (types + store extensions) — foundation
-2. **Server scheduler upgrades** (concurrency + persistence + constitution) — core logic
-3. **API changes** (toggle endpoint concurrency param) — wiring
-4. **UI changes** (badge, settings) — polish
-
-## Testing Strategy
-
-Manual testing per CLAUDE.md:
-1. Toggle Auto Mode on → verify conversations created per spec
-2. Verify concurrent processing (check multiple worktrees exist simultaneously)
-3. Toggle off mid-processing → verify graceful stop
-4. Refresh page during processing → verify session state restored
-5. Click Auto Mode conversation → verify chat history visible
-6. Preview + Finalize → verify standard flow works
-7. Change concurrency in settings → verify next cycle uses new value
+- FR-001 through FR-027 (including sub-requirements) are behaviorally satisfied.
+- SC-001 through SC-010 are manually testable and observed.
+- No implementation-code modifications are performed by Auto Mode workflows.
+- All resulting changes remain review-gated through existing preview/finalize flow.

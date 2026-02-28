@@ -1,187 +1,130 @@
-# Data Model: Auto Mode (013-auto-mode)
+# Data Model: Auto Mode
 
-**Date**: 2026-02-24
-**Phase**: 1 — Design & Contracts
+**Date**: 2026-02-28  
+**Source**: `/home/khan/src/brick/specs/013-auto-mode/spec.md`
 
 ## Entities
 
-### 1. Conversation (Extended)
+### AutoModeState
 
-**Location**: `types/chat.ts`
-**Change**: Add `autoMode` field to existing entity
+Runtime orchestrator state for one activation cycle.
 
-```typescript
-export interface Conversation {
-  // ... existing fields unchanged ...
-  id: string
-  title: string
-  messages: ChatMessage[]
-  createdAt: string
-  updatedAt: string
-  cwd: string
-  providerSessionId?: string
-  worktreePath?: string
-  worktreeBranch?: string
-  hasWorktree?: boolean
-  baseBranch?: string
-  previewBranch?: string
-  featureId?: string
+| Field | Type | Description |
+|------|------|-------------|
+| enabled | `boolean` | Toggle state for Auto Mode |
+| cycleId | `string` | Unique cycle identifier for current activation |
+| baseBranch | `string \| null` | User-selected base branch for cycle |
+| integrationBranch | `'sc/automode'` | Shared branch accumulating successful feature outputs |
+| status | `'idle' \| 'running' \| 'stopping'` | Scheduler lifecycle state |
+| queue | `AutoModeTask[]` | Full task list for this cycle |
+| activeFeatureIds | `string[]` | Features currently running (max `concurrency`) |
+| processedFeatureIds | `string[]` | Features completed, failed, or skipped in this cycle |
+| concurrency | `number` | Parallel cascade limit (default 3) |
+| lastStartedAt | `string \| null` | ISO timestamp when cycle started |
+| lastCompletedAt | `string \| null` | ISO timestamp when cycle ended |
 
-  // NEW — Auto Mode indicator (FR-008)
-  autoMode?: boolean            // True if created/used by Auto Mode
-}
-```
+**Validation Rules**:
+- `concurrency` must be integer >= 1.
+- `integrationBranch` is always `sc/automode`.
+- `enabled=true` with `status='idle'` means waiting for explicit re-toggle (single-cycle behavior).
 
-**Validation rules**:
-- `autoMode` is optional, defaults to `undefined` (falsy)
-- When `autoMode === true`, the conversation was created by Auto Mode
-- The `featureId` field is always set for Auto Mode conversations
-- Backwards-compatible: existing conversations without `autoMode` work unchanged
+### AutoModeTask
 
-**Persistence**: localStorage via `spec-cat-conversations` key (existing mechanism)
+Queue item for one feature (or constitution unit).
 
----
+| Field | Type | Description |
+|------|------|-------------|
+| featureId | `string` | Spec feature id (e.g., `013-auto-mode`) or `constitution` |
+| kind | `'feature' \| 'constitution'` | Task category |
+| state | `'queued' \| 'running' \| 'success' \| 'failed' \| 'skipped'` | Processing state |
+| conversationId | `string \| null` | Bound conversation id |
+| startStep | `'plan' \| 'tasks' \| 'skill:better-spec'` | First step for incremental execution |
+| steps | `string[]` | Concrete command sequence to run |
+| reason | `string \| null` | Skip/failure reason (`Auto Mode disabled`, `Manual interaction`, etc.) |
+| startedAt | `string \| null` | ISO start time |
+| completedAt | `string \| null` | ISO completion time |
 
-### 2. AutoModeTask (Existing)
+**Validation Rules**:
+- `state='running'` requires `conversationId` and `startedAt`.
+- `state='success'` requires `completedAt` and successful `skill:better-spec` completion.
+- `state='failed'` requires non-empty `reason`.
 
-**Location**: `types/autoMode.ts`
-**Change**: No change needed — already well-defined
+### AutoModeHashRecord
 
-```typescript
-export interface AutoModeTask {
-  featureId: string
-  state: AutoModeTaskState           // 'queued' | 'running' | 'completed' | 'failed' | 'skipped'
-  worktreePath?: string
-  worktreeBranch?: string
-  currentStep?: string               // Current speckit step being executed
-  error?: string
-  startedAt?: string
-  completedAt?: string
-}
-```
+Persistent hash snapshot used for skip/incremental detection.
 
-**State transitions**:
-```
-queued ──→ running ──→ completed
-  │           │
-  │           └──→ failed
-  └──→ skipped (active worktree exists)
-```
+| Field | Type | Description |
+|------|------|-------------|
+| featureId | `string` | Feature identifier |
+| specHash | `string` | SHA-256 of `spec.md` |
+| planHash | `string` | SHA-256 of `plan.md` |
+| tasksHash | `string` | SHA-256 of `tasks.md` |
+| updatedAt | `string` | ISO timestamp of successful cascade completion |
 
----
+**Validation Rules**:
+- Hashes are 64-char lowercase hex.
+- Record is written only after successful full task completion (FR-018).
+- No hash update occurs for failed/skipped tasks.
 
-### 3. AutoModeSession (Existing)
+### AutoModePersistedSnapshot
 
-**Location**: `types/autoMode.ts`
-**Change**: No change needed
+Durable resume payload for refresh recovery.
 
-```typescript
-export interface AutoModeSession {
-  id: string                         // Format: "auto-{timestamp}"
-  state: AutoModeSessionState        // 'active' | 'stopped' | 'completed' | 'idle'
-  tasks: AutoModeTask[]
-  startedAt: string                  // ISO 8601
-  completedAt?: string               // ISO 8601
-}
-```
+| Field | Type | Description |
+|------|------|-------------|
+| enabled | `boolean` | Persisted toggle state |
+| cycleId | `string \| null` | Active cycle id or null |
+| baseBranch | `string \| null` | Selected base branch for cycle |
+| status | `'idle' \| 'running' \| 'stopping'` | Persisted scheduler status |
+| concurrency | `number` | Persisted concurrency setting |
+| tasks | `AutoModeTask[]` | Persisted queue with states |
+| hashes | `Record<string, AutoModeHashRecord>` | Per-feature successful hash records |
 
-**State transitions**:
-```
-active ──→ completed (all tasks done)
-  │
-  └──→ stopped (user disabled Auto Mode)
+**Validation Rules**:
+- On hydration, tasks persisted as `running` are reset to `queued` (FR-015a).
+- Snapshot must be project-scoped and replaced atomically.
 
-idle (no specs found — edge case)
-```
+### Conversation (Extension)
 
----
+Existing conversation entity gains Auto Mode metadata.
 
-### 4. AutoModeConfig (Extended)
+| Field | Type | Description |
+|------|------|-------------|
+| autoMode | `boolean \| undefined` | True when conversation is created/managed by Auto Mode |
+| featureId | `string \| undefined` | Existing feature linkage used for conversation reuse |
 
-**Location**: `types/autoMode.ts`
-**Change**: Add concurrency field
-
-```typescript
-export interface AutoModeConfig {
-  enabled: boolean
-  concurrency: number               // Default: 3 (FR-013, FR-016)
-}
-```
-
-**Validation rules**:
-- `concurrency` must be integer >= 1
-- Default: 3
-- Persisted in `spec-cat-settings` localStorage key (via settings store)
-
----
-
-### 5. SettingsStoreState (Extended)
-
-**Location**: `stores/settings.ts`
-**Change**: Add `autoModeConcurrency` field
-
-```typescript
-interface SettingsStoreState {
-  claudeModel: ClaudeModel
-  autoModeConcurrency: number        // Default: 3 (FR-016)
-  _hydrated: boolean
-}
-```
-
-**Persistence**: `spec-cat-settings` localStorage key (existing mechanism)
-**Usage**: `claudeModel` is the global default model used by all server-side AI calls (chat, auto mode, one-off utilities)
-
----
-
-### 6. AutoModePersistedSession (New)
-
-**Location**: `types/autoMode.ts`
-**Purpose**: Server-side session persistence for page refresh resilience (FR-015)
-
-```typescript
-export interface AutoModePersistedSession {
-  sessionId: string
-  enabled: boolean
-  tasks: AutoModeTask[]
-  startedAt: string
-}
-```
-
-**Persistence**: File at `~/.spec-cat/projects/{hash}/auto-mode-session.json` (server-side)
-**Lifecycle**: Created when Auto Mode starts, updated on each task state change, deleted when session completes or is stopped.
-
----
+**Validation Rules**:
+- `autoMode=true` does not alter existing conversation lifecycle permissions.
+- Auto conversations remain eligible for rename/delete/preview/finalize/search.
 
 ## Relationships
 
-```
-┌───────────────┐     featureId      ┌───────────────┐
-│  AutoModeTask │─────────────────→│  Conversation  │
-│  (server)     │  creates/reuses    │  (client+LS)  │
-└───────────────┘                    └───────────────┘
-        │                                    │
-        │ belongs to                         │ has many
-        ▼                                    ▼
-┌───────────────┐                    ┌───────────────┐
-│AutoModeSession│                    │  ChatMessage   │
-│  (server)     │                    │  (client+LS)  │
-└───────────────┘                    └───────────────┘
-        │
-        │ persisted to
-        ▼
-┌────────────────────┐
-│AutoModePersistedSes│
-│(~/.spec-cat/projects/  │
-│ session.json)      │
-└────────────────────┘
-```
+- `AutoModeState (1)` has many `AutoModeTask (0..n)`.
+- `AutoModeTask (0..1)` links to `Conversation (1)` via `conversationId`.
+- `AutoModeHashRecord (0..1 per feature)` informs `AutoModeTask.startStep` and skip decisions.
+- `AutoModePersistedSnapshot (1)` serializes `AutoModeState` + hash records for resume.
 
-## Key Design Decisions
+## State Transitions
 
-1. **Conversation entity extension is minimal**: Only one new optional boolean field (`autoMode`). No separate entity for "auto mode conversations."
+### Scheduler
 
-2. **Server is source of truth**: The `AutoModeScheduler` manages the processing queue. The client store mirrors state via WebSocket.
+1. `idle -> running`: user toggles on and selects base branch.
+2. `running -> stopping`: user toggles off while active tasks exist.
+3. `stopping -> idle`: active tasks finish, no new tasks started.
+4. `running -> idle`: queue drained (single-cycle complete).
 
-3. **Concurrency stored in settings**: The concurrency limit lives in the settings store, not the auto mode store. This keeps settings centralized and follows existing patterns.
+### Task
 
-4. **Session persistence is server-side**: Since the server processes features, it must persist the session state. The client persists only the `enabled` toggle state.
+1. `queued -> skipped`: unchanged hashes or active-worktree conflict.
+2. `queued -> running`: worker slot available and Auto Mode still enabled.
+3. `running -> success`: all steps complete with passing `skill:better-spec` and integration complete.
+4. `running -> failed`: cascade/integration/manual interruption error.
+5. `queued -> failed`: Auto Mode disabled before start.
+
+## Derived Rules
+
+- If `spec.md` changed: `startStep='plan'`, run `plan -> tasks -> skill:better-spec`.
+- If only `plan.md` changed: `startStep='tasks'`, run `tasks -> skill:better-spec`.
+- If only `tasks.md` changed: `startStep='skill:better-spec'`, run only `skill:better-spec`.
+- If no files changed: mark task `skipped`.
+- Feature marked `success` only after in-cycle integration to `sc/automode` succeeds (or conflict auto-resolution succeeds).
