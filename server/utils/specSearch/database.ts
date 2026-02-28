@@ -697,6 +697,30 @@ export class SpecSearchDatabase {
       })
     }
   }
+
+  close(): void {
+    if (!this.sqlite) return
+
+    this.log.debug('Closing spec search SQLite connection', {
+      dbPath: this.dbPath,
+      sqliteReady: this.sqliteReady,
+      vectorEnabled: this.vectorEnabled,
+    })
+
+    try {
+      this.sqlite.close?.()
+      this.log.info('Spec search SQLite connection closed', { dbPath: this.dbPath })
+    } catch (error) {
+      this.log.error('Failed closing spec search SQLite connection', {
+        dbPath: this.dbPath,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      this.sqlite = null
+      this.sqliteReady = false
+      this.vectorEnabled = false
+    }
+  }
 }
 
 let databaseSingleton: SpecSearchDatabase | null = null
@@ -706,6 +730,12 @@ export function getSpecSearchDatabase(): SpecSearchDatabase {
     databaseSingleton = new SpecSearchDatabase()
   }
   return databaseSingleton
+}
+
+export function closeSpecSearchDatabase(): void {
+  if (!databaseSingleton) return
+  databaseSingleton.close()
+  databaseSingleton = null
 }
 
 export async function runSearch(

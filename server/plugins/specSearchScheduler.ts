@@ -5,7 +5,7 @@ export default defineNitroPlugin((nitroApp) => {
     console.error('[spec-search] scheduler startup failed:', error)
   })
 
-  nitroApp.hooks.hook('close', () => {
-    stopSpecSearchScheduler()
+  nitroApp.hooks.hook('close', async () => {
+    await stopSpecSearchScheduler()
   })
 })

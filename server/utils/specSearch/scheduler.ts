@@ -1,7 +1,7 @@
 import type { IndexRuntimeState, ReindexResponse } from '~/types/specSearch'
 import { existsSync } from 'node:fs'
 import { getProjectDir } from '../projectDir'
-import { getSpecSearchDatabase } from './database'
+import { closeSpecSearchDatabase, getSpecSearchDatabase } from './database'
 import { isEmbeddingModelLoaded } from './embeddings'
 import { reindexAll, reconcileIndexedFiles } from './indexer'
 import { logger } from '../logger'
@@ -19,6 +19,7 @@ const runtimeState: IndexRuntimeState = {
 
 let timer: NodeJS.Timeout | null = null
 let startupPromise: Promise<void> | null = null
+let activeJobPromise: Promise<ReindexResponse> | null = null
 const log = logger.specSearch
 
 async function runJob(job: 'startup-reconcile' | 'poll-scan' | 'manual-reindex', forceFull = false): Promise<ReindexResponse> {
@@ -37,85 +38,93 @@ async function runJob(job: 'startup-reconcile' | 'poll-scan' | 'manual-reindex',
     }
   }
 
-  runtimeState.isIndexing = true
-  runtimeState.currentJob = job
+  activeJobPromise = (async () => {
+    runtimeState.isIndexing = true
+    runtimeState.currentJob = job
 
-  const start = Date.now()
-  log.info('Spec search job started', {
-    job,
-    forceFull,
-    projectDir: getProjectDir(),
-  })
-
-  try {
-    const db = getSpecSearchDatabase()
-    await db.init()
-    const hasPersistedDb = db.isSqliteAvailable() && existsSync(db.getPath())
-    log.debug('Spec search DB state before job execution', {
+    const start = Date.now()
+    log.info('Spec search job started', {
       job,
-      dbPath: db.getPath(),
-      dbExists: existsSync(db.getPath()),
-      sqliteAvailable: db.isSqliteAvailable(),
-      initError: db.getInitError(),
-      hasPersistedDb,
+      forceFull,
+      projectDir: getProjectDir(),
     })
 
-    let result: ReindexResponse
-    if (forceFull) {
-      await db.clearAll()
-      result = await reindexAll(getProjectDir())
-    } else if (job === 'manual-reindex') {
-      if (!hasPersistedDb) {
+    try {
+      const db = getSpecSearchDatabase()
+      await db.init()
+      const hasPersistedDb = db.isSqliteAvailable() && existsSync(db.getPath())
+      log.debug('Spec search DB state before job execution', {
+        job,
+        dbPath: db.getPath(),
+        dbExists: existsSync(db.getPath()),
+        sqliteAvailable: db.isSqliteAvailable(),
+        initError: db.getInitError(),
+        hasPersistedDb,
+      })
+
+      let result: ReindexResponse
+      if (forceFull) {
         await db.clearAll()
+        result = await reindexAll(getProjectDir())
+      } else if (job === 'manual-reindex') {
+        if (!hasPersistedDb) {
+          await db.clearAll()
+        }
+        result = await reindexAll(getProjectDir())
+      } else {
+        const delta = await reconcileIndexedFiles(getProjectDir())
+        result = {
+          success: true,
+          status: 'completed',
+          filesIndexed: delta.newOrChanged,
+          chunksCreated: 0,
+          skippedUnchanged: 0,
+          duration: Date.now() - start,
+        }
       }
-      result = await reindexAll(getProjectDir())
-    } else {
-      const delta = await reconcileIndexedFiles(getProjectDir())
-      result = {
-        success: true,
-        status: 'completed',
-        filesIndexed: delta.newOrChanged,
+
+      const now = new Date().toISOString()
+      runtimeState.lastScanAt = now
+      if (result.success) {
+        runtimeState.lastIndexedAt = now
+      }
+
+      log.info('Spec search job completed', {
+        job,
+        success: result.success,
+        status: result.status,
+        filesIndexed: result.filesIndexed,
+        chunksCreated: result.chunksCreated,
+        skippedUnchanged: result.skippedUnchanged,
+        durationMs: Date.now() - start,
+      })
+
+      return result
+    } catch (error) {
+      log.error('Spec search job failed with exception', {
+        job,
+        durationMs: Date.now() - start,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      return {
+        success: false,
+        status: 'failed',
+        filesIndexed: 0,
         chunksCreated: 0,
         skippedUnchanged: 0,
         duration: Date.now() - start,
+        error: error instanceof Error ? error.message : String(error),
       }
+    } finally {
+      runtimeState.isIndexing = false
+      runtimeState.currentJob = null
     }
+  })()
 
-    const now = new Date().toISOString()
-    runtimeState.lastScanAt = now
-    if (result.success) {
-      runtimeState.lastIndexedAt = now
-    }
-
-    log.info('Spec search job completed', {
-      job,
-      success: result.success,
-      status: result.status,
-      filesIndexed: result.filesIndexed,
-      chunksCreated: result.chunksCreated,
-      skippedUnchanged: result.skippedUnchanged,
-      durationMs: Date.now() - start,
-    })
-
-    return result
-  } catch (error) {
-    log.error('Spec search job failed with exception', {
-      job,
-      durationMs: Date.now() - start,
-      error: error instanceof Error ? error.message : String(error),
-    })
-    return {
-      success: false,
-      status: 'failed',
-      filesIndexed: 0,
-      chunksCreated: 0,
-      skippedUnchanged: 0,
-      duration: Date.now() - start,
-      error: error instanceof Error ? error.message : String(error),
-    }
+  try {
+    return await activeJobPromise
   } finally {
-    runtimeState.isIndexing = false
-    runtimeState.currentJob = null
+    activeJobPromise = null
   }
 }
 
@@ -136,12 +145,23 @@ export async function startSpecSearchScheduler(): Promise<void> {
   return startupPromise
 }
 
-export function stopSpecSearchScheduler(): void {
+export async function stopSpecSearchScheduler(): Promise<void> {
   runtimeState.schedulerActive = false
   if (timer) {
     clearInterval(timer)
     timer = null
   }
+  if (activeJobPromise) {
+    log.info('Waiting for active spec search job before shutdown', {
+      currentJob: runtimeState.currentJob,
+    })
+    try {
+      await activeJobPromise
+    } catch {
+      // no-op: shutdown should continue even if the in-flight job fails
+    }
+  }
+  closeSpecSearchDatabase()
   log.info('Spec search scheduler stopped')
 }
 
