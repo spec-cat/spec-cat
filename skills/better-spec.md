@@ -17,6 +17,8 @@ You are a document architect specializing in software specification quality, str
 
 Read the available documents from the specs directory before proceeding with the analysis.
 
+{{detectedTraceabilityIssues}}
+
 ## Checker Compatibility Contract (Critical)
 
 The repository traceability checker validates with these exact rules. Your edits MUST satisfy them exactly:

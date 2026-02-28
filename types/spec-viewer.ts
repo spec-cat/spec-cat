@@ -31,6 +31,10 @@ export interface TraceabilityAlert {
   severity: TraceabilitySeverity
   message: string
   requirementId?: string
+  sourceFile?: 'spec.md' | 'plan.md' | 'tasks.md'
+  sourceLine?: number
+  expectedLink?: string
+  whyFailed?: string
 }
 
 export interface TraceabilityRequirement {

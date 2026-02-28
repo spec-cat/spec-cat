@@ -27,6 +27,8 @@ const BUILTIN_SKILLS: Record<string, SkillDefinition> = {
 
 Read all available documents before acting.
 
+{{detectedTraceabilityIssues}}
+
 ## Checker Compatibility Contract (Critical)
 
 Your edits MUST satisfy the repo traceability checker exactly:
@@ -260,10 +262,16 @@ export async function loadSkill(projectDir: string, skillId: string): Promise<Sk
  */
 export function renderPrompt(
   skill: SkillDefinition,
-  context: { featureId: string; specsDir: string; availableDocuments: string[] }
+  context: {
+    featureId: string
+    specsDir: string
+    availableDocuments: string[]
+    detectedTraceabilityIssues?: string
+  }
 ): string {
   return skill.promptTemplate
     .replace(/\{\{featureId\}\}/g, context.featureId)
     .replace(/\{\{specsDir\}\}/g, resolve(context.specsDir))
     .replace(/\{\{availableDocuments\}\}/g, context.availableDocuments.join(', '))
+    .replace(/\{\{detectedTraceabilityIssues\}\}/g, context.detectedTraceabilityIssues ?? '')
 }

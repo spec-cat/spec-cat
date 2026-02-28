@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { getProjectDir } from '../../../utils/projectDir'
 import { loadSkill, renderPrompt } from '../../../utils/skillRegistry'
+import { buildTraceabilityResponse, formatTraceabilityContextForPrompt } from '../../../utils/traceability'
 import type { SkillPromptResponse } from '~/types/skill'
 
 export default defineEventHandler(async (event): Promise<SkillPromptResponse> => {
@@ -49,10 +50,17 @@ export default defineEventHandler(async (event): Promise<SkillPromptResponse> =>
     // If we can't read the directory, proceed with empty documents list
   }
 
+  let detectedTraceabilityIssues = ''
+  if (skillId === 'better-spec') {
+    const traceability = await buildTraceabilityResponse(body.featureId, specsDir)
+    detectedTraceabilityIssues = formatTraceabilityContextForPrompt(traceability)
+  }
+
   const prompt = renderPrompt(skill, {
     featureId: body.featureId,
     specsDir,
     availableDocuments,
+    detectedTraceabilityIssues,
   })
 
   return {
