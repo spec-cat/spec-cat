@@ -27,6 +27,14 @@ const BUILTIN_SKILLS: Record<string, SkillDefinition> = {
 
 Read all available documents before acting.
 
+## Checker Compatibility Contract (Critical)
+
+Your edits MUST satisfy the repo traceability checker exactly:
+- FR IDs must use \`FR-XXX\` or \`FR-XXXa\` only.
+- Plan coverage is recognized only when FR tokens are literally present in \`plan.md\`.
+- Task coverage is recognized only on markdown checkbox lines in \`tasks.md\` (\`- [ ]\` or \`- [x]\`) where FR tokens appear on the same line.
+- FR tokens on checkbox tasks that are absent from \`spec.md\` are treated as traceability errors.
+
 ## Core Principle
 
 Spec documents MUST keep strict role separation:
@@ -76,6 +84,15 @@ Maintain full chain integrity:
 - Keep FR IDs stable; do not renumber unless absolutely unavoidable.
 - If renumbering is unavoidable, update all downstream references in the same run.
 - Do not create extra report/checklist/reconcile files.
+
+## Required Final Self-Check (Before finishing)
+
+Before final output, re-read edited files and ensure:
+- Every FR in \`spec.md\` appears in \`plan.md\`.
+- Every FR in \`spec.md\` appears on at least one checkbox task line in \`tasks.md\`.
+- No checkbox task FR exists that is absent from \`spec.md\`.
+
+If any check fails, continue editing until all pass.
 
 ## Spec Repair Rules
 
