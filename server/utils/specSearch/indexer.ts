@@ -3,7 +3,7 @@ import { readdir, readFile, stat } from 'node:fs/promises'
 import { join, relative } from 'node:path'
 import type { ReindexResponse, SourceFile } from '~/types/specSearch'
 import { chunkMarkdown } from './chunker'
-import { getEmbedding } from './embeddings'
+import { getEmbeddings } from './embeddings'
 import { getSpecSearchDatabase } from './database'
 import { getProjectDir } from '../projectDir'
 import { logger } from '../logger'
@@ -15,7 +15,11 @@ interface ScannedFile {
 }
 
 const log = logger.specSearch
-const EMBEDDING_YIELD_INTERVAL = 3
+const INDEX_YIELD_EVERY_FILES = 1
+
+async function yieldToEventLoop(): Promise<void> {
+  await new Promise<void>((resolve) => setImmediate(resolve))
+}
 
 function sha256(content: string): string {
   return createHash('sha256').update(content).digest('hex')
@@ -76,6 +80,15 @@ async function scanSpecFiles(projectDir: string): Promise<ScannedFile[]> {
 }
 
 export async function reindexFile(projectDir: string, relPath: string, contentHash: string): Promise<{ chunksCreated: number }> {
+  return reindexFileWithOptions(projectDir, relPath, contentHash, { allowModelLoad: true })
+}
+
+async function reindexFileWithOptions(
+  projectDir: string,
+  relPath: string,
+  contentHash: string,
+  options: { allowModelLoad: boolean },
+): Promise<{ chunksCreated: number }> {
   const db = getSpecSearchDatabase()
   const absPath = join(projectDir, relPath)
   const content = await readFile(absPath, 'utf-8')
@@ -86,15 +99,11 @@ export async function reindexFile(projectDir: string, relPath: string, contentHa
     absPath,
     contentHash,
     chunkCount: chunks.length,
+    allowModelLoad: options.allowModelLoad,
   })
-  const embeddings: number[][] = []
-  for (let i = 0; i < chunks.length; i++) {
-    embeddings.push(await getEmbedding(chunks[i].content))
-    // Yield periodically so API requests can be handled while indexing runs.
-    if ((i + 1) % EMBEDDING_YIELD_INTERVAL === 0) {
-      await new Promise<void>((resolve) => setImmediate(resolve))
-    }
-  }
+  const embeddings = await getEmbeddings(chunks.map(chunk => chunk.content), {
+    allowModelLoad: options.allowModelLoad,
+  })
 
   await db.replaceChunksForFile(relPath, chunks, embeddings)
   await db.upsertSourceFile({
@@ -121,6 +130,7 @@ export async function reindexAll(projectDir = getProjectDir()): Promise<ReindexR
   let filesIndexed = 0
   let chunksCreated = 0
   let skippedUnchanged = 0
+  let processedChanged = 0
 
   log.info('Starting full spec reindex', {
     projectDir,
@@ -138,12 +148,17 @@ export async function reindexAll(projectDir = getProjectDir()): Promise<ReindexR
     const result = await reindexFile(projectDir, file.relPath, file.hash)
     filesIndexed += 1
     chunksCreated += result.chunksCreated
+    processedChanged += 1
+    if (processedChanged % INDEX_YIELD_EVERY_FILES === 0) {
+      await yieldToEventLoop()
+    }
   }
 
   const currentPaths = new Set(scanned.map(file => file.relPath))
   const deleted = previous.filter(file => !currentPaths.has(file.path))
   for (const file of deleted) {
     await deleteFileChunks(file.path)
+    await yieldToEventLoop()
   }
 
   log.info('Completed full spec reindex', {
@@ -169,6 +184,16 @@ export async function reconcileIndexedFiles(projectDir = getProjectDir()): Promi
   newOrChanged: number
   deleted: number
 }> {
+  return reconcileIndexedFilesWithOptions(projectDir, { allowModelLoad: true })
+}
+
+export async function reconcileIndexedFilesWithOptions(
+  projectDir = getProjectDir(),
+  options: { allowModelLoad: boolean },
+): Promise<{
+  newOrChanged: number
+  deleted: number
+}> {
   const db = getSpecSearchDatabase()
   const scanned = await scanSpecFiles(projectDir)
   const previous = await db.getSourceFiles()
@@ -187,8 +212,11 @@ export async function reconcileIndexedFiles(projectDir = getProjectDir()): Promi
     if (existing?.contentHash === file.hash) {
       continue
     }
-    await reindexFile(projectDir, file.relPath, file.hash)
+    await reindexFileWithOptions(projectDir, file.relPath, file.hash, options)
     newOrChanged += 1
+    if (newOrChanged % INDEX_YIELD_EVERY_FILES === 0) {
+      await yieldToEventLoop()
+    }
   }
 
   const currentPaths = new Set(scanned.map(file => file.relPath))
@@ -196,6 +224,7 @@ export async function reconcileIndexedFiles(projectDir = getProjectDir()): Promi
 
   for (const file of removed) {
     await deleteFileChunks(file.path)
+    await yieldToEventLoop()
   }
 
   return {

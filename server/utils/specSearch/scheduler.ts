@@ -3,10 +3,13 @@ import { existsSync } from 'node:fs'
 import { getProjectDir } from '../projectDir'
 import { closeSpecSearchDatabase, getSpecSearchDatabase } from './database'
 import { isEmbeddingModelLoaded } from './embeddings'
-import { reindexAll, reconcileIndexedFiles } from './indexer'
+import { reindexAll, reconcileIndexedFilesWithOptions } from './indexer'
 import { logger } from '../logger'
 
 const POLL_INTERVAL_MS = 30_000
+const SHUTDOWN_WAIT_MS = Number.parseInt(process.env.SPEC_SEARCH_SHUTDOWN_WAIT_MS || '1500', 10)
+const STARTUP_RECONCILE_DELAY_MS = Number.parseInt(process.env.SPEC_SEARCH_STARTUP_RECONCILE_DELAY_MS || '5000', 10)
+const DISABLE_STARTUP_RECONCILE = process.env.SPEC_SEARCH_DISABLE_STARTUP_RECONCILE === 'true'
 
 const runtimeState: IndexRuntimeState = {
   isIndexing: false,
@@ -18,6 +21,7 @@ const runtimeState: IndexRuntimeState = {
 }
 
 let timer: NodeJS.Timeout | null = null
+let startupTimer: NodeJS.Timeout | null = null
 let startupPromise: Promise<void> | null = null
 let activeJobPromise: Promise<ReindexResponse> | null = null
 const log = logger.specSearch
@@ -72,7 +76,7 @@ async function runJob(job: 'startup-reconcile' | 'poll-scan' | 'manual-reindex',
         }
         result = await reindexAll(getProjectDir())
       } else {
-        const delta = await reconcileIndexedFiles(getProjectDir())
+        const delta = await reconcileIndexedFilesWithOptions(getProjectDir(), { allowModelLoad: false })
         result = {
           success: true,
           status: 'completed',
@@ -133,13 +137,25 @@ export async function startSpecSearchScheduler(): Promise<void> {
 
   startupPromise = (async () => {
     runtimeState.schedulerActive = true
-    log.info('Spec search scheduler started', { pollIntervalMs: POLL_INTERVAL_MS })
-    await runJob('startup-reconcile')
+    log.info('Spec search scheduler started', {
+      pollIntervalMs: POLL_INTERVAL_MS,
+      startupReconcileDelayMs: STARTUP_RECONCILE_DELAY_MS,
+      startupReconcileDisabled: DISABLE_STARTUP_RECONCILE,
+    })
 
     if (timer) clearInterval(timer)
     timer = setInterval(() => {
       void runJob('poll-scan')
     }, POLL_INTERVAL_MS)
+
+    if (!DISABLE_STARTUP_RECONCILE) {
+      if (startupTimer) clearTimeout(startupTimer)
+      startupTimer = setTimeout(() => {
+        startupTimer = null
+        void runJob('startup-reconcile')
+      }, STARTUP_RECONCILE_DELAY_MS)
+      startupTimer.unref?.()
+    }
   })()
 
   return startupPromise
@@ -151,17 +167,35 @@ export async function stopSpecSearchScheduler(): Promise<void> {
     clearInterval(timer)
     timer = null
   }
+  if (startupTimer) {
+    clearTimeout(startupTimer)
+    startupTimer = null
+  }
+  let timedOutWaitingForJob = false
   if (activeJobPromise) {
     log.info('Waiting for active spec search job before shutdown', {
       currentJob: runtimeState.currentJob,
+      maxWaitMs: SHUTDOWN_WAIT_MS,
     })
-    try {
-      await activeJobPromise
-    } catch {
-      // no-op: shutdown should continue even if the in-flight job fails
+    await Promise.race([
+      activeJobPromise.catch(() => undefined),
+      new Promise<void>((resolve) => {
+        setTimeout(() => {
+          timedOutWaitingForJob = true
+          resolve()
+        }, SHUTDOWN_WAIT_MS)
+      }),
+    ])
+    if (timedOutWaitingForJob) {
+      log.warn('Shutdown proceeding with active spec search job still running', {
+        currentJob: runtimeState.currentJob,
+        maxWaitMs: SHUTDOWN_WAIT_MS,
+      })
     }
   }
-  closeSpecSearchDatabase()
+  if (!timedOutWaitingForJob) {
+    closeSpecSearchDatabase()
+  }
   log.info('Spec search scheduler stopped')
 }
 
