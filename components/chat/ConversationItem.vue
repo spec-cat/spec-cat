@@ -132,15 +132,15 @@ const formattedDate = computed(() => {
           <!-- Previewing badge (T027: FR-012) -->
           <span
             v-else-if="isPreviewing"
-            class="text-xs font-mono px-1.5 py-0.5 rounded flex-shrink-0"
-            :class="isActive ? 'text-retro-red bg-retro-red/20 border border-retro-red/40' : 'text-retro-red bg-retro-red/10'"
+            class="text-xs font-mono px-1.5 py-0.5 rounded border border-retro-red/35 flex-shrink-0"
+            :class="isActive ? 'text-retro-red bg-retro-red/20' : 'text-retro-red bg-retro-red/10'"
           >
             previewing
           </span>
           <!-- Streaming badge -->
           <span
             v-if="isStreaming"
-            class="text-xs font-mono text-retro-orange bg-retro-orange/10 px-1.5 py-0.5 rounded flex-shrink-0"
+            class="text-xs font-mono text-retro-orange bg-retro-orange/10 px-1.5 py-0.5 rounded border border-retro-orange/35 flex-shrink-0"
           >
             streaming
           </span>
