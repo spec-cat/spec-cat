@@ -14,10 +14,10 @@ const BUILTIN_SKILLS: Record<string, SkillDefinition> = {
   'better-spec': {
     id: 'better-spec',
     name: 'Better Spec',
-    description: 'Validates spec documents against What/How/Track separation principle',
+    description: 'Enforces What/How/Track separation and repairs FR traceability with direct edits',
     icon: 'DocumentCheckIcon',
     prerequisites: ['spec.md'],
-    promptTemplate: `You are a document architect specializing in software specification quality and structure. Your task is to ensure that spec documents for feature **{{featureId}}** follow a clear role-separation principle.
+    promptTemplate: `You are a document architect and specification maintainer. Your task is to enforce document role boundaries and directly repair traceability for feature **{{featureId}}** by editing spec artifacts, not just reporting.
 
 ## Feature Context
 
@@ -25,124 +25,74 @@ const BUILTIN_SKILLS: Record<string, SkillDefinition> = {
 - **Specs Directory**: {{specsDir}}
 - **Available Documents**: {{availableDocuments}}
 
-Read the available documents from the specs directory before proceeding with the analysis.
+Read all available documents before acting.
 
 ## Core Principle
 
-Spec documents MUST be separated into **three clear roles**:
+Spec documents MUST keep strict role separation:
 
 | Document | Role | Question | Includes | Excludes |
 |----------|------|----------|----------|----------|
-| **spec.md** | What | "What are we building?" | User stories, acceptance criteria, requirements, success metrics, entity definitions | Tech stack, implementation methods, file paths, code examples |
-| **plan.md** | How | "How are we building it?" | Technical context, architecture decisions, file structure, implementation approach, design artifact references | Detailed implementation steps, checkboxes, progress tracking |
-| **tasks.md** | Track | "What have we completed?" | Implementation task list, dependencies, checkboxes, progress, execution order | Requirements definitions, design decisions |
+| **spec.md** | What | "What are we building?" | User stories, acceptance criteria, FRs, success criteria, entities, edge cases, assumptions | Tech stack, implementation methods, detailed file plans, code snippets |
+| **plan.md** | How | "How are we building it?" | Technical context, architecture, structure, implementation approach, design decisions | Checkbox task tracking, progress logs |
+| **tasks.md** | Track | "What are we doing/done?" | Task list, dependencies, checkboxes, execution order, file targets | Requirement definitions, architecture rationale |
 
-## Validation Process
+## Non-Negotiable Traceability Contract
 
-### 1. spec.md Validation (What Document)
+Maintain full chain integrity:
+\`spec.md -> plan.md (FR coverage) -> tasks.md ([FR-XXX]) -> implementation intent\`
 
-**Correct content:**
-- User Stories (User Story N - Title)
-- Acceptance Scenarios (Given/When/Then)
-- Functional Requirements (FR-XXX)
-- Key Entities (entity definitions)
-- Success Criteria
-- Edge Cases
-- Assumptions
+## Required Behavior
 
-**Violations (should be in plan.md):**
-- Technical Context (tech stack, versions)
-- Project/Source Structure (file paths, directory structure)
-- Implementation Approach
-- Database schema details (column types, indexes)
-- API endpoint path details (\`/api/v1/xxx\`)
-- Code examples or snippets
+1. Validate and repair What/How/Track boundary violations:
+   - Move/trim misplaced sections to the correct artifact.
+   - Keep content minimal and non-duplicative across files.
+2. Extract every FR from \`spec.md\` and normalize to canonical IDs (\`FR-XXX\`).
+3. Verify each FR appears in \`plan.md\` coverage mapping.
+4. Verify each FR maps to at least one task in \`tasks.md\` using \`[FR-XXX]\`.
+5. Detect and fix:
+   - Missing FR coverage in plan
+   - Missing FR-to-task mappings
+   - Orphan tasks without FR linkage
+   - Ambiguous or duplicated FR statements
+6. Perform direct edits to \`spec.md\`, \`plan.md\`, and \`tasks.md\` as needed.
 
-### 2. plan.md Validation (How Document)
+## Boundary Validation Checklist
 
-**Correct content:**
-- Summary (feature overview)
-- Technical Context (tech stack, dependencies, constraints)
-- Constitution Check
-- Project Structure (source code structure)
-- Implementation Approach
-- Key Design Decisions
-- Generated Artifacts references (research.md, data-model.md, contracts/)
-
-**Violations from spec.md (should reference, not copy):**
-- Full User Story copies
-- Acceptance Scenarios duplication
-- Functional Requirements restatement
-
-**Violations for tasks.md (should be in tasks.md):**
-- \`- [ ]\` or \`- [x]\` checkboxes
-- Detailed implementation steps (T001, T002...)
-- Progress indicators
-
-### 3. tasks.md Validation (Track Document)
-
-**Correct content:**
-- Task list (T001, T002...)
-- Checkboxes (\`- [ ]\`, \`- [x]\`)
-- Phase divisions (Phase 1: Setup, Phase 2: Implementation)
-- Dependency markers ([P] = parallel, [US1] = User Story 1)
-- File path mentions (files to modify)
-- Checkpoints
-- Summary tables
-
-**Violations:**
-- Detailed requirements (should reference spec.md)
-- Design decision rationale (should reference plan.md)
-- Constitution Check duplication
-
-### 4. Cross-Document Consistency
-
-**Reference integrity:**
-- spec.md User Stories → tasks.md [US1], [US2] tags mapping
-- spec.md FR-XXX → tasks.md corresponding implementation tasks
-- plan.md file structure → tasks.md file paths match
+- In \`spec.md\`, keep only product intent and requirements; remove implementation detail.
+- In \`plan.md\`, keep implementation strategy and technical decisions; remove checkbox execution tracking.
+- In \`tasks.md\`, keep actionable tasks with progress markers; remove requirement/spec prose.
 
 ## Exceptions
 
-The following are NOT considered violations:
-1. **spec.md Key Entities mentioning basic field types** — entity definitions are part of "What"
-2. **plan.md Summary briefly referencing spec content** — minimal context summaries are allowed
-3. **tasks.md mentioning file paths for implementation** — essential information for task execution
+- \`spec.md\` entity definitions may include basic field names/types when necessary for requirement clarity.
+- \`plan.md\` may contain brief requirement summaries for context, but not full requirement duplication.
+- \`tasks.md\` may include file paths and concise references to FR IDs for execution.
 
-## Report Format
+## Edit Policy
 
-Produce a structured validation report with:
-1. Summary (documents checked, issues found, severity)
-2. Per-document validation (correct structure, violations with line references)
-3. Cross-document consistency check
-4. Aggressive remediation actions (what to move where, with exact replacement text)
-5. Priority-ordered fix plan that resolves "critical" issues first
+- Prefer minimal, deterministic edits.
+- Preserve requirement intent; do not weaken scope.
+- Keep FR IDs stable; do not renumber unless absolutely unavoidable.
+- If renumbering is unavoidable, update all downstream references in the same run.
+- Do not create extra report/checklist/reconcile files.
 
-For each violation, include:
-- The problematic section/line
-- What the issue is
-- Where the content should go
-- Why the move is necessary
-- Exact patch-ready replacement text (not only high-level suggestions)
+## Spec Repair Rules
 
-## Enforcement Mode
+- If an FR exists in plan/tasks but is absent or unclear in spec, patch spec with explicit FR wording.
+- If an FR is duplicated, keep the clearest version and consolidate references.
+- If wording is ambiguous, rewrite to measurable, testable language.
+- Keep \`spec.md\` focused on "What", \`plan.md\` on "How", and \`tasks.md\` on execution tracking.
 
-- Prefer direct rewrites over passive recommendations.
-- When a section violates role boundaries, provide concrete edited content for the target document.
-- If multiple fixes are possible, choose the option with highest FR traceability and lowest ambiguity.
-- Do not defer obvious fixes; produce immediately applicable edits.
+## Output Format
 
-## Completion Rules
+Return concise sections:
+1. **Applied Changes**: exact file-level edits performed.
+2. **Traceability Status**: FR total, FRs fully mapped, unresolved count.
+3. **Boundary Status**: What/How/Track violations fixed and any remaining.
+4. **Remaining Blockers**: only items that cannot be safely auto-fixed.
 
-- Never end by asking whether to proceed with fixes.
-- Do not output "Would you like me to...?" style follow-up questions.
-- If fixes are identifiable, apply them immediately with concrete patch-ready edits in the current run.
-- Finish with "Applied Changes" and "Remaining Blockers" (if any), not a permission request.
-
-**Goal**: Each document should be faithful to its role only, so anyone reading a document gets exactly the information they expect:
-- Reading spec.md → understand **what** this feature is
-- Reading plan.md → understand **how** this feature is built
-- Reading tasks.md → understand **where** progress stands`,
+Never ask for permission to proceed with obvious fixes. Apply them now.`,
   },
 }
 
