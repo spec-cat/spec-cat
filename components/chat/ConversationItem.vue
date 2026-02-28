@@ -6,7 +6,6 @@
  */
 import { ref, computed } from 'vue' 
 import {
-  ChatBubbleLeftIcon,
   ArchiveBoxIcon,
   PencilIcon,
   CodeBracketIcon,
@@ -99,7 +98,8 @@ const formattedDate = computed(() => {
           ? 'border-retro-red/40 bg-retro-red/10'
           : isActive
             ? 'border-retro-cyan bg-retro-cyan/10'
-            : 'border-retro-border hover:border-retro-cyan/50'
+            : 'border-retro-border hover:border-retro-cyan/50',
+      isStreaming ? 'streaming-border' : ''
     ]"
     @click="emit('select')"
   >
@@ -119,14 +119,6 @@ const formattedDate = computed(() => {
 
         <!-- Title display mode -->
         <div v-else class="flex items-center gap-2">
-          <!-- Streaming indicator -->
-          <div v-if="isStreaming" class="flex-shrink-0 relative">
-            <div class="w-4 h-4 rounded-full bg-retro-orange/30 animate-pulse" />
-            <div class="absolute inset-0 flex items-center justify-center">
-              <div class="w-2 h-2 rounded-full bg-retro-orange animate-ping" />
-            </div>
-          </div>
-          <ChatBubbleLeftIcon v-else class="w-4 h-4 text-retro-muted flex-shrink-0 -translate-y-px" />
           <h3 class="text-sm font-mono text-retro-text truncate">
             {{ conversation.title }}
           </h3>
@@ -156,14 +148,14 @@ const formattedDate = computed(() => {
 
 
         <!-- Preview and timestamp -->
-        <p class="text-xs text-retro-muted mt-1 truncate pl-6">
+        <p class="text-xs text-retro-muted mt-1 truncate">
           {{ lastMessagePreview }}
         </p>
-        <p class="text-xs text-retro-muted/60 mt-1 pl-6">
+        <p class="text-xs text-retro-muted/60 mt-1">
           {{ formattedDate }}
         </p>
         <!-- Worktree info (click to copy) -->
-        <div v-if="conversation.worktreeBranch || conversation.baseBranch" class="mt-1.5 pl-6 flex flex-wrap gap-1" @click.stop>
+        <div v-if="conversation.worktreeBranch || conversation.baseBranch" class="mt-1.5 flex flex-wrap gap-1" @click.stop>
           <button
             v-if="conversation.baseBranch"
             @click="copyToClipboard(conversation.baseBranch!)"
@@ -213,3 +205,25 @@ const formattedDate = computed(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.streaming-border {
+  animation: streaming-border-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes streaming-border-pulse {
+  0%,
+  100% {
+    border-color: rgb(var(--color-retro-orange) / 0.25);
+    box-shadow:
+      0 0 0 1px rgb(var(--color-retro-orange) / 0.15),
+      0 0 0 0 rgb(var(--color-retro-orange) / 0);
+  }
+  50% {
+    border-color: rgb(var(--color-retro-orange) / 0.95);
+    box-shadow:
+      0 0 0 1px rgb(var(--color-retro-orange) / 0.85),
+      0 0 12px 2px rgb(var(--color-retro-orange) / 0.35);
+  }
+}
+</style>

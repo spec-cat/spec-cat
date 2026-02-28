@@ -120,21 +120,23 @@ const cardClass = computed(() => {
       <div class="flex items-center gap-1 flex-shrink-0">
         <span
           v-if="criticalAlerts > 0"
-          class="px-1.5 py-0.5 rounded border border-retro-red/50 bg-retro-red/15 text-[10px] font-mono text-retro-red"
+          class="inline-flex items-center gap-1 text-[10px] font-mono text-retro-red"
           title="Critical traceability gaps"
         >
-          C{{ criticalAlerts }}
+          <span class="w-1.5 h-1.5 rounded-full bg-retro-red" />
+          {{ criticalAlerts }}
         </span>
         <span
           v-if="majorAlerts > 0"
-          class="px-1.5 py-0.5 rounded border border-retro-yellow/50 bg-retro-yellow/15 text-[10px] font-mono text-retro-yellow"
+          class="inline-flex items-center gap-1 text-[10px] font-mono text-retro-yellow"
           title="Major traceability gaps"
         >
-          M{{ majorAlerts }}
+          <span class="w-1.5 h-1.5 rounded-full bg-retro-yellow" />
+          {{ majorAlerts }}
         </span>
         <span
           v-if="feature.hasTasks"
-          class="text-[11px] font-mono text-retro-muted mr-1"
+          class="text-[10px] font-mono text-retro-muted mr-1"
           title="Completed tasks / total tasks"
         >
           {{ feature.completedTasks }}/{{ feature.totalTasks }}
