@@ -6,6 +6,7 @@ import type { ChildProcess } from 'node:child_process'
 import type { AIProviderStreamCallbacks, AIProviderStreamController, AIProviderStreamOptions } from '~/server/utils/aiProvider'
 import { getClaudeCliPath } from '~/server/utils/claude'
 import { getClaudeModelId } from '~/server/utils/claudeModel'
+import { transformClaudeEvent } from '~/server/utils/uiAdapter'
 
 function killProc(proc: ChildProcess) {
   try {
@@ -38,6 +39,9 @@ const metadata = {
 
 const claudeProvider: AIProvider = {
   metadata,
+  toCanonicalEvents(data) {
+    return transformClaudeEvent(data as Record<string, unknown>)
+  },
   streamChat(opts: AIProviderStreamOptions, callbacks: AIProviderStreamCallbacks): AIProviderStreamController {
     const cliPath = getClaudeCliPath()
     const modelId = getClaudeModelId(opts.selection.modelKey)

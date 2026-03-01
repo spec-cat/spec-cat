@@ -48,6 +48,7 @@ export interface AIProviderSessionState {
 
 export interface AIProvider {
   metadata: AIProviderMetadata
+  toCanonicalEvents: (data: Record<string, unknown> | UIStreamEvent) => UIStreamEvent[]
   streamChat?: (opts: AIProviderStreamOptions, callbacks: AIProviderStreamCallbacks) => AIProviderStreamController
   createSession?: (opts: AIProviderStartOptions) => Promise<AIProviderSessionState>
   resumeSession?: (sessionId: string, opts: AIProviderStartOptions) => Promise<AIProviderSessionState>

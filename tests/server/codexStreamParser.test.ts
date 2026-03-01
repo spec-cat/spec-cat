@@ -285,7 +285,7 @@ describe('codexStreamParser', () => {
     })
   })
 
-  it('prefers session_id over thread_id when both are present', () => {
+  it('prefers thread_id over session_id when both are present', () => {
     const mapped = mapCodexEventToUIEvents({
       type: 'agent_message',
       thread_id: 'thread-legacy',
@@ -295,7 +295,7 @@ describe('codexStreamParser', () => {
     expect(mapped).toHaveLength(2)
     expect(mapped[0]).toMatchObject({
       type: 'block_start',
-      sessionId: 'session-preferred',
+      sessionId: 'thread-legacy',
       blockType: 'text',
       text: 'hello',
     })

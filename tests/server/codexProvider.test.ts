@@ -36,9 +36,25 @@ describe('buildCodexExecArgs', () => {
       '--json',
       '--model',
       'gpt-5.3-codex',
-      '--sandbox',
-      'workspace-write',
       'thread-123',
+      '-',
+    ])
+  })
+
+  it('does not pass --sandbox for ask-mode resume invocations', () => {
+    const args = buildCodexExecArgs(makeOpts({
+      permissionMode: 'ask',
+      resumeSessionId: 'thread-ask-1',
+      message: 'follow-up',
+    }))
+
+    expect(args).toEqual([
+      'exec',
+      'resume',
+      '--json',
+      '--model',
+      'gpt-5.3-codex',
+      'thread-ask-1',
       '-',
     ])
   })

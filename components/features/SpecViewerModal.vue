@@ -86,6 +86,10 @@ async function fetchContent(filename: string = selectedFilename.value) {
   }
 }
 
+function handleRetryClick() {
+  void fetchContent()
+}
+
 const renderedHtml = computed(() => {
   if (!content.value) return ''
   return renderMarkdown(content.value)
@@ -397,7 +401,7 @@ onUnmounted(() => {
             <button
               type="button"
               class="mt-3 px-3 py-1.5 text-xs font-mono bg-retro-panel border border-retro-border rounded text-retro-muted hover:text-retro-cyan hover:border-retro-cyan transition-colors"
-              @click="fetchContent"
+              @click="handleRetryClick"
             >
               Retry
             </button>

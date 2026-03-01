@@ -206,12 +206,13 @@ function extractSessionFields(source: Record<string, unknown>): Record<string, s
 
 function extractSessionId(event: Record<string, unknown>): string | undefined {
   const fields = extractSessionFields(event)
-  return fields.session_id
+  // Codex resume is most reliable with thread IDs.
+  return fields.thread_id
+    || fields.threadId
+    || fields.session_id
     || fields.sessionId
     || fields.conversation_id
     || fields.conversationId
-    || fields.thread_id
-    || fields.threadId
 }
 
 interface MappedPermissionRequest {

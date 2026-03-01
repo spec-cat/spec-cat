@@ -529,7 +529,7 @@ export function useChatStream() {
           chatStore.clearPendingPermission(conversationId)
           conn.activeTools.clear()
           chatStore.saveConversation(conversationId, true)
-          cleanupConnection(conversationId)
+          // Keep socket/session alive so the next turn can resume provider context.
           return
         }
 
@@ -542,7 +542,7 @@ export function useChatStream() {
           chatStore.clearPendingPermission(conversationId)
           conn.activeTools.clear()
           chatStore.saveConversation(conversationId, true)
-          cleanupConnection(conversationId)
+          // Keep socket/session alive so the next turn can resume provider context.
           return
         }
 
@@ -623,7 +623,7 @@ export function useChatStream() {
         chatStore.clearPendingPermission(conversationId)
         chatStore.saveConversation(conversationId, true)
         conn.activeTools.clear()
-        cleanupConnection(conversationId)
+        // Keep socket/session alive so the next turn can resume provider context.
         cascadeStates.delete(conversationId)
         return
       }
@@ -940,12 +940,6 @@ export function useChatStream() {
     chatStore.appendContentBlockWithSave(messageId, block, conversationId)
   }
 
-  function hasSessionInitBlock(messageId: string, conversationId: string): boolean {
-    const conv = chatStore.conversations.find((c: { id: string }) => c.id === conversationId)
-    const msg = conv?.messages.find((m: { id: string }) => m.id === messageId)
-    return !!msg?.contentBlocks?.some((block) => block.type === 'session_init')
-  }
-
   /**
    * Send message via WebSocket (per-conversation)
    */
@@ -1003,23 +997,6 @@ export function useChatStream() {
         featureId: options?.featureId,
         providerId,
         providerModelKey,
-      }
-
-      if (providerId === 'codex' && !hasSessionInitBlock(messageId, conversationId)) {
-        ensureBlocks(messageId, conversationId)
-        const isBypassLike = chatStore.permissionMode === 'bypass' || chatStore.permissionMode === 'auto'
-        // Codex tool availability is not tied to ask/bypass mode.
-        // Keep a stable synthetic count so session header does not imply "no tools" in ask mode.
-        const syntheticToolCount = 32
-        const block: SessionInitBlock = {
-          id: generateBlockId(),
-          type: 'session_init',
-          model: providerModelKey,
-          tools: Array.from({ length: syntheticToolCount }, (_, idx) => `tool-${idx + 1}`),
-          permissionMode: isBypassLike ? 'bypassPermissions' : chatStore.permissionMode,
-          cwd: options?.cwd || conv?.cwd || '',
-        }
-        chatStore.appendContentBlockWithSave(messageId, block, conversationId)
       }
 
       chatStore.pushDebugEvent({

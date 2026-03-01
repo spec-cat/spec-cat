@@ -11,16 +11,16 @@ import { loadSpecContext } from '~/server/utils/specContext'
 import { guardProviderCapability, resolveServerProviderSelection } from '~/server/utils/aiProviderSelection'
 import type { AIProviderStreamController } from '~/server/utils/aiProvider'
 import { streamChatWithProvider } from '~/server/utils/aiProvider'
+import { getProvider } from '~/server/utils/aiProviderRegistry'
 import { hasCodexMissingRolloutPathError, hasCodexPermissionError, summarizeProviderProcessError } from '~/server/utils/providerProcessError'
 import {
-  transformClaudeEvent,
-  transformCodexEvent,
   isRenderableEvent,
-  checkForPermissionRequest,
-  normalizeTools,
-  normalizeToolName,
-  extractPermissionRequestFromProcessOutput,
 } from '~/server/utils/uiAdapter'
+import {
+  approveTools,
+  deriveApprovalRequestFromEvent,
+  deriveApprovalRequestFromProcessOutput,
+} from '~/server/utils/providerApprovalPolicy'
 
 type PermissionMode = 'plan' | 'ask' | 'auto' | 'bypass'
 
@@ -249,12 +249,7 @@ function handlePermissionResponse(peer: any, msg: PermissionResponse) {
 
   if (msg.allow && state.pendingMessage) {
     // Add all pending tools to approved set
-    for (const tool of state.pendingTools) {
-      const normalized = normalizeToolName(tool)
-      if (normalized) {
-        state.approvedTools.add(normalized)
-      }
-    }
+    approveTools(state.approvedTools, state.pendingTools)
     console.log('[WS] Tools approved:', state.pendingTools, '- Total approved:', Array.from(state.approvedTools))
     state.pendingTools = []
     // Keep providerSessionId to resume the conversation and preserve the original
@@ -397,6 +392,15 @@ async function runProvider(peer: any, state: PeerState, msg: ChatMessage, isRetr
     ? { providerId: msg.providerId, modelKey: msg.providerModelKey || '' }
     : { providerId: 'claude', modelKey: msg.providerModelKey || '' }
   const selection = await resolveServerProviderSelection(requestedSelection)
+  const provider = getProvider(selection.providerId)
+  if (!provider) {
+    peer.send(JSON.stringify({
+      type: 'error',
+      error: `Provider "${selection.providerId}" is not registered`,
+      requestId: msg.requestId,
+    }))
+    return
+  }
   const providerGuard = await guardProviderCapability(
     selection,
     'streaming',
@@ -493,8 +497,7 @@ async function runProvider(peer: any, state: PeerState, msg: ChatMessage, isRetr
       },
       {
         onProviderJson(parsed) {
-          const adapter = selection.providerId === 'claude' ? transformClaudeEvent : transformCodexEvent
-          const events = adapter(parsed as Record<string, unknown>)
+          const events = provider.toCanonicalEvents(parsed)
 
           for (const event of events) {
             if (event.sessionId) {
@@ -506,7 +509,12 @@ async function runProvider(peer: any, state: PeerState, msg: ChatMessage, isRetr
 
             // Handle permission interception
             if ((mode === 'ask' || mode === 'plan') && !permissionRequested) {
-              const permRequest = checkForPermissionRequest(event, state.approvedTools, selection.providerId)
+              const permRequest = deriveApprovalRequestFromEvent(
+                event,
+                state.approvedTools,
+                selection.providerId,
+                mode,
+              )
               if (permRequest) {
                 permissionRequested = true
                 state.pendingTools = permRequest.tools || [permRequest.tool]
@@ -543,20 +551,18 @@ async function runProvider(peer: any, state: PeerState, msg: ChatMessage, isRetr
                   nonJsonOutput: nonJsonOutput.slice(-25),
                 })
 
-                if ((mode === 'ask' || mode === 'plan')) {
-                  const inferred = extractPermissionRequestFromProcessOutput(nonJsonOutput)
-                  if (inferred) {
-                    permissionRequested = true
-                    state.pendingTools = normalizeTools(inferred.tools)
-                    peer.send(JSON.stringify({
-                      type: 'permission_request',
-                      tool: state.pendingTools[0] || 'Permission',
-                      tools: state.pendingTools,
-                      description: inferred.description,
-                    }))
-                    state.proc = null
-                    return
-                  }
+                const inferred = deriveApprovalRequestFromProcessOutput(nonJsonOutput, mode)
+                if (inferred) {
+                  permissionRequested = true
+                  state.pendingTools = inferred.tools || [inferred.tool]
+                  peer.send(JSON.stringify({
+                    type: 'permission_request',
+                    tool: inferred.tool,
+                    tools: state.pendingTools,
+                    description: inferred.description,
+                  }))
+                  state.proc = null
+                  return
                 }
 
                 const hasPermissionError = hasCodexPermissionError(nonJsonOutput)

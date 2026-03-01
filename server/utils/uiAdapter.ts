@@ -22,7 +22,7 @@ export function extractSessionId(message: Record<string, unknown>): string | nul
     return null
   }
 
-  const sessionIdKeys = ['session_id', 'sessionId', 'conversation_id', 'conversationId', 'thread_id', 'threadId']
+  const sessionIdKeys = ['thread_id', 'threadId', 'session_id', 'sessionId', 'conversation_id', 'conversationId']
   for (const key of sessionIdKeys) {
     const value = message[key]
     if (typeof value === 'string' && value.length > 0) {

@@ -2,11 +2,12 @@ import type { AIProvider } from '~/server/utils/aiProvider'
 import { registerProvider } from '~/server/utils/aiProviderRegistry'
 import type { AIProviderStreamCallbacks, AIProviderStreamController, AIProviderStreamOptions } from '~/server/utils/aiProvider'
 import { processCodexJsonLine } from '~/server/utils/codexStreamParser'
-import { accessSync, constants, existsSync, mkdirSync, mkdtempSync } from 'node:fs'
+import { accessSync, constants, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync } from 'node:fs'
 import { execSync, spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { transformCodexEvent } from '~/server/utils/uiAdapter'
 
 function detectCodexCli(): string | null {
   if (typeof process.env.CODEX_CLI_PATH === 'string' && process.env.CODEX_CLI_PATH.length > 0 && existsSync(process.env.CODEX_CLI_PATH)) {
@@ -69,16 +70,69 @@ function killProc(proc: ChildProcess) {
 }
 
 function resolveCodexHomeForSpawn(ephemeral: boolean): string | null {
+  const sourceCodexHome = (() => {
+    if (typeof process.env.CODEX_HOME === 'string' && process.env.CODEX_HOME.length > 0) {
+      return process.env.CODEX_HOME
+    }
+    const homeDir = process.env.HOME || ''
+    if (!homeDir) return null
+    return join(homeDir, '.codex')
+  })()
+
+  const seedCodexAuth = (targetHome: string) => {
+    if (!sourceCodexHome || sourceCodexHome === targetHome || !existsSync(sourceCodexHome)) {
+      return
+    }
+
+    try {
+      mkdirSync(targetHome, { recursive: true })
+    } catch {
+      return
+    }
+
+    const copyFileIfExists = (fileName: string) => {
+      const from = join(sourceCodexHome, fileName)
+      const to = join(targetHome, fileName)
+      if (!existsSync(from)) return
+      try {
+        copyFileSync(from, to)
+      } catch {
+        // Best-effort only.
+      }
+    }
+
+    const copyDirIfExists = (dirName: string) => {
+      const from = join(sourceCodexHome, dirName)
+      const to = join(targetHome, dirName)
+      if (!existsSync(from)) return
+      try {
+        cpSync(from, to, { recursive: true, force: true })
+      } catch {
+        // Best-effort only.
+      }
+    }
+
+    // Keep retries isolated from potentially corrupted state DB while preserving auth.
+    copyFileIfExists('auth.json')
+    copyFileIfExists('config.toml')
+    copyFileIfExists('version.json')
+    copyDirIfExists('rules')
+    copyDirIfExists('prompts')
+  }
+
   // For ephemeral retries, isolate state in a fresh temp home so corrupted
   // rollout/session records in ~/.codex cannot poison the retry attempt.
   if (ephemeral) {
     try {
-      return mkdtempSync(join(tmpdir(), 'spec-cat-codex-home-'))
+      const tempHome = mkdtempSync(join(tmpdir(), 'spec-cat-codex-home-'))
+      seedCodexAuth(tempHome)
+      return tempHome
     } catch {
       // Fall back to shared temp path if mkdtemp fails.
       const fallbackEphemeralHome = '/tmp/spec-cat-codex-home'
       try {
         mkdirSync(fallbackEphemeralHome, { recursive: true })
+        seedCodexAuth(fallbackEphemeralHome)
         return fallbackEphemeralHome
       } catch {
         return null
@@ -119,6 +173,7 @@ function resolveCodexHomeForSpawn(ephemeral: boolean): string | null {
   const fallbackCodexHome = '/tmp/spec-cat-codex-home'
   try {
     mkdirSync(fallbackCodexHome, { recursive: true })
+    seedCodexAuth(fallbackCodexHome)
     return fallbackCodexHome
   } catch {
     return null
@@ -172,7 +227,8 @@ const metadata = {
 } satisfies AIProvider['metadata']
 
 export function buildCodexExecArgs(opts: AIProviderStreamOptions): string[] {
-  const args: string[] = opts.resumeSessionId
+  const isResume = !!opts.resumeSessionId
+  const args: string[] = isResume
     ? ['exec', 'resume', '--json', '--model', opts.selection.modelKey]
     : ['exec', '--json', '--model', opts.selection.modelKey]
 
@@ -184,9 +240,12 @@ export function buildCodexExecArgs(opts: AIProviderStreamOptions): string[] {
   switch (mode) {
     case 'plan':
     case 'ask':
-      // Keep ask/plan interactive permission semantics, but ensure writable sandbox.
-      // Without explicit sandbox mode, some Codex builds default to read-only.
-      args.push('--sandbox', 'workspace-write')
+      // `codex exec resume` does not accept `--sandbox`, so only set sandbox on new turns.
+      if (!isResume) {
+        // Keep ask/plan interactive permission semantics, but ensure writable sandbox.
+        // Without explicit sandbox mode, some Codex builds default to read-only.
+        args.push('--sandbox', 'workspace-write')
+      }
       break
     case 'auto':
       args.push('--full-auto')
@@ -223,13 +282,72 @@ function buildCodexPrompt(opts: AIProviderStreamOptions): string {
   ].join('\n')
 }
 
+function extractSessionIdFromRecord(input: Record<string, unknown>): string | null {
+  const directKeys = [
+    'thread_id',
+    'threadId',
+    'session_id',
+    'sessionId',
+    'conversation_id',
+    'conversationId',
+  ]
+
+  for (const key of directKeys) {
+    const value = input[key]
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value
+    }
+  }
+
+  const nestedKeys = ['event', 'payload', 'data', 'response', 'item']
+  for (const nestedKey of nestedKeys) {
+    const nested = input[nestedKey]
+    if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+      const nestedSessionId = extractSessionIdFromRecord(nested as Record<string, unknown>)
+      if (nestedSessionId) {
+        return nestedSessionId
+      }
+    }
+  }
+
+  return null
+}
+
 const codexProvider: AIProvider = {
   metadata,
+  toCanonicalEvents(data) {
+    return transformCodexEvent(data as Record<string, unknown>)
+  },
   streamChat(opts: AIProviderStreamOptions, callbacks: AIProviderStreamCallbacks): AIProviderStreamController {
     const cliPath = getCodexCliPath()
     const fallbackCodexHome = resolveCodexHomeForSpawn(!!opts.ephemeral)
     const args = buildCodexExecArgs(opts)
     const prompt = buildCodexPrompt(opts)
+
+    // Codex CLI does not emit a stable init envelope in all builds.
+    // Emit canonical session init once per turn when we have a reliable session ID.
+    const isBypassLike = (opts.permissionMode || 'ask') === 'bypass' || (opts.permissionMode || 'ask') === 'auto'
+    const syntheticToolCount = 32
+    let sessionInitEmitted = false
+    let discoveredSessionId: string | null = null
+
+    const emitSessionInit = (sessionId?: string) => {
+      if (sessionInitEmitted) return
+      callbacks.onProviderJson({
+        type: 'session_init',
+        sessionId,
+        model: opts.selection.modelKey,
+        tools: Array.from({ length: syntheticToolCount }, (_, idx) => `tool-${idx + 1}`),
+        permissionMode: isBypassLike ? 'bypassPermissions' : (opts.permissionMode || 'ask'),
+        cwd: opts.cwd,
+      })
+      sessionInitEmitted = true
+    }
+
+    if (opts.resumeSessionId) {
+      discoveredSessionId = opts.resumeSessionId
+      emitSessionInit(opts.resumeSessionId)
+    }
 
     const proc = spawn(cliPath, args, {
       cwd: opts.cwd,
@@ -265,6 +383,16 @@ const codexProvider: AIProvider = {
       for (const line of lines) {
         const cleaned = line.trim()
         if (!cleaned) continue
+        try {
+          const parsed = JSON.parse(cleaned) as Record<string, unknown>
+          const candidateSessionId = extractSessionIdFromRecord(parsed)
+          if (candidateSessionId && !discoveredSessionId) {
+            discoveredSessionId = candidateSessionId
+            emitSessionInit(candidateSessionId)
+          }
+        } catch {
+          // Non-JSON line — session discovery is best-effort only.
+        }
         const processed = processCodexJsonLine(cleaned)
         nonJsonOutput.push(...processed.diagnostics)
         if (processed.nonJson) {
@@ -286,6 +414,9 @@ const codexProvider: AIProvider = {
     })
 
     proc.on('close', (exitCode, signal) => {
+      if (!sessionInitEmitted) {
+        emitSessionInit(discoveredSessionId || undefined)
+      }
       const flushTail = (tail: string) => {
         const cleaned = tail.trim()
         if (!cleaned) return
