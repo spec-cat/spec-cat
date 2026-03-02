@@ -97,7 +97,7 @@ const rolloutRecoveryAttempts = new Set<string>()
 
 // Health check constants
 const HEALTH_CHECK_INTERVAL_MS = 30_000  // Check every 30s
-const STREAMING_TIMEOUT_MS = 180_000     // 3 min with no messages → timeout
+const STREAMING_TIMEOUT_MS = 50_000      // 50s with no messages → timeout
 
 function summarizeCloseCode(code: number): string {
   switch (code) {
