@@ -9,7 +9,7 @@ This dashboard normalizes feature status across all `specs/*` folders using:
 
 ## Lifecycle Summary
 
-- `done`: 8
+- `done`: 9
 - `review`: 7
 - `in_progress`: 13
 - `backlog`: 1
@@ -47,6 +47,7 @@ This dashboard normalizes feature status across all `specs/*` folders using:
 | `028-features-panel-core` | Draft (Child Spec) | 0/8 | `in_progress` | Child-spec split created; task backfill/verification pending. |
 | `029-features-panel-actions` | Draft (Child Spec) | 0/7 | `in_progress` | Child-spec split created; task backfill/verification pending. |
 | `030-features-panel-active-linking` | Draft (Child Spec) | 0/7 | `in_progress` | Child-spec split created; task backfill/verification pending. |
+| `034-gemini-provider-integration` | Implemented | 4/4 | `done` | Gemini CLI provider implemented and integrated. |
 
 ## Reorganization Notes
 

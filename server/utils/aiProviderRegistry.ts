@@ -9,6 +9,7 @@ export async function ensureProvidersInitialized() {
   const providerImports = [
     ['claude', () => import('~/server/utils/claudeProvider')],
     ['codex', () => import('~/server/utils/codexProvider')],
+    ['gemini', () => import('~/server/utils/geminiProvider')],
   ] as const
 
   await Promise.all(providerImports.map(async ([providerId, loader]) => {
