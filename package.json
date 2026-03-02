@@ -67,6 +67,7 @@
     "@types/node": "^22.0.0",
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-vue": "^6.0.3",
+    "@vitest/coverage-v8": "^4.0.18",
     "@vue/test-utils": "^2.4.6",
     "happy-dom": "^20.4.0",
     "jsdom": "^27.4.0",
