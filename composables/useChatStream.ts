@@ -98,6 +98,7 @@ const rolloutRecoveryAttempts = new Set<string>()
 // Health check constants
 const HEALTH_CHECK_INTERVAL_MS = 30_000  // Check every 30s
 const STREAMING_TIMEOUT_MS = 50_000      // 50s with no messages → timeout
+const STREAMING_TIMEOUT_SECONDS = Math.round(STREAMING_TIMEOUT_MS / 1000)
 
 function summarizeCloseCode(code: number): string {
   switch (code) {
@@ -246,7 +247,7 @@ export function useChatStream() {
           clearHealthCheck(conn)
           markRunningToolBlocks(conn.currentMessageId, convId, 'error')
           chatStore.updateMessage(conn.currentMessageId, { status: 'error' }, convId)
-          chatStore.setSessionError('Streaming timed out — no response from server for 3 minutes', convId)
+          chatStore.setSessionError(`Streaming timed out — no response from server for ${STREAMING_TIMEOUT_SECONDS} seconds`, convId)
           chatStore.endSession(convId)
           chatStore.endConversationStreaming(convId)
           // Close the stale connection
@@ -325,9 +326,21 @@ export function useChatStream() {
    */
   function ensureConnection(conversationId: string): Promise<WebSocket> {
     return new Promise((resolve, reject) => {
+      let settled = false
+      const safeResolve = (ws: WebSocket) => {
+        if (settled) return
+        settled = true
+        resolve(ws)
+      }
+      const safeReject = (error: Error) => {
+        if (settled) return
+        settled = true
+        reject(error)
+      }
+
       const existing = connections.get(conversationId)
       if (existing && existing.ws.readyState === WebSocket.OPEN) {
-        resolve(existing.ws)
+        safeResolve(existing.ws)
         return
       }
 
@@ -356,7 +369,7 @@ export function useChatStream() {
       connections.set(conversationId, connState)
 
       ws.onopen = () => {
-        resolve(ws)
+        safeResolve(ws)
       }
 
       ws.onerror = (event) => {
@@ -375,7 +388,7 @@ export function useChatStream() {
           chatStore.endConversationStreaming(conversationId)
         }
         connections.delete(conversationId)
-        reject(new Error('WebSocket connection failed. Server may be unavailable.'))
+        safeReject(new Error('WebSocket connection failed. Server may be unavailable.'))
       }
 
       ws.onclose = (event) => {
@@ -383,6 +396,11 @@ export function useChatStream() {
         if (conn) clearHealthCheck(conn)
         connections.delete(conversationId)
         cascadeStates.delete(conversationId)
+
+        if (!settled) {
+          safeReject(new Error(`WebSocket closed before connection was established (code: ${event.code})`))
+          return
+        }
 
         // If we were streaming, mark as error
         if (chatStore.isConversationStreaming(conversationId)) {
@@ -624,7 +642,6 @@ export function useChatStream() {
         chatStore.saveConversation(conversationId, true)
         conn.activeTools.clear()
         // Keep socket/session alive so the next turn can resume provider context.
-        cascadeStates.delete(conversationId)
         return
       }
 

@@ -1076,11 +1076,16 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   /**
-   * Sort conversations by newest created first
+   * Sort conversations by most recently updated first
    */
   function sortConversations() {
+    const getSortTime = (conv: Conversation) => {
+      const updated = new Date(conv.updatedAt).getTime()
+      if (Number.isFinite(updated) && updated > 0) return updated
+      return new Date(conv.createdAt).getTime()
+    }
     conversations.value.sort((a, b) =>
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      getSortTime(b) - getSortTime(a)
     )
   }
 

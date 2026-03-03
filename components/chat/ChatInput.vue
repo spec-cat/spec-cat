@@ -15,6 +15,7 @@ import type { SearchMode, SearchResponse } from '~/types/specSearch'
 import type { AIProviderMetadata, AIProviderSelection } from '~/types/aiProvider'
 import { DEFAULT_MODEL_KEY, DEFAULT_PROVIDER_ID } from '~/types/aiProvider'
 import { useSettingsStore } from '~/stores/settings'
+import { buildStreamOptsFromConversation } from '~/utils/chatStream'
 
 const props = defineProps<{
   disabled?: boolean
@@ -614,11 +615,36 @@ async function handleShowContext() {
   )
 }
 
+function buildStreamOptionsForActiveConversation(attachments: ChatImageAttachment[] = []) {
+  const base = buildStreamOptsFromConversation(chatStore.activeConversation, true) ?? {}
+  if (attachments.length > 0) {
+    return { ...base, attachments }
+  }
+  return Object.keys(base).length > 0 ? base : undefined
+}
+
+function startAssistantStreamingTurn(conversationId: string) {
+  const assistantMessage = chatStore.addAssistantMessage(conversationId)
+  chatStore.startSession(`session-${Date.now()}`, conversationId)
+  chatStore.startConversationStreaming(conversationId)
+  return assistantMessage
+}
+
+function failAssistantStreamingTurn(conversationId: string, messageId: string, error: unknown, fallbackMessage: string) {
+  const errorMessage = error instanceof Error ? error.message : fallbackMessage
+  chatStore.setSessionError(errorMessage, conversationId)
+  chatStore.updateMessage(messageId, { status: 'error' }, conversationId)
+  chatStore.endSession(conversationId)
+  chatStore.endConversationStreaming(conversationId)
+}
+
 async function sendMessage() {
   const message = inputText.value.trim()
   const attachments = [...pendingAttachments.value]
   if ((message.length === 0 && attachments.length === 0) || chatStore.isActiveConversationStreaming || isSending.value || props.disabled) return
   const hadActiveConversation = !!chatStore.activeConversationId
+  let conversationId: string | null = null
+  let assistantMessageId: string | null = null
 
   // Check for /reset command
   if (message === '/reset' || message === '/reset-context') {
@@ -651,47 +677,29 @@ async function sendMessage() {
     await chatStore.addUserMessageWithConversation(message, attachments)
 
     // Get conversation ID after potential creation
-    const conversationId = chatStore.activeConversationId!
+    conversationId = chatStore.activeConversationId
+    if (!conversationId) {
+      throw new Error('Failed to create or select a conversation')
+    }
     if (!hadActiveConversation) {
       applyPendingConversationSelectionIfNeeded(conversationId)
     }
 
-    // Add placeholder assistant message
-    const assistantMessage = chatStore.addAssistantMessage()
+    const assistantMessage = startAssistantStreamingTurn(conversationId)
+    assistantMessageId = assistantMessage.id
 
-    // Start session and mark conversation as streaming
-    chatStore.startSession(`session-${Date.now()}`)
-    chatStore.startConversationStreaming(conversationId)
-
-    // Pass worktree cwd and featureId so the AI provider runs in the isolated directory with spec context
-    const activeConv = chatStore.activeConversation
-    const streamOpts: { cwd?: string; worktreeBranch?: string; featureId?: string; attachments?: ChatImageAttachment[] } = {}
-    if (activeConv?.hasWorktree && activeConv.worktreePath) {
-      streamOpts.cwd = activeConv.worktreePath
-      streamOpts.worktreeBranch = activeConv.worktreeBranch
-    }
-    if (activeConv?.featureId) {
-      streamOpts.featureId = activeConv.featureId
-    }
-    if (attachments.length > 0) {
-      streamOpts.attachments = attachments
-    }
-    await streamMessage(message, assistantMessage.id, conversationId,
-      Object.keys(streamOpts).length > 0 ? streamOpts : undefined)
+    await streamMessage(
+      message,
+      assistantMessage.id,
+      conversationId,
+      buildStreamOptionsForActiveConversation(attachments),
+    )
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Failed to send message'
-    chatStore.setSessionError(errorMessage)
-
-    // Update the assistant message to show error
-    const lastMsg = chatStore.lastMessage
-    if (lastMsg && lastMsg.role === 'assistant') {
-      chatStore.updateMessage(lastMsg.id, { status: 'error' })
-    }
-
-    // End streaming on error
-    if (chatStore.activeConversationId) {
-      chatStore.endSession(chatStore.activeConversationId)
-      chatStore.endConversationStreaming(chatStore.activeConversationId)
+    if (conversationId && assistantMessageId) {
+      failAssistantStreamingTurn(conversationId, assistantMessageId, error, 'Failed to send message')
+    } else {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to send message'
+      chatStore.setSessionError(errorMessage)
     }
   } finally {
     isSending.value = false
@@ -767,42 +775,25 @@ async function retryLastMessage() {
   chatStore.clearError()
 
   isSending.value = true
+  let assistantMessageId: string | null = null
 
   try {
-    // Add new placeholder assistant message
-    const assistantMessage = chatStore.addAssistantMessage()
+    const assistantMessage = startAssistantStreamingTurn(conversationId)
+    assistantMessageId = assistantMessage.id
 
-    // Start session and mark conversation as streaming
-    chatStore.startSession(`session-${Date.now()}`)
-    chatStore.startConversationStreaming(conversationId)
-
-    // Pass worktree cwd and featureId so the AI provider runs in the isolated directory with spec context
-    const activeConv = chatStore.activeConversation
-    const streamOpts: { cwd?: string; worktreeBranch?: string; featureId?: string; attachments?: ChatImageAttachment[] } = {}
-    if (activeConv?.hasWorktree && activeConv.worktreePath) {
-      streamOpts.cwd = activeConv.worktreePath
-      streamOpts.worktreeBranch = activeConv.worktreeBranch
-    }
-    if (activeConv?.featureId) {
-      streamOpts.featureId = activeConv.featureId
-    }
-    if (lastUserMessage.attachments.length > 0) {
-      streamOpts.attachments = lastUserMessage.attachments
-    }
-    await streamMessage(lastUserMessage.content, assistantMessage.id, conversationId,
-      Object.keys(streamOpts).length > 0 ? streamOpts : undefined)
+    await streamMessage(
+      lastUserMessage.content,
+      assistantMessage.id,
+      conversationId,
+      buildStreamOptionsForActiveConversation(lastUserMessage.attachments),
+    )
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Failed to retry message'
-    chatStore.setSessionError(errorMessage)
-
-    const lastNewMsg = chatStore.lastMessage
-    if (lastNewMsg && lastNewMsg.role === 'assistant') {
-      chatStore.updateMessage(lastNewMsg.id, { status: 'error' })
+    if (assistantMessageId) {
+      failAssistantStreamingTurn(conversationId, assistantMessageId, error, 'Failed to retry message')
+    } else {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to retry message'
+      chatStore.setSessionError(errorMessage, conversationId)
     }
-
-    // End streaming on error
-    chatStore.endSession(conversationId)
-    chatStore.endConversationStreaming(conversationId)
   } finally {
     isSending.value = false
   }
