@@ -2,16 +2,61 @@ import type { BranchResponse } from '~/types/git'
 import {
   execGitCommand,
   isGitRepository,
-  generateBranchColor
+  generateBranchColor,
+  getBranches
 } from '~/server/utils/git'
 import { getProjectDir } from '~/server/utils/projectDir'
+
+function parseBooleanQuery(value: unknown): boolean {
+  const raw = Array.isArray(value) ? value[0] : value
+  if (typeof raw === 'boolean') {
+    return raw
+  }
+  if (typeof raw === 'string') {
+    return raw.toLowerCase() === 'true'
+  }
+  return false
+}
+
+async function getBranchesOutput(cwd: string, refScopes: string[]): Promise<string> {
+  const basePrefix = '%(HEAD)%09%(refname)%09%(refname:short)%09%(objectname)%09%(upstream:short)%09'
+
+  // Try multiple date formats for compatibility across Git versions.
+  const dateFormats = ['iso-strict', 'iso8601-strict', 'iso8601', 'unix']
+
+  for (const format of dateFormats) {
+    try {
+      return await execGitCommand(
+        [
+          'for-each-ref',
+          ...refScopes,
+          `--format=${basePrefix}%(committerdate:${format})`
+        ],
+        cwd
+      )
+    } catch (error: any) {
+      const message = String(error?.message ?? '')
+      const isUnknownDateFormat = message.includes('unknown date format')
+        || message.includes('bad date format')
+        || message.includes('unknown format')
+        || message.includes('unknown field name')
+        || message.includes('unsupported format')
+
+      if (!isUnknownDateFormat || format === dateFormats[dateFormats.length - 1]) {
+        throw error
+      }
+    }
+  }
+
+  return ''
+}
 
 export default defineEventHandler(async (event) => {
   const query = getQuery(event)
 
   try {
-    const includeRemote = (Array.isArray(query.includeRemote) ? query.includeRemote[0] : query.includeRemote) === 'true'
-    const excludeSc = (Array.isArray(query.excludeSc) ? query.excludeSc[0] : query.excludeSc) === 'true'
+    const includeRemote = parseBooleanQuery(query.includeRemote)
+    const excludeSc = parseBooleanQuery(query.excludeSc)
     const cwd = getProjectDir()
     
     // Validate git repository
@@ -32,67 +77,78 @@ export default defineEventHandler(async (event) => {
 
     // Get all branches in one pass (avoids one git call per branch for commit date).
     const refScopes = includeRemote ? ['refs/heads', 'refs/remotes'] : ['refs/heads']
-    const output = await execGitCommand(
-      [
-        'for-each-ref',
-        ...refScopes,
-        '--format=%(HEAD)%09%(refname)%09%(refname:short)%09%(objectname)%09%(upstream:short)%09%(committerdate:iso-strict)'
-      ],
-      cwd
-    )
-    const lines = output.split('\n').filter(Boolean)
-
     const branches: BranchResponse['branches'] = []
+    try {
+      const output = await getBranchesOutput(cwd, refScopes)
+      const lines = output.split('\n').filter(Boolean)
 
-    for (const line of lines) {
-      const [headMarker, refName, shortName, tip, upstreamShort, commitDateRaw] = line.split('\t')
-      if (!refName || !shortName || !tip) {
-        continue
-      }
+      for (const line of lines) {
+        const [headMarker, refName, shortName, tip, upstreamShort, commitDateRaw] = line.split('\t')
+        if (!refName || !shortName || !tip) {
+          continue
+        }
 
-      const isRemote = refName.startsWith('refs/remotes/')
+        const isRemote = refName.startsWith('refs/remotes/')
 
-      // Skip symbolic remote HEAD refs like origin/HEAD.
-      if (isRemote && shortName.endsWith('/HEAD')) {
-        continue
-      }
+        // Skip symbolic remote HEAD refs like origin/HEAD.
+        if (isRemote && shortName.endsWith('/HEAD')) {
+          continue
+        }
 
-      const cleanName = shortName
-      if (excludeSc && cleanName.startsWith('sc/')) {
-        continue
-      }
+        const cleanName = shortName
+        if (excludeSc && cleanName.startsWith('sc/')) {
+          continue
+        }
 
-      let upstream: { remote: string; branch: string } | undefined
-      if (upstreamShort) {
-        const [remote, ...branchParts] = upstreamShort.split('/')
-        if (remote && branchParts.length > 0) {
-          upstream = {
-            remote,
-            branch: branchParts.join('/'),
+        let upstream: { remote: string; branch: string } | undefined
+        if (upstreamShort) {
+          const [remote, ...branchParts] = upstreamShort.split('/')
+          if (remote && branchParts.length > 0) {
+            upstream = {
+              remote,
+              branch: branchParts.join('/'),
+            }
           }
         }
-      }
 
-      let lastCommitDate = new Date().toISOString()
-      if (commitDateRaw) {
-        const parsed = new Date(commitDateRaw)
-        if (!Number.isNaN(parsed.getTime())) {
-          lastCommitDate = parsed.toISOString()
+        let lastCommitDate = new Date().toISOString()
+        if (commitDateRaw) {
+          const parsedUnix = Number(commitDateRaw)
+          if (Number.isFinite(parsedUnix) && /^\d+$/.test(commitDateRaw)) {
+            const parsed = new Date(parsedUnix * 1000)
+            if (!Number.isNaN(parsed.getTime())) {
+              lastCommitDate = parsed.toISOString()
+            }
+          } else {
+            const parsed = new Date(commitDateRaw)
+            if (!Number.isNaN(parsed.getTime())) {
+              lastCommitDate = parsed.toISOString()
+            }
+          }
         }
-      }
 
-      branches.push({
-        name: cleanName,
-        ref: isRemote ? refName.replace(/^refs\//, '') : refName,
-        tip,
-        upstream,
-        ahead: 0, // TODO: Calculate ahead/behind if needed
-        behind: 0,
-        color: generateBranchColor(cleanName),
-        isHead: headMarker === '*' && !isRemote,
-        isRemote,
-        lastCommitDate,
-      })
+        branches.push({
+          name: cleanName,
+          ref: isRemote ? refName.replace(/^refs\//, '') : refName,
+          tip,
+          upstream,
+          ahead: 0, // TODO: Calculate ahead/behind if needed
+          behind: 0,
+          color: generateBranchColor(cleanName),
+          isHead: headMarker === '*' && !isRemote,
+          isRemote,
+          lastCommitDate,
+        })
+      }
+    } catch (bulkError) {
+      console.warn('Falling back to legacy branch query due to bulk branch query failure:', bulkError)
+      const legacyBranches = await getBranches(includeRemote, cwd)
+      for (const branch of legacyBranches) {
+        if (excludeSc && branch.name.startsWith('sc/')) {
+          continue
+        }
+        branches.push(branch)
+      }
     }
 
     const response: BranchResponse = {
