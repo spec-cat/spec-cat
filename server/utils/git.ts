@@ -1,4 +1,4 @@
-import { exec, execSync, execFileSync } from 'child_process'
+import { exec, execSync, execFile, execFileSync } from 'child_process'
 import { promisify } from 'util'
 import { getProjectDir } from './projectDir'
 import type {
@@ -16,6 +16,7 @@ import type {
 } from '~/types/git'
 
 const execAsync = promisify(exec)
+const execFileAsync = promisify(execFile)
 
 /**
  * Execute a git command synchronously (simple string command)
@@ -57,8 +58,7 @@ export async function execGitCommand(
   cwd: string = getProjectDir()
 ): Promise<string> {
   try {
-    const command = `git ${args.join(' ')}`
-    const { stdout } = await execAsync(command, { 
+    const { stdout } = await execFileAsync('git', args, {
       cwd,
       maxBuffer: 1024 * 1024 * 10 // 10MB buffer for large repositories
     })
