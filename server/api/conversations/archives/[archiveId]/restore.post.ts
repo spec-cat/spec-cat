@@ -4,16 +4,9 @@ import { promisify } from 'node:util'
 import { generateConversationId } from '~/types/chat'
 import { logger } from '~/server/utils/logger'
 import { getProjectDir } from '~/server/utils/projectDir'
-import { readSpecCatStore, writeSpecCatStore } from '../../../../utils/specCatStore'
-
-interface StoredConversations {
-  version: number
-  conversations: unknown[]
-  archivedConversations: unknown[]
-}
+import { readConversationStorageState, writeConversationStorageState } from '../../../../utils/conversationStore'
 
 const MAX_CONVERSATIONS = 100
-const DEFAULTS: StoredConversations = { version: 2, conversations: [], archivedConversations: [] }
 const execAsync = promisify(exec)
 
 export default defineEventHandler(async (event) => {
@@ -24,7 +17,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: 'Missing archiveId' })
   }
 
-  const data = await readSpecCatStore<StoredConversations>('conversations.json', DEFAULTS)
+  const data = await readConversationStorageState()
   const conversations = Array.isArray(data.conversations) ? data.conversations : []
   const archivedConversations = Array.isArray(data.archivedConversations) ? data.archivedConversations : []
 
@@ -104,8 +97,8 @@ export default defineEventHandler(async (event) => {
   conversations.unshift(restored)
   archivedConversations.splice(archiveIndex, 1)
 
-  await writeSpecCatStore('conversations.json', {
-    version: 2,
+  await writeConversationStorageState({
+    version: data.version,
     conversations,
     archivedConversations,
   })

@@ -2,7 +2,8 @@
  * POST /api/conversations — Write conversations to server-side file storage
  */
 
-import { writeSpecCatStore } from '../utils/specCatStore'
+import { writeConversationStorageState } from '../utils/conversationStore'
+import { STORAGE_VERSION } from '~/types/chat'
 
 export default defineEventHandler(async (event) => {
   const body = await readBody<{
@@ -17,8 +18,8 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: 'Invalid archivedConversations' })
   }
 
-  await writeSpecCatStore('conversations.json', {
-    version: body.version ?? 2,
+  await writeConversationStorageState({
+    version: body.version ?? STORAGE_VERSION,
     conversations: body.conversations,
     archivedConversations: body.archivedConversations ?? [],
   })

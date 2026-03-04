@@ -1,12 +1,4 @@
-import { readSpecCatStore, writeSpecCatStore } from '../../../utils/specCatStore'
-
-interface StoredConversations {
-  version: number
-  conversations: unknown[]
-  archivedConversations: unknown[]
-}
-
-const DEFAULTS: StoredConversations = { version: 2, conversations: [], archivedConversations: [] }
+import { readConversationStorageState, writeConversationStorageState } from '../../../utils/conversationStore'
 
 export default defineEventHandler(async (event) => {
   const archiveId = getRouterParam(event, 'archiveId')
@@ -14,7 +6,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: 'Missing archiveId' })
   }
 
-  const data = await readSpecCatStore<StoredConversations>('conversations.json', DEFAULTS)
+  const data = await readConversationStorageState()
   const conversations = Array.isArray(data.conversations) ? data.conversations : []
   const archivedConversations = Array.isArray(data.archivedConversations) ? data.archivedConversations : []
 
@@ -29,8 +21,8 @@ export default defineEventHandler(async (event) => {
 
   archivedConversations.splice(index, 1)
 
-  await writeSpecCatStore('conversations.json', {
-    version: 2,
+  await writeConversationStorageState({
+    version: data.version,
     conversations,
     archivedConversations,
   })

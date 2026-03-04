@@ -6,15 +6,7 @@ import { promisify } from 'node:util'
 import { generateArchivedConversationId } from '~/types/chat'
 import { logger } from '~/server/utils/logger'
 import { getProjectDir } from '~/server/utils/projectDir'
-import { readSpecCatStore, writeSpecCatStore } from '../../../utils/specCatStore'
-
-interface StoredConversations {
-  version: number
-  conversations: unknown[]
-  archivedConversations: unknown[]
-}
-
-const DEFAULTS: StoredConversations = { version: 2, conversations: [], archivedConversations: [] }
+import { readConversationStorageState, writeConversationStorageState } from '../../../utils/conversationStore'
 const execAsync = promisify(exec)
 
 async function isWorktreeRegistered(projectDir: string, worktreePath: string): Promise<boolean> {
@@ -37,7 +29,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: 'Missing conversationId' })
   }
 
-  const data = await readSpecCatStore<StoredConversations>('conversations.json', DEFAULTS)
+  const data = await readConversationStorageState()
   const conversations = Array.isArray(data.conversations) ? data.conversations : []
   const archivedConversations = Array.isArray(data.archivedConversations) ? data.archivedConversations : []
 
@@ -104,8 +96,8 @@ export default defineEventHandler(async (event) => {
   conversations.splice(index, 1)
   archivedConversations.unshift(snapshot)
 
-  await writeSpecCatStore('conversations.json', {
-    version: 2,
+  await writeConversationStorageState({
+    version: data.version,
     conversations,
     archivedConversations,
   })

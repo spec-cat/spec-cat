@@ -1,15 +1,7 @@
-import { readSpecCatStore } from '../../utils/specCatStore'
-
-interface StoredConversations {
-  version: number
-  conversations: unknown[]
-  archivedConversations: unknown[]
-}
-
-const DEFAULTS: StoredConversations = { version: 2, conversations: [], archivedConversations: [] }
+import { readConversationStorageState } from '../../utils/conversationStore'
 
 export default defineEventHandler(async (event) => {
-  const data = await readSpecCatStore<StoredConversations>('conversations.json', DEFAULTS)
+  const data = await readConversationStorageState()
   const query = (getQuery(event).q as string | undefined)?.toLowerCase().trim()
 
   const archives = Array.isArray(data.archivedConversations) ? data.archivedConversations : []
