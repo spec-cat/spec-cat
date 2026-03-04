@@ -5,34 +5,9 @@
 **Status**: Draft (Child Spec)
 **Parent**: `002-git-graph` 
 
-## In Scope
+## Feature Overview
 
-- Branch/tag/stash/remote context menu actions
-- Operation dialogs
-- Operation-oriented store actions
-- Mutating git API endpoints
-
-## Out of Scope
-
-- Graph row rendering internals
-- Diff overlay viewer
-- Search/filter widget and result navigation
-
-## Owned Files
-
-- `components/git/Git*Menu.vue`
-- `components/git/dialogs/*`
-- `stores/gitGraph.ts` (operation actions only)
-- `server/api/git/*.post.ts`
-- `server/api/git/*.put.ts`
-- `server/api/git/*.delete.ts`
-- `server/utils/git.ts` (mutating helpers)
-
-## Do Not Edit
-
-- `components/git/GitGraphSvg.vue`
-- `components/git/GitFindWidget.vue`
-- `components/git/GitFileDiffViewer.vue`
+This feature implements mutating git operations accessible through the git graph UI. It focuses on providing context menu actions and dialogs for branch management, commits, tags, stashes, and remotes. All operations include proper error handling and user feedback.
 
 ## Requirements *(mandatory)*
 

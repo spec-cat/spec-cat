@@ -17,6 +17,9 @@ Implement a comprehensive git graph visualization feature modeled after vscode-g
 **Project Type**: web - Nuxt 3 application with server-side git operations
 **Performance Goals**: 300 commits initial load, <100ms UI response, 10s auto-refresh
 **Constraints**: No external git libraries (direct CLI only), maintain scroll position on refresh
+**Architecture**: Graph rendered as panel in Spec Cat layout, Git repository as server working directory
+**Rendering**: SVG rendering for graph column (replacing previous Canvas approach)
+**Git Operations**: Server-side via `child_process` git CLI wrappers
 **Scale/Scope**: Support repos with 1000+ commits, 12-branch color palette, virtual scrolling
 
 ## Constitution Check
@@ -295,6 +298,13 @@ This matrix maps functional requirements to implementation components and design
 | FR-084 | Emoji shortcodes | utils/commitMessage.ts (emoji map) |
 | FR-085 | Markdown rendering | utils/commitMessage.ts (marked) |
 | FR-086 | GPG signatures | GitCommitRow.vue (signature badge) |
-| FR-087-094 | Diff viewer | GitDiffViewer.vue → diff/[file].get.ts |
+| FR-087 | Open diff viewer on file click | GitDiffViewer.vue → diff/[file].get.ts |
+| FR-088 | Overlay right panels layout | GitDiffViewer.vue (CSS overlay positioning) |
+| FR-089 | Unified diff display | GitDiffViewer.vue (line numbers, highlighting) |
+| FR-090 | Diff viewer header | GitDiffViewer.vue (file path, status, hash) |
+| FR-091 | Close via button/Escape | GitDiffViewer.vue (event handlers) |
+| FR-092 | Switch files in-place | gitGraph.ts (selectedFile state) |
+| FR-093 | Binary file indicator | GitDiffViewer.vue (binary detection) |
+| FR-094 | Fetch diff from server | server/api/git/diff/[file].get.ts |
 | FR-095 | Feature highlight | GitCommitList.vue (feature branch styling) |
 

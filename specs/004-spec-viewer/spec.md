@@ -126,14 +126,14 @@ A developer wants to edit a spec file directly in the app. While viewing a spec 
 - **FR-012**: The feature card for the currently active conversation's linked feature MUST be visually highlighted.
 - **FR-013**: The panel MUST auto-scroll to bring the highlighted feature card into view when the active conversation changes.
 - **FR-014**: The panel MUST include a refresh button to reload the feature list from the filesystem.
-- **FR-015**: The panel MUST follow the retro-terminal visual theme consistent with other panels in the application.
+- **FR-015**: The panel MUST maintain visual consistency with other panels in the application.
 - **FR-016**: Features with no spec files MUST still appear in the list but with no file badges.
-- **FR-017**: The viewer MUST provide a server endpoint that returns the list of features and their available spec files.
-- **FR-018**: The viewer MUST provide a server endpoint that returns the raw content of a specific spec file for a given feature.
+- **FR-017**: The viewer MUST retrieve the list of features and their available spec files from the server.
+- **FR-018**: The viewer MUST retrieve the raw content of a specific spec file for a given feature from the server.
 - **FR-019**: Users MUST be able to switch from rendered markdown view to an edit mode (textarea with raw markdown) via an Edit button in the modal.
 - **FR-020**: Users MUST be able to save edited spec content via a Save button, which persists changes to disk via a PUT server endpoint.
 - **FR-021**: Users MUST be able to cancel editing to discard changes and return to the rendered markdown view.
-- **FR-022**: The system MUST provide a PUT server endpoint to write spec file content to disk with path traversal protection.
+- **FR-022**: The system MUST persist edited spec file content to storage with appropriate security validation.
 
 ### Key Entities
 
@@ -155,6 +155,6 @@ A developer wants to edit a spec file directly in the app. While viewing a spec 
 
 - The `specs/` directory structure follows the convention where each subdirectory represents a feature (e.g., `specs/001-app-layout/`).
 - Feature display names are derived from the directory name by stripping the numeric prefix and converting hyphens to spaces (e.g., "001-app-layout" → "app layout"), or from the spec.md title if available.
-- The application already has markdown rendering dependencies available (marked + dompurify) from the chat module.
-- The panel replaces the previous kanban board functionality entirely — no kanban modal, no drag-and-drop task management.
-- AutoMode toggle and status components from the previous panel will be preserved in their current positions.
+- The application has existing markdown rendering capabilities that will be reused for spec file rendering.
+- The features panel displays a list-based view of features rather than a kanban board.
+- Existing UI components (AutoMode toggle, status indicators) remain in their current positions.

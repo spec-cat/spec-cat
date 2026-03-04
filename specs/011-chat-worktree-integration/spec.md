@@ -131,38 +131,6 @@ See `specs/007-ai-provider-chat/data-model.md` for full entity definitions.
 - [ ] Rebase shows confirmation dialog with target branch selector
 - [ ] Rebase updates conversation's baseBranch after successful rebase
 
-## Technical Implementation
-
-### Components
-- `components/chat/ChatPanel.vue` - Preview/finalize/rebase/close buttons in header
-- `components/chat/FinalizeConfirm.vue` - Finalize dialog with commit message textarea and AI generate button (SparklesIcon)
-- `components/chat/RebaseConfirm.vue` - Rebase confirmation dialog with target branch selector (similar to FinalizeConfirm)
-- `components/chat/ConversationItem.vue` - Red-tinted background for preview state indicator, base/worktree branch and path pill buttons (click-to-copy)
-- `components/conversations/NewConversationModal.vue` - New conversation dialog with base branch selector
-- `components/conversations/ConversationsPanel.vue` - Opens new conversation dialog and forwards selected base branch
-
-### Composables
-- `composables/useChatStream.ts` - Auto-commit on turn completion, preview-sync after commit
-
-### Store
-- `stores/chat.ts` - createConversation({ baseBranch? }), previewingConversationId, previewConversation(), unpreviewConversation(), togglePreview(), finalizeConversation(), rebaseConversation()
-
-### Server APIs
-- `POST /api/chat/worktree` - Create conversation worktree
-- `DELETE /api/chat/worktree` - Remove worktree and branch
-- `POST /api/chat/worktree-commit` - Auto-commit worktree changes
-- `POST /api/chat/preview` - Create preview branch in main worktree
-- `DELETE /api/chat/preview` - End preview, return to base branch
-- `POST /api/chat/preview-sync` - Update preview to latest worktree HEAD
-- `POST /api/chat/finalize` - Squash, rebase, merge, cleanup
-- `POST /api/chat/generate-commit-message` - AI-generate squash commit message from worktree history
-
-### Server Utilities
-- `server/utils/ensureChatWorktree.ts` - Worktree recovery after /tmp wipe
-
-### Types
-- `types/chat.ts` - FinalizeRequest, FinalizeResponse
-
 ## Assumptions
 
 - Git is available on the system

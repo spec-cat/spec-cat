@@ -15,6 +15,6 @@
 
 ---
 
-## Inherited Backlog from 002 Umbrella
+## Notes
 
-- [ ] T700 [Traceability] Backfill current uncovered operation FR mappings from `002` [FR-036, FR-038, FR-052, FR-053, FR-054, FR-055, FR-066, FR-067, FR-078, FR-079, FR-080, FR-095].
+- Parent feature `002-git-graph` contains additional operation-related requirements that may need to be addressed separately in that feature's context.

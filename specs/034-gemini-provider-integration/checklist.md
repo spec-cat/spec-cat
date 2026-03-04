@@ -17,3 +17,6 @@
 - [x] CHK006 Spawn arguments correctly map `message`, `model`, and permission modes.
 - [x] CHK007 JSON stream parsing accurately captures output and handles non-JSON errors gracefully.
 - [x] CHK008 Process termination (`killProc`) is correctly wired.
+- [x] CHK009 Non-success Gemini `result` events emit canonical `turn_result(error)` plus `error` with provider-sourced message text.
+- [x] CHK010 Explicit Gemini `error` events normalize nested payloads into user-visible error text.
+- [x] CHK011 Regression tests cover Gemini canonical error mapping (`tests/server/geminiProvider.test.ts`).

@@ -37,7 +37,7 @@ composables/                      # Composable logic
 
 **Purpose**: Update type definitions and store to support the new 4-column layout
 
-- [x] T001 [P] [FR-001] Update `types/layout.ts` — add `PanelDefinition` interface and `PANEL_DEFINITIONS` constant array with 4 panels (git-tree flex:3, features flex:2, conversations flex:2, chat flex:3); keep existing `ViewportSize` and `VIEWPORT_BREAKPOINTS`
+- [x] T001 [P] [FR-001][FR-001a][FR-001b][FR-001c][FR-001d] Update `types/layout.ts` — add `PanelDefinition` interface and `PANEL_DEFINITIONS` constant array with 4 panels (git-tree flex:3, features flex:2, conversations flex:2, chat flex:3); keep existing `ViewportSize` and `VIEWPORT_BREAKPOINTS`
 - [x] T002 [P] [FR-001] Verify `stores/layout.ts` — confirm it only has viewport detection logic (`currentViewport`, `updateViewport`, `isMobile`, `isTablet`, `isDesktop`); no changes needed since sidebar state was already removed
 
 ---
@@ -48,7 +48,7 @@ composables/                      # Composable logic
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [x] T003 [FR-001][NFR-003] Restructure `layouts/default.vue` — replace existing layout with a 4-column flex container (`flex h-screen`); define 4 column `<div>` wrappers with `style="flex: 3"`, `style="flex: 2"`, `style="flex: 2"`, `style="flex: 3"` respectively; each column has `flex flex-col` and `border-l border-retro-border` (except first); add `overflow-x-auto` for small viewport support (NFR-003); keep viewport resize listener from `useLayoutStore`
+- [x] T003 [FR-001][FR-001a][FR-001b][FR-001c][FR-001d][NFR-003] Restructure `layouts/default.vue` — replace existing layout with a 4-column flex container (`flex h-screen`); define 4 column `<div>` wrappers with `style="flex: 3"`, `style="flex: 2"`, `style="flex: 2"`, `style="flex: 3"` respectively; each column has `flex flex-col` and `border-l border-retro-border` (except first); add `overflow-x-auto` for small viewport support (NFR-003); keep viewport resize listener from `useLayoutStore`
 - [x] T004 [FR-001] Simplify `pages/index.vue` — since all content is now rendered in layout columns, reduce `pages/index.vue` to a minimal/empty component (the layout drives all panel rendering via `layouts/default.vue`)
 
 **Checkpoint**: Empty 4-column layout shell renders with correct proportions (30% | 20% | 20% | 30%)
@@ -67,9 +67,9 @@ composables/                      # Composable logic
 
 - [x] T005 [US1] [FR-001][FR-002a][FR-003a][FR-004a][FR-005a] Add panel header row to each of the 4 columns in `layouts/default.vue` — each header is an `h-14 flex items-center px-4 border-b border-retro-border` div with `text-retro-text font-bold` label text ("Git Tree", "Features", "Conversations", panel title for Chat)
 - [x] T006 [US1] [FR-006a][FR-007] Add settings gear icon (`Cog6ToothIcon` from `@heroicons/vue/24/outline`) to the Git Tree panel header in `layouts/default.vue` — keep title on the left and gear icon button on the far right
-- [ ] T006a [US1] [FR-007] In `layouts/default.vue`, derive project name from `/api/cwd` (basename of path) and render header text as `SPEC CAT / {project-name}` in the Git Tree header
+- [x] T006a [US1] [FR-007] In `layouts/default.vue`, derive project name from `/api/cwd` (basename of path) and render header text as `SPEC CAT / {project-name}` in the Git Tree header
 - [x] T007 [US1] [FR-001][NFR-004] Add independent scroll regions to each column — content area below header gets `flex-1 overflow-y-auto` and the parent column gets `overflow-hidden` to prevent layout blowout (NFR-004)
-- [x] T008 [US1] [FR-006a] Wire settings gear icon to `showSettings` ref — clicking gear opens `SettingsModal`, import and render `<SettingsModal v-if="showSettings" @close="showSettings = false" />` in `layouts/default.vue`
+- [x] T008 [US1] [FR-006][FR-006a] Wire settings gear icon to `showSettings` ref — clicking gear opens `SettingsModal`, import and render `<SettingsModal v-if="showSettings" @close="showSettings = false" />` in `layouts/default.vue`
 - [x] T009 [US1] [FR-001] Apply retro-terminal theme classes to the layout container and panel borders (`bg-retro-black`, `text-retro-text`, `border-retro-border`) in `layouts/default.vue`
 
 **Checkpoint**: User Story 1 complete — 4-column layout visible with labeled headers, correct proportions, independent scrolling, settings gear opens modal
@@ -333,11 +333,11 @@ T023 → T024 → T025 → T026 → T027 → T028 → T029
 
 | FR | Task(s) | Phase |
 |----|---------|-------|
-| FR-001 (4-Column Layout) | T003, T005, T007, T009 | 2, 3 |
-| FR-001a (Git Tree 30%) | T003 | 2 |
-| FR-001b (Features 20%) | T003 | 2 |
-| FR-001c (Conversations 20%) | T003 | 2 |
-| FR-001d (Chat 30%) | T003 | 2 |
+| FR-001 (4-Column Layout) | T001, T003, T005, T007, T009 | 1, 2, 3 |
+| FR-001a (Git Tree 30%) | T001, T003 | 1, 2 |
+| FR-001b (Features 20%) | T001, T003 | 1, 2 |
+| FR-001c (Conversations 20%) | T001, T003 | 1, 2 |
+| FR-001d (Chat 30%) | T001, T003 | 1, 2 |
 | FR-002 (Git Tree Panel) | T010, T011 | 4 |
 | FR-002a (Git Tree header) | T005 | 3 |
 | FR-002b (GitGraph embed) | T010 | 4 |
@@ -358,8 +358,8 @@ T023 → T024 → T025 → T026 → T027 → T028 → T029
 | FR-005c (Input area) | T016 | 7 |
 | FR-005d (Permission mode) | T017 | 7 |
 | FR-005e (Always visible) | T018, T019 | 7 |
-| FR-006 (Settings Modal) | T021, T022 | 8 |
-| FR-006a (Gear icon) | T006, T022 | 3, 8 |
+| FR-006 (Settings Modal) | T008, T021, T022 | 3, 8 |
+| FR-006a (Gear icon) | T006, T008, T022 | 3, 8 |
 | FR-006b (ESC/backdrop close) | T021 | 8 |
 | FR-006c (AI provider/model selection) | T021 | 8 |
 | FR-007 (Header Display) | T006, T006a | 3 |

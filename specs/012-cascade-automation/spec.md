@@ -3,7 +3,6 @@
 **Feature Branch**: `012-cascade-automation`
 **Created**: 2026-02-08
 **Status**: Implemented
-**Split from**: `007-ai-provider-chat` (original FR-043 ~ FR-046)
 **Dependencies**: 007-ai-provider-chat, 009-conversation-management, 011-chat-worktree-integration
 
 ## User Scenarios & Testing *(mandatory)*
@@ -51,21 +50,10 @@ See `specs/007-ai-provider-chat/data-model.md` for full entity definitions.
 - [x] Existing conversations are reused by featureId
 - [x] Shift+click forces new conversation
 
-## Technical Implementation
-
-### Composables
-- `composables/useChatStream.ts` - enableCascade, sendCascadeStep, cascadeStates queue, auto-send on 'done'
-
-### Store
-- `stores/chat.ts` - findConversationByFeature, createConversation with featureId
-
-### Integration Points
-- `004-kanban-board` - Pipeline buttons trigger cascade
-
 ## Assumptions
 
-- Kanban board feature (004) provides pipeline trigger UI
-- Speckit pipeline steps are well-defined prompts
+- Kanban board feature provides pipeline trigger UI
+- Speckit pipeline steps are well-defined commands
 - Each feature has a unique featureId
 
 ## Out of Scope
@@ -73,3 +61,4 @@ See `specs/007-ai-provider-chat/data-model.md` for full entity definitions.
 - Custom pipeline step definitions
 - Cascade progress visualization
 - Parallel pipeline execution
+

@@ -48,6 +48,19 @@ server/routes/_ws.ts                  # websocket permission mode forwarding
 | FR-004 | Plan-mode approval UI (Approve/Reject) | `components/chat/ChatInput.vue`, `stores/chat.ts`, `composables/useChatStream.ts` |
 | FR-005 | Persist selected mode | `stores/settings.ts`, `stores/chat.ts`, `server/api/settings.*` integration path |
 
+## Implementation Approach
+
+### Component Architecture
+- **`components/chat/ChatInput.vue`**: Permission mode selector dropdown, permission request/plan approval UI
+- **`composables/useChatStream.ts`**: Permission handling (setPendingPermission, setPendingPlanApproval, ExitPlanMode intercept)
+- **`stores/chat.ts`**: permissionMode state, localStorage persistence
+- **`types/chat.ts`**: PermissionMode union type
+- **`/_ws`**: Permission mode sent with connection, permission responses sent back to CLI
+
+### CLI Integration
+- Claude Code CLI supports permission modes via `--allowedTools` and `--permissionMode` flags
+- WebSocket handshake includes permission mode in connection parameters
+
 ## Complexity Tracking
 
 No constitution violations identified.

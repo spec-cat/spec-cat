@@ -17,4 +17,4 @@
 
 ## Inherited Backlog from 002 Umbrella
 
-- [ ] T700 [Traceability] Backfill current uncovered rendering/detail FR mappings from `002` [FR-015].
+- [ ] T700 [Traceability] Backfill current uncovered rendering/detail FR mappings from parent spec `002`.

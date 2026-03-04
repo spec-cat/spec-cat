@@ -3,7 +3,7 @@
 **Feature Branch**: `010-chat-permission-system`
 **Created**: 2026-02-08
 **Status**: Implemented
-**Split from**: `007-ai-provider-chat` (original FR-029 ~ FR-033)
+**Split from**: `007-ai-provider-chat`
 **Dependencies**: 007-ai-provider-chat
 
 ## User Scenarios & Testing *(mandatory)*
@@ -52,26 +52,9 @@ See `specs/007-ai-provider-chat/data-model.md` for full entity definitions.
 - [x] Plan approval UI shows Approve/Reject buttons
 - [x] Permission mode persists across page refreshes
 
-## Technical Implementation
-
-### Components
-- `components/chat/ChatInput.vue` - Permission mode selector dropdown, permission request/plan approval UI
-
-### Composables
-- `composables/useChatStream.ts` - Permission handling (setPendingPermission, setPendingPlanApproval, ExitPlanMode intercept)
-
-### Store
-- `stores/chat.ts` - permissionMode state, localStorage persistence
-
-### Types
-- `types/chat.ts` - PermissionMode union type
-
-### WebSocket
-- `/_ws` - Permission mode sent with connection, permission responses sent back to CLI
-
 ## Assumptions
 
-- Claude Code CLI supports permission modes via `--allowedTools` and `--permissionMode` flags
+- Permission system integrates with existing chat infrastructure
 - WebSocket connection is established before permission requests arrive
 
 ## Out of Scope

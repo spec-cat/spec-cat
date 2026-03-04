@@ -101,8 +101,3 @@ components/conversations/
 
 No constitution violations. All implementations follow the simplicity principle with direct store operations and thin utilities.
 
-## FR Coverage Addendum (2026-02-14)
-
-| FR | Description | Implementation Files | Status |
-|----|-------------|---------------------|--------|
-| FR-007a | Message preview truncation and fallback behavior | `components/chat/ConversationItem.vue` | Done |

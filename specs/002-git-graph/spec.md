@@ -433,12 +433,10 @@ As a developer, I want to click on a file in the commit detail's file list to se
 
 ## Assumptions
 
-- The graph is rendered as a panel in the Spec Cat application layout (not a standalone page)
-- Git repository is the current working directory of the server
-- SVG rendering is used for graph column (replacing previous Canvas approach)
-- All git operations are server-side via `child_process` git CLI wrappers
-- No external git libraries - direct CLI wrapping only
+- The feature operates on a git repository accessible to the application
+- Users have appropriate permissions for git operations they attempt
 - The application runs on desktop browsers (Chrome, Firefox, Safari)
+- Git is installed and available on the server
 
 ## Out of Scope
 

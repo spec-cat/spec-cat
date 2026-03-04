@@ -133,47 +133,11 @@ As a developer, I want to select between different AI providers and their models
 - [x] Chat input area expands with multi-line content without overflowing the viewport
 - [x] Scroll position stays at bottom when input area expands (no drift upward)
 
-## Technical Implementation
-
-### Components
-- `components/chat/ChatPanel.vue` - Main panel with header, CWD display, close button
-- `components/chat/ChatPanelToggle.vue` - Toggle button for panel visibility
-- `components/chat/ChatMessages.vue` - Message list with auto-scroll and loading indicator
-- `components/chat/ChatMessage.vue` - Individual message with markdown rendering
-- `components/chat/ChatInput.vue` - Input textarea, send/stop/retry buttons
-- `components/settings/ProviderSelector.vue` - Provider and model selection UI
-
-### Store
-- `stores/chat.ts` - Messages, session state, panel state, streaming state
-
-### Composables
-- `composables/useChatStream.ts` - WebSocket streaming, message handling
-- `composables/useChatPanel.ts` - Panel toggle, resize with mouse drag
-- `composables/useAutoScroll.ts` - Auto-scroll with 50px threshold detection
-- `composables/useVirtualMessageList.ts` - Virtualized chat message rendering with measured row heights
-
-### Types
-- `types/chat.ts` - ChatMessage, ChatSession, ChatPanelState, MessageStatus, SessionStatus
-- `types/aiProvider.ts` - AIProviderMetadata, AIProviderSelection, AIProviderCapabilities
-
-### Server APIs
-- `POST /api/chat` - Send message with SSE streaming (alternative to WebSocket)
-
-### WebSocket
-- `/_ws` - Claude CLI streaming with PTY, session handling
-
-### Server Utilities
-- `server/utils/aiProvider.ts` - AIProvider interface and streamChatWithProvider()
-- `server/utils/aiProviderRegistry.ts` - Provider registration and management
-- `server/utils/aiProviderSelection.ts` - Provider/model selection logic
-- `server/utils/claudeProvider.ts` - Claude provider implementation
-- `server/utils/codexProvider.ts` - Codex provider implementation
 
 ## Assumptions
 
 - At least one AI provider CLI/SDK is installed and configured
 - Users have authenticated with their chosen provider(s)
-- node-pty is available for PTY-based CLI interaction (for providers that use it)
 - Each provider implements the AIProvider interface
 
 ## Out of Scope

@@ -33,11 +33,11 @@
 
 **CRITICAL**: No user story work can begin until this phase is complete.
 
-- [X] T004 Define archived and v2 persisted schema types with guards in `/home/khan/src/brick2/types/chat.ts`
-- [X] T005 Implement v1->v2 migration and partial recovery for archived/active arrays in `/home/khan/src/brick2/utils/conversationStorage.ts`
-- [X] T006 Update conversations load endpoint to return v2 active/archive shape in `/home/khan/src/brick2/server/api/conversations.get.ts`
-- [X] T007 Update conversations save endpoint validation to accept v2 schema in `/home/khan/src/brick2/server/api/conversations.post.ts`
-- [X] T008 [P] Add shared archive helpers (snapshot creation, immutable clone utilities, max-limit guard) in `/home/khan/src/brick2/stores/chat.ts`
+- [X] T004 [FR-002] Define archived and v2 persisted schema types with guards in `/home/khan/src/brick2/types/chat.ts`
+- [X] T005 [FR-012] Implement v1->v2 migration and partial recovery for archived/active arrays in `/home/khan/src/brick2/utils/conversationStorage.ts`
+- [X] T006 [FR-012] Update conversations load endpoint to return v2 active/archive shape in `/home/khan/src/brick2/server/api/conversations.get.ts`
+- [X] T007 [FR-002][FR-012] Update conversations save endpoint validation to accept v2 schema in `/home/khan/src/brick2/server/api/conversations.post.ts`
+- [X] T008 [P] [FR-002] Add shared archive helpers (snapshot creation, immutable clone utilities, max-limit guard) in `/home/khan/src/brick2/stores/chat.ts`
 
 **Checkpoint**: Foundation ready - user story implementation can now begin.
 
@@ -51,12 +51,12 @@
 
 ### Implementation for User Story 1
 
-- [X] T009 [US1] Replace conversation row delete control with archive action affordance in `/home/khan/src/brick2/components/chat/ConversationItem.vue`
-- [X] T010 [US1] Implement `archiveConversation` store action that moves active -> archived snapshot in `/home/khan/src/brick2/stores/chat.ts`
-- [X] T011 [US1] Enforce streaming-state archive block with user-facing toast in `/home/khan/src/brick2/stores/chat.ts`
-- [X] T012 [US1] Persist updated active/archive arrays after archive action in `/home/khan/src/brick2/stores/chat.ts`
-- [X] T013 [P] [US1] Add archive API route to archive one active conversation in `/home/khan/src/brick2/server/api/conversations/[conversationId]/archive.post.ts`
-- [X] T014 [US1] Wire conversation item archive action to store/API flow in `/home/khan/src/brick2/components/chat/ConversationItem.vue`
+- [X] T009 [US1] [FR-001] Replace conversation row delete control with archive action affordance in `/home/khan/src/brick2/components/chat/ConversationItem.vue`
+- [X] T010 [US1] [FR-002] Implement `archiveConversation` store action that moves active -> archived snapshot in `/home/khan/src/brick2/stores/chat.ts`
+- [X] T011 [US1] [FR-009] Enforce streaming-state archive block with user-facing toast in `/home/khan/src/brick2/stores/chat.ts`
+- [X] T012 [US1] [FR-002] Persist updated active/archive arrays after archive action in `/home/khan/src/brick2/stores/chat.ts`
+- [X] T013 [P] [US1] [FR-001][FR-002][FR-014] Add archive API route to archive one active conversation in `/home/khan/src/brick2/server/api/conversations/[conversationId]/archive.post.ts`
+- [X] T014 [US1] [FR-001] Wire conversation item archive action to store/API flow in `/home/khan/src/brick2/components/chat/ConversationItem.vue`
 
 **Checkpoint**: User Story 1 is fully functional and independently testable.
 
@@ -70,13 +70,15 @@
 
 ### Implementation for User Story 2
 
-- [X] T015 [US2] Add archive view mode state and computed filtered archive list in `/home/khan/src/brick2/stores/chat.ts`
-- [X] T016 [US2] Add archive entry point and view toggle controls in `/home/khan/src/brick2/components/conversations/ConversationsPanel.vue`
-- [X] T017 [US2] Implement archive search input behavior aligned with active conversation filtering in `/home/khan/src/brick2/components/conversations/ConversationsPanel.vue`
-- [X] T018 [US2] Render archived conversation rows with title, archived timestamp, updated timestamp, and preview in `/home/khan/src/brick2/components/conversations/ConversationsPanel.vue`
-- [X] T019 [US2] Implement archive empty-state messaging in `/home/khan/src/brick2/components/conversations/ConversationsPanel.vue`
-- [X] T020 [P] [US2] Add list archives endpoint with query filter and archivedAt sort in `/home/khan/src/brick2/server/api/conversations/archives.get.ts`
-- [X] T021 [US2] Add corrupted archived-record skip + warning toast handling in `/home/khan/src/brick2/stores/chat.ts`
+- [X] T015 [US2] [FR-003][FR-004][FR-005] Add archive view mode state and computed filtered archive list in `/home/khan/src/brick2/stores/chat.ts`
+- [X] T016 [US2] [FR-003] Add archive entry point and view toggle controls in `/home/khan/src/brick2/components/conversations/ConversationsPanel.vue`
+- [X] T017 [US2] [FR-005] Implement archive search input behavior aligned with active conversation filtering in `/home/khan/src/brick2/components/conversations/ConversationsPanel.vue`
+- [X] T018 [US2] [FR-004] Render archived conversation rows with title, archived timestamp, updated timestamp, and preview in `/home/khan/src/brick2/components/conversations/ConversationsPanel.vue`
+- [X] T019 [US2] [FR-003] Implement archive empty-state messaging in `/home/khan/src/brick2/components/conversations/ConversationsPanel.vue`
+- [X] T020 [P] [US2] [FR-004][FR-005] Add list archives endpoint with query filter and archivedAt sort in `/home/khan/src/brick2/server/api/conversations/archives.get.ts`
+- [X] T021 [US2] [FR-012] Add corrupted archived-record skip + warning toast handling in `/home/khan/src/brick2/stores/chat.ts`
+- [ ] T032 [US2] [FR-013] Add permanent delete action for archived items in archive list view in `/home/khan/src/brick2/components/conversations/ConversationsPanel.vue`
+- [ ] T033 [P] [US2] [FR-013] Add delete archive endpoint in `/home/khan/src/brick2/server/api/conversations/archives/[archiveId].delete.ts`
 
 **Checkpoint**: User Story 2 is fully functional and independently testable.
 
@@ -90,12 +92,12 @@
 
 ### Implementation for User Story 3
 
-- [X] T022 [US3] Implement `restoreArchivedConversation` store action that creates a new active conversation copy in `/home/khan/src/brick2/stores/chat.ts`
-- [X] T023 [US3] Preserve linkage metadata (`featureId`, `restoredFromArchiveId`) while initializing fresh worktree/base branch runtime context in `/home/khan/src/brick2/stores/chat.ts`
-- [X] T024 [US3] Enforce `MAX_CONVERSATIONS=100` guard for restore with user guidance in `/home/khan/src/brick2/stores/chat.ts`
-- [X] T025 [P] [US3] Add restore API route returning new conversation payload in `/home/khan/src/brick2/server/api/conversations/archives/[archiveId]/restore.post.ts`
-- [X] T026 [US3] Wire archive list item click-to-restore and auto-select behavior in `/home/khan/src/brick2/components/conversations/ConversationsPanel.vue`
-- [X] T027 [US3] Ensure restore creates an active copy and removes the source archive entry in `/home/khan/src/brick2/stores/chat.ts`
+- [X] T022 [US3] [FR-006][FR-007][FR-008] Implement `restoreArchivedConversation` store action that creates a new active conversation copy in `/home/khan/src/brick2/stores/chat.ts`
+- [X] T023 [US3] [FR-007][FR-015] Preserve linkage metadata (`featureId`, `restoredFromArchiveId`) while initializing fresh worktree/base branch runtime context in `/home/khan/src/brick2/stores/chat.ts`
+- [X] T024 [US3] [FR-010] Enforce `MAX_CONVERSATIONS=100` guard for restore with user guidance in `/home/khan/src/brick2/stores/chat.ts`
+- [X] T025 [P] [US3] [FR-006][FR-007][FR-008] Add restore API route returning new conversation payload in `/home/khan/src/brick2/server/api/conversations/archives/[archiveId]/restore.post.ts`
+- [X] T026 [US3] [FR-006] Wire archive list item click-to-restore and auto-select behavior in `/home/khan/src/brick2/components/conversations/ConversationsPanel.vue`
+- [X] T027 [US3] [FR-008] Ensure restore creates an active copy and removes the source archive entry in `/home/khan/src/brick2/stores/chat.ts`
 
 **Checkpoint**: User Story 3 is fully functional and independently testable.
 
@@ -106,9 +108,9 @@
 **Purpose**: Final consistency, performance, and manual acceptance coverage across all stories.
 
 - [X] T028 [P] Update archive/reopen operator notes in `/home/khan/src/brick2/specs/019-conversation-archive/quickstart.md`
-- [ ] T029 Validate full quickstart manual flow and edge-case checks in `/home/khan/src/brick2/specs/019-conversation-archive/quickstart.md`
+- [ ] T029 [FR-001][FR-002][FR-003][FR-004][FR-005][FR-006][FR-007][FR-008][FR-009][FR-010][FR-011][FR-012][FR-013][FR-014][FR-015] Validate full quickstart manual flow and edge-case checks in `/home/khan/src/brick2/specs/019-conversation-archive/quickstart.md`
 - [X] T030 Run lint and test gate (`npm run lint && npm test`) from `/home/khan/src/brick2`
-- [ ] T031 Confirm no regressions in finalize/preview/worktree active flows in `/home/khan/src/brick2/components/conversations/ConversationsPanel.vue`
+- [ ] T031 [FR-011] Confirm no regressions in finalize/preview/worktree active flows in `/home/khan/src/brick2/components/conversations/ConversationsPanel.vue`
 
 ---
 

@@ -83,21 +83,25 @@ server/api/worktrees/
 
 | FR | Description | Implementation Files |
 |----|-------------|---------------------|
+| FR-001 | Worktree List Display | `components/worktree/WorktreePanel.vue` (complete card-based display), `server/api/worktrees/index.get.ts` (worktree data retrieval) |
 | FR-001a | Worktree name and path display | `components/worktree/WorktreePanel.vue` (card layout with name, path) |
 | FR-001b | Connected branch display | `components/worktree/WorktreePanel.vue` (branch name on card) |
 | FR-001c | Main and current badges | `components/worktree/WorktreePanel.vue` (isMain, isCurrent conditional badges) |
 | FR-001d | Hover action buttons | `components/worktree/WorktreePanel.vue` (delete/switch buttons on hover) |
+| FR-002 | Worktree Status | `components/worktree/WorktreeStatusBadge.vue` (complete status display), `server/api/worktrees/index.get.ts` (status computation logic) |
 | FR-002a | Clean status badge | `components/worktree/WorktreeStatusBadge.vue` (green badge), `server/api/worktrees/index.get.ts` (getWorktreeStatus) |
 | FR-002b | Dirty status badge | `components/worktree/WorktreeStatusBadge.vue` (yellow badge), `server/api/worktrees/index.get.ts` (git status --porcelain check) |
 | FR-002c | Ahead status badge | `components/worktree/WorktreeStatusBadge.vue` (cyan badge), `server/api/worktrees/index.get.ts` (rev-list --left-right --count) |
 | FR-002d | Behind status badge | `components/worktree/WorktreeStatusBadge.vue` (orange badge), `server/api/worktrees/index.get.ts` |
 | FR-002e | Diverged status badge | `components/worktree/WorktreeStatusBadge.vue` (red badge), `server/api/worktrees/index.get.ts` |
+| FR-003 | Worktree Creation | `components/worktree/WorktreeCreateModal.vue` (creation UI), `server/api/worktrees/index.post.ts` (creation logic) |
 | FR-003a | Auto feature number generation | `server/api/worktrees/index.post.ts` (getNextFeatureNumber from branches + specs) |
 | FR-003b | Description input (required) | `components/worktree/WorktreeCreateModal.vue` (form validation) |
 | FR-003c | Short name input (optional, auto-gen) | `components/worktree/WorktreeCreateModal.vue` (optional field) |
 | FR-003d | Base branch selection | `components/worktree/WorktreeCreateModal.vue` (baseBranch field, default: current HEAD) |
 | FR-003e | Worktree path pattern | `server/api/worktrees/index.post.ts` (`/tmp/{branchName}-{randomId}`) |
 | FR-003f | Branch exists 409 error | `server/api/worktrees/index.post.ts` (checkBranchExists before creation) |
+| FR-004 | Worktree Deletion | `components/worktree/WorktreePanel.vue` (delete UI), `server/api/worktrees/[name].delete.ts` (deletion logic) |
 | FR-004a | Delete confirmation dialog | `components/worktree/WorktreePanel.vue` (confirm before delete) |
 | FR-004b | Main worktree undeletable | `stores/worktree.ts` (check isMain), `server/api/worktrees/[name].delete.ts` |
 | FR-004c | Optional branch deletion | `stores/worktree.ts` (deleteBranch parameter), `server/api/worktrees/[name].delete.ts` |
@@ -107,6 +111,7 @@ server/api/worktrees/
 | FR-006 | Commit count display | `components/worktree/WorktreePanel.vue` (commitCount), `server/api/worktrees/index.get.ts` (getCommitCount) |
 | FR-007 | Last commit info | `components/worktree/WorktreePanel.vue` (lastCommit hash, message, time), `server/api/worktrees/index.get.ts` (getLastCommit) |
 | FR-008 | Active worktree indication | `components/worktree/WorktreePanel.vue` (isCurrent highlight styling) |
+| FR-009 | Worktree Detail Page | `pages/worktrees/[name].vue` (detail page with commit history) |
 | FR-009a | Worktree detail page with commit history | `pages/worktrees/[name].vue` (commit list display) |
 | NFR-001 | Isolation Guarantee | All git worktree operations use separate working directories, enforced by git |
 | NFR-002 | Path Safety | `server/utils/validateWorktree.ts` (path validation) |

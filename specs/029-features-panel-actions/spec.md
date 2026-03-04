@@ -15,18 +15,6 @@
 
 - Feature discovery APIs
 - Active feature highlight and scroll logic
-
-## Owned Files
-
-- `components/features/FeatureCard.vue` (cascade/chat action sections)
-- `components/features/FeaturesPanel.vue` (action handlers only)
-- `composables/useChatStream.ts` (cascade integration surface only)
-- `stores/chat.ts` (feature conversation lookup/create hook usage only)
-
-## Do Not Edit
-
-- `server/api/specs/*`
-- `components/features/SpecFileViewer.vue`
 - Active highlight sections owned by 030
 
 ## Requirements *(mandatory)*

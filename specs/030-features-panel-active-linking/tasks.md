@@ -16,4 +16,4 @@
 
 ## Inherited Backlog from 015
 
-- [ ] T700 [FR-020] Synchronize selected `featureId` with Git Graph selection state and clear it when panel selection clears.
+- [ ] T700 [FR-003] Synchronize selected `featureId` with Git Graph selection state and clear it when panel selection clears.

@@ -83,7 +83,7 @@ layouts/
 | FR-007 | Action buttons trigger speckit commands | `FeatureCard.vue`, `FeaturesPanel.vue` |
 | FR-008 | Conditional button visibility (spec/plan/tasks) | `FeatureCard.vue` |
 | FR-009 | Cascade pipeline (Plan→Tasks→Implement) | `FeaturesPanel.vue`, `useChatStream.ts` |
-| FR-009a | Analyze prerequisite step before analyze command | `FeaturesPanel.vue`, `useChatStream.ts` |
+| FR-009A | Analyze prerequisite step before analyze command | `FeaturesPanel.vue`, `useChatStream.ts` |
 | FR-010 | Conversation reuse for same feature | `FeaturesPanel.vue`, `chat.ts` |
 | FR-011 | Shift+click forces new conversation | `FeaturesPanel.vue` |
 | FR-012 | Chat icon creates linked conversation | `FeatureCard.vue`, `FeaturesPanel.vue` |
@@ -93,7 +93,7 @@ layouts/
 | FR-016 | Path traversal protection | `[...filename].get.ts` |
 | FR-017 | Only serve .md files | `[...filename].get.ts` |
 | FR-018 | Loading, error, retry states | `SpecFileViewer.vue`, `FeaturesPanel.vue` |
-| FR-018a | In-app editing and save flow | `SpecFileViewer.vue`, `server/api/specs/[featureId]/[...filename].put.ts` |
+| FR-018A | In-app editing and save flow | `SpecFileViewer.vue`, `server/api/specs/[featureId]/[...filename].put.ts` |
 | FR-019 | Feature search filtering | `FeaturesPanel.vue` |
 | FR-020 | Feature selection sync with Git Graph | `FeaturesPanel.vue`, `stores` integration |
 ## Key Design Decisions (Documented in research.md)

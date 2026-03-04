@@ -16,24 +16,6 @@
 - Worktree creation/deletion core lifecycle
 - Conflict resolution editor/API internals
 
-## Owned Files
-
-- `server/api/chat/preview.post.ts`
-- `server/api/chat/preview.delete.ts`
-- `server/api/chat/preview-sync.post.ts`
-- `server/api/chat/finalize.post.ts`
-- `server/api/chat/rebase.post.ts`
-- `composables/useChatStream.ts` (post-stream auto-commit + preview-sync caller)
-- `components/chat/ChatPanel.vue` (preview/finalize/rebase controls)
-- `stores/chat.ts` (preview/finalize section)
-- `components/features/FeaturesPanel.vue` (cascade/finalized interaction only)
-
-## Do Not Edit
-
-- `server/api/chat/worktree*.ts`
-- `server/api/rebase/*`
-- `components/chat/Conflict*.vue`
-
 ## Requirements *(mandatory)*
 
 ### Functional Requirements

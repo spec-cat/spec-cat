@@ -29,6 +29,8 @@
 ## Phase 5: Validation
 
 - [x] T010 Run `pnpm typecheck` and targeted provider-related tests; resolve regressions. [FR-008, FR-010]
+- [x] T013 Normalize terminal provider failures into canonical `turn_result(error)` + `error` events across Codex/Gemini/Claude adapters and WS completion fallback in `server/utils/codexStreamParser.ts`, `server/utils/geminiProvider.ts`, `server/utils/uiAdapter.ts`, `server/routes/_ws.ts`, and `composables/useChatStream.ts`. [FR-003, FR-008, FR-010]
+- [x] T014 Add regression tests for canonical provider error mapping in `tests/server/codexStreamParser.test.ts`, `tests/server/geminiProvider.test.ts`, and `tests/server/uiAdapter.test.ts`. [FR-008, FR-010]
 - [ ] T011 Manual validation for Claude/Codex in ask/plan/auto modes (permission interception + rendering checks). [FR-002, FR-004, FR-006, FR-008]
 
 ## FR-to-Task Coverage
@@ -37,11 +39,11 @@
 |---|---|
 | FR-001 | T001, T002, T003 |
 | FR-002 | T005, T006, T011 |
-| FR-003 | T002, T003, T006 |
+| FR-003 | T002, T003, T006, T013 |
 | FR-004 | T004, T005, T011 |
 | FR-005 | T004, T005 |
 | FR-006 | T004, T005, T011 |
 | FR-007 | T008, T009 |
-| FR-008 | T002, T003, T008, T009, T010, T011, T012 |
+| FR-008 | T002, T003, T008, T009, T010, T011, T012, T013, T014 |
 | FR-009 | T001, T006 |
-| FR-010 | T007, T010, T012 |
+| FR-010 | T007, T010, T012, T013, T014 |

@@ -20,7 +20,7 @@ Provide an interactive chat interface supporting multiple AI providers (Claude, 
 ## Technical Context
 
 **Language/Version**: TypeScript 5.6+ with Nuxt 3 (v3.16+), Vue 3 (v3.5+)
-**Primary Dependencies**: Provider SDKs (`@anthropic-ai/claude-code`, codex CLI, future: `@google/generative-ai`), node-pty (v1.1.0), Pinia (v2.2+), `@heroicons/vue`, marked + dompurify (markdown rendering)
+**Primary Dependencies**: Provider SDKs (`@anthropic-ai/claude-code`, codex CLI, future: `@google/generative-ai`), node-pty (v1.1.0) for PTY-based CLI interaction, Pinia (v2.2+), `@heroicons/vue`, marked + dompurify (markdown rendering)
 **Storage**: localStorage (panel width), in-memory (session/stream state)
 **Testing**: Manual testing, TypeScript type checking
 **Target Platform**: Browser (Nuxt SSR/SPA) + Nitro server (WebSocket)
@@ -59,13 +59,16 @@ specs/007-ai-provider-chat/
 ### Source Code (repository root)
 
 ```text
-# Components (5 chat UI core)
+# Components (6 core + provider selection)
 components/chat/
 ├── ChatPanel.vue            # Main panel: header, CWD display, close button
 ├── ChatPanelToggle.vue      # Toggle button for panel visibility
 ├── ChatMessages.vue         # Message list with auto-scroll and loading indicator
 ├── ChatMessage.vue          # Individual message: role-based styling, markdown rendering
 └── ChatInput.vue            # Input textarea, send/stop/retry buttons
+
+components/settings/
+└── ProviderSelector.vue     # Provider and model selection UI
 
 # Store
 stores/chat.ts               # Messages, session, panel state, streaming (composition API)
@@ -78,13 +81,15 @@ composables/
 └── useVirtualMessageList.ts # Viewport-based virtualized message rendering
 
 # Types
-types/chat.ts                # ChatMessage, ChatSession, ChatPanelState, type guards
+types/
+├── chat.ts                  # ChatMessage, ChatSession, ChatPanelState, type guards
+└── aiProvider.ts            # AIProviderMetadata, AIProviderSelection, AIProviderCapabilities
 
 # Server APIs
 server/api/chat.post.ts              # POST: Send message (SSE streaming alternative)
 
 # WebSocket
-server/routes/_ws.ts                 # Claude CLI streaming: PTY, session handling
+server/routes/_ws.ts                 # WebSocket endpoint - Claude CLI streaming with PTY, session handling
 
 # Server Utilities
 server/utils/
@@ -128,8 +133,9 @@ server/utils/
 | FR-016a | Retry button | `components/chat/ChatInput.vue` (shown when last message errored) | Done |
 | FR-016b | Grow input area with textarea | `components/chat/ChatInput.vue` (autoResize function, min-h-[40px], items-start) | Done |
 | FR-017 | Panel resize | `composables/useChatPanel.ts` (useResize with drag), `stores/chat.ts` (setPanelWidth) | Done |
+| FR-018 | Route requests through selected provider | `server/utils/aiProviderSelection.ts`, `composables/useChatStream.ts` | Done |
 | FR-019 | Virtualized message rendering | `components/chat/ChatMessages.vue`, `composables/useVirtualMessageList.ts` | Done |
-| FR-020 | Support multiple AI providers | `server/utils/aiProviderRegistry.ts`, provider implementations | Done |
+| FR-020 | Support multiple AI providers | `server/utils/aiProviderRegistry.ts`, `server/utils/claudeProvider.ts`, `server/utils/codexProvider.ts` | Done |
 | FR-021 | Provider/model selection | `components/settings/ProviderSelector.vue`, `stores/settings.ts` | Done |
 | FR-022 | Display provider capabilities | `components/settings/ProviderSelector.vue` (capability badges) | Done |
 | FR-023 | Disable incompatible providers | `components/settings/ProviderSelector.vue` (isProviderCompatible) | Done |
@@ -143,8 +149,3 @@ server/utils/
 | WebSocket + node-pty instead of SDK query() | Full CLI features including PTY interaction, --resume | SDK query() doesn't support interactive permission handling or session resume |
 | Per-conversation connection pool | Multiple conversations can stream concurrently | Single global WebSocket would serialize all conversations |
 
-## FR Coverage Addendum (2026-02-14)
-
-| FR | Description | Implementation Files | Status |
-|----|-------------|---------------------|--------|
-| FR-018 | Retry failed message/send flow | `components/chat/ChatInput.vue`, `composables/useChatStream.ts` | Done |

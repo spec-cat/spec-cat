@@ -56,7 +56,8 @@ components/features/
 server/api/specs/
 ├── features.get.ts         # GET /api/specs/features - list all features
 └── [featureId]/
-    └── [...filename].get.ts  # GET /api/specs/:featureId/:filename - file content
+    ├── [...filename].get.ts  # GET /api/specs/:featureId/:filename - file content
+    └── [...filename].put.ts  # PUT /api/specs/:featureId/:filename - save content
 
 types/
 └── spec-viewer.ts          # TypeScript types for Feature, SpecFile
@@ -84,8 +85,12 @@ types/
 | FR-014 | Refresh button | FeaturesPanel.vue | Re-fetch features API |
 | FR-015 | Retro-terminal theme | All components | Tailwind retro-* classes |
 | FR-016 | Features with no spec files shown | FeatureCard.vue | Empty badges state |
-| FR-017 | Server endpoint: features list | features.get.ts | Scan specs/ directory |
-| FR-018 | Server endpoint: spec file content | [...filename].get.ts | Read file, return raw content |
+| FR-017 | Retrieve features list from server | features.get.ts | Scan specs/ directory |
+| FR-018 | Retrieve spec file content from server | [...filename].get.ts | Read file, return raw content |
+| FR-019 | Switch to edit mode from rendered view | SpecFileViewer.vue | Toggle between view/edit states |
+| FR-020 | Save edited spec content | SpecFileViewer.vue + [...filename].put.ts | PUT endpoint persists changes |
+| FR-021 | Cancel editing to discard changes | SpecFileViewer.vue | Revert to original content |
+| FR-022 | Persist spec files with security | [...filename].put.ts | Path traversal protection |
 
 ## Architecture
 
@@ -134,11 +139,3 @@ No complexity violations. Feature uses existing patterns and infrastructure:
 - Standard Nuxt server routes pattern
 - Simple view state machine (3 states, no concurrent states)
 
-## FR Coverage Addendum (2026-02-14)
-
-| FR | Description | Component | Implementation |
-|----|-------------|-----------|----------------|
-| FR-019 | Keyboard navigation across commits in detail view | GitCommitDetail.vue | Covered by task traceability addendum |
-| FR-020 | Detail view positioning toggle | GitCommitDetail.vue + store | Covered by task traceability addendum |
-| FR-021 | Commit detail mode switching behavior | GitCommitDetail.vue | Covered by task traceability addendum |
-| FR-022 | Persisted detail display preferences | store + UI bindings | Covered by task traceability addendum |

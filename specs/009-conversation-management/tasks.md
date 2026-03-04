@@ -204,6 +204,3 @@ Since this feature has one user story, work sequentially through phases:
 - Store file `stores/chat.ts` is shared with 007; 009-owned actions are clearly scoped
 - Worktree fields (worktreePath, worktreeBranch, etc.) are persisted by 009 but managed by 011
 
-## FR Traceability Addendum (2026-02-14)
-
-- [ ] T026 [Traceability] Backfill explicit mapping for metadata preview sub-requirement behavior [FR-007a]

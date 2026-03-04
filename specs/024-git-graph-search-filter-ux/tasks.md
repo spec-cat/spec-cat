@@ -13,6 +13,7 @@
 
 ---
 
-## Inherited Backlog from 002 Umbrella
+## Notes
 
-- [ ] T700 [Traceability] Backfill current uncovered search/filter FR mappings from `002` [FR-061, FR-062, FR-063].
+- This child spec focuses only on search/filter UX within the git graph component
+- Parent spec 002-git-graph covers broader git graph functionality

@@ -10,16 +10,21 @@ Extract preview/finalize workflows from lifecycle/conflict concerns to run in pa
 
 ### Owned Files
 
-- `server/api/chat/preview*.ts`
+- `server/api/chat/preview.post.ts`
+- `server/api/chat/preview.delete.ts`
+- `server/api/chat/preview-sync.post.ts`
 - `server/api/chat/finalize.post.ts`
 - `server/api/chat/rebase.post.ts`
-- `components/chat/ChatPanel.vue`
+- `composables/useChatStream.ts` (post-stream auto-commit + preview-sync caller)
+- `components/chat/ChatPanel.vue` (preview/finalize/rebase controls)
 - `stores/chat.ts` (preview/finalize section)
+- `components/features/FeaturesPanel.vue` (cascade/finalized interaction only)
 
 ### Do Not Edit
 
 - `server/api/chat/worktree*.ts`
 - `server/api/rebase/*`
+- `components/chat/Conflict*.vue`
 
 ## FR Coverage Matrix
 

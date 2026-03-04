@@ -42,5 +42,8 @@
 
 ## Success Criteria *(mandatory)*
 
-- **SC-001**: Feature list and file viewer can be validated independently.
-- **SC-002**: Core panel changes avoid action/linking logic collisions.
+- **SC-001** [FR-001]: Feature list displays all features from `specs/` directory with correct metadata (id, title, status) within 500ms of panel load.
+- **SC-002** [FR-002]: File viewer loads and renders markdown content with proper error states (loading spinner appears within 100ms, error retry button available on failure).
+- **SC-003** [FR-003]: Server rejects any file path containing `../` or paths outside `specs/` directory, returning 400 error for invalid paths.
+- **SC-004** [FR-004]: Task progress shows accurate `completed/total` counts parsed from markdown checkboxes (`- [x]` = completed, `- [ ]` = pending).
+- **SC-005**: Core panel implementation remains decoupled from action buttons (029) and active-linking (030) features.

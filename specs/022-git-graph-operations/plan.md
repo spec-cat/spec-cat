@@ -4,7 +4,20 @@
 
 ## Summary
 
-Extract all mutating workflows into a dedicated operation lane to maximize parallelism.
+Extract all mutating workflows into a dedicated operation lane to maximize parallelism. This feature implements branch/tag/stash/remote context menu actions, operation dialogs, operation-oriented store actions, and mutating git API endpoints.
+
+## In Scope
+
+- Branch/tag/stash/remote context menu actions
+- Operation dialogs
+- Operation-oriented store actions
+- Mutating git API endpoints
+
+## Out of Scope
+
+- Graph row rendering internals
+- Diff overlay viewer
+- Search/filter widget and result navigation
 
 ## Scope Guardrails
 
@@ -12,9 +25,11 @@ Extract all mutating workflows into a dedicated operation lane to maximize paral
 
 - `components/git/Git*Menu.vue`
 - `components/git/dialogs/*`
-- `stores/gitGraph.ts` (operation actions)
-- `server/api/git/*` mutating endpoints
-- `server/utils/git.ts` mutating functions
+- `stores/gitGraph.ts` (operation actions only)
+- `server/api/git/*.post.ts`
+- `server/api/git/*.put.ts`
+- `server/api/git/*.delete.ts`
+- `server/utils/git.ts` (mutating helpers)
 
 ### Do Not Edit
 

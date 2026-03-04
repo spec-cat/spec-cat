@@ -3,7 +3,7 @@
 **Feature Branch**: `009-conversation-management`
 **Created**: 2026-02-08
 **Status**: Implemented
-**Split from**: `007-ai-provider-chat` (original FR-018 ~ FR-028)
+**Split from**: `007-ai-provider-chat`
 **Dependencies**: 007-ai-provider-chat
 
 ## User Scenarios & Testing *(mandatory)*
@@ -49,7 +49,6 @@ As a developer, I want to manage multiple conversations so that I can organize d
 - **FR-005**: System MUST allow users to rename conversation titles inline (Enter/Escape/blur to save)
 - **FR-006**: System MUST allow users to delete conversations with confirmation modal
 - **FR-007**: System MUST display conversation metadata (title, last message preview, timestamp). Worktree branch and path display is owned by 011-chat-worktree-integration.
-- **FR-007a**: *(Moved to 011-chat-worktree-integration)* Worktree branch and path pill-style buttons with clipboard copy
 - **FR-008**: System MUST sort conversations by `createdAt` descending (newest created first)
 - **FR-009**: System MUST automatically save messages (debounced at 400ms per conversation)
 - **FR-010**: System MUST provide search/filter for conversations (debounced at 400ms, searches title + content)
@@ -70,25 +69,10 @@ See `specs/007-ai-provider-chat/data-model.md` for full entity definitions.
 - [x] Users can delete, rename, and search conversations
 - [x] Streaming status badge shows on active conversations
 
-## Technical Implementation
-
-### Components
-- `components/chat/ConversationList.vue` - Search, filter, manage conversations
-- `components/chat/ConversationItem.vue` - Conversation with inline edit, streaming badge
-- `components/chat/DeleteConfirmModal.vue` - Deletion confirmation modal
-
-### Store
-- `stores/chat.ts` - Conversation CRUD, activeConversationId, sorting, search
-
-### Utilities
-- `utils/conversationStorage.ts` - localStorage load/save for conversations
-
-### Types
-- `types/chat.ts` - Conversation, generateConversationId, generateTitle
 
 ## Assumptions
 
-- localStorage is available and sufficient for conversation storage
+- Browser-based local persistence is available and sufficient for conversation storage
 - Max 100 conversations (hard limit — creation blocked, not just warned)
 
 ## Out of Scope

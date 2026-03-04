@@ -16,4 +16,4 @@
 
 ## Inherited Backlog from 015
 
-- [ ] T700 [Traceability] Add explicit mapping for analyze precondition behavior [FR-018a].
+- [ ] T700 [FR-001] Add explicit mapping for analyze precondition behavior.

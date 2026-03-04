@@ -150,13 +150,15 @@ types/
 | FR-018 | AI resolve single conflict | tasks phase 6 | server/api/rebase/ai-resolve.post.ts, stores/chat.ts |
 | FR-019 | AI resolve all conflicts | tasks phase 6 | components/chat/ConflictResolutionModal.vue, stores/chat.ts |
 | FR-020 | AI resolve request/response contract | tasks phase 6 | types/chat.ts, server/api/rebase/ai-resolve.post.ts |
-| FR-021 | Conflict resolution flow robustness | phase dependencies | stores/chat.ts, conflict APIs |
-| FR-022 | Conflict resolution lifecycle completeness | phase dependencies | stores/chat.ts, rebase APIs |
-| FR-022a | Conflict list retrieval | contracts/worktree-api.md | server/api/rebase/conflicts.get.ts |
-| FR-022b | Conflict file content editing | data-model.md | components/chat/ConflictFileEditor.vue |
-| FR-022c | Conflict resolution write-back | contracts/worktree-api.md | server/api/rebase/resolve.put.ts |
-| FR-022d | Continue rebase after resolve | contracts/worktree-api.md | server/api/rebase/continue.post.ts |
-| FR-022e | Continue sync after resolve | contracts/worktree-api.md | server/api/rebase/continue-sync.post.ts |
-| FR-022f | Abort rebase recovery | contracts/worktree-api.md | server/api/rebase/abort.post.ts |
+| FR-021 | Worktree base branch display on conversation cards | data-model.md §Conversation | components/chat/ConversationItem.vue |
+| FR-022 | Rebase confirmation dialog with target branch selector | contracts/worktree-api.md §POST /api/chat/rebase | components/chat/RebaseConfirm.vue |
+| FR-022a | Rebase target branch dropdown | data-model.md §RebaseRequest | components/chat/RebaseConfirm.vue |
+| FR-022b | Rebase default to current baseBranch | data-model.md §RebaseRequest | components/chat/RebaseConfirm.vue |
+| FR-022c | Rebase display worktree info | data-model.md §RebaseRequest | components/chat/RebaseConfirm.vue |
+| FR-022d | Rebase commit count updates on branch change | data-model.md §RebaseRequest | components/chat/RebaseConfirm.vue |
+| FR-022e | Rebase updates conversation baseBranch | contracts/worktree-api.md §POST /api/chat/rebase | server/api/chat/rebase.post.ts, stores/chat.ts |
+| FR-022f | Rebase conflict resolution flow | contracts/worktree-api.md §POST /api/chat/rebase | server/api/chat/rebase.post.ts, components/chat/ConflictResolutionModal.vue |
 | FR-023 | Per-conflict-block accept actions in editor | tasks phase 6 | components/chat/ConflictFileEditor.vue |
 | FR-024 | New-conversation base branch selector | contracts/worktree-api.md | components/conversations/NewConversationModal.vue, components/conversations/ConversationsPanel.vue, stores/chat.ts, server/api/chat/worktree.post.ts |
+| FR-034 | (Legacy from 007) Merged into current feature | N/A | N/A |
+| FR-042 | (Legacy from 007) Merged into current feature | N/A | N/A |

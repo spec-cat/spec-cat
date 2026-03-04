@@ -16,8 +16,3 @@
 
 - [ ] T900 [Traceability] Verify every FR in this child spec is explicitly mapped in this tasks file and update mappings when tasks change.
 
----
-
-## Inherited Backlog from 011 Umbrella
-
-- [ ] T700 [Traceability] Backfill finalize/rebase mapping from current umbrella [FR-022, FR-022a, FR-022b, FR-022c, FR-022d, FR-022e, FR-022f].

@@ -33,7 +33,7 @@ A single-screen layout with no route-based navigation. All features are accessib
 Left-most panel displaying Git history at all times.
 - **FR-002a**: Header with "Git Tree" label
 - **FR-002b**: Embeds GitGraph component for git history visualization
-- **FR-002c**: Working directory fetched from `/api/cwd`
+- **FR-002c**: Displays current working directory
 
 ### FR-003: Features Panel (20%)
 Second column displaying feature/spec management.
@@ -59,7 +59,7 @@ Right-most panel for AI provider chat interaction.
 
 ### FR-006: Settings Modal
 Settings are provided as a modal overlay.
-- **FR-006a**: Gear icon (Cog6ToothIcon) in header area opens modal
+- **FR-006a**: Gear icon in header area opens modal
 - **FR-006b**: ESC key or backdrop click closes modal
 - **FR-006c**: Includes AI provider/model selection UI
 
@@ -74,7 +74,7 @@ A settings button is shown on the right side of this same header.
 Supports responsive behavior via viewport size change detection.
 
 ### NFR-002: Smooth Transitions
-Smooth CSS transitions for panel interactions.
+CSS transitions with 150ms duration and ease-in-out timing function for panel interactions (hover states, active states).
 
 ### NFR-003: Minimum Viewport
 Supports minimum viewport width down to 320px.

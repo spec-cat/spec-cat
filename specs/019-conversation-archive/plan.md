@@ -115,3 +115,30 @@ Gate remains passing after design.
 ## Complexity Tracking
 
 No constitution violations requiring justification.
+
+## Functional Requirements Coverage Matrix
+
+This section maps all functional requirements to implementation approaches:
+
+### Archive Core Operations (FR-001, FR-002, FR-009, FR-014)
+- **FR-001**: Replace delete with archive action in ConversationItem.vue component
+- **FR-002**: Store full message history and metadata in ArchivedConversation entity via archiveConversation store action
+- **FR-009**: Block archive for streaming conversations via isConversationStreaming guard
+- **FR-014**: Remove worktree/branch before persisting archive state in archiveConversation action
+
+### Archive Browsing (FR-003, FR-004, FR-005, FR-013)
+- **FR-003**: Add archive entry point button/icon in ConversationsPanel.vue
+- **FR-004**: Sort archived conversations by archivedAt DESC in computed filtered list
+- **FR-005**: Filter archived conversations by title/content using existing search pattern
+- **FR-013**: Add permanent delete action for archived items in archive list view
+
+### Restore Operations (FR-006, FR-007, FR-008, FR-015)
+- **FR-006**: Create new conversation on archive item click via restoreArchivedConversation action
+- **FR-007**: Include full message history in restored conversation via snapshot copy
+- **FR-008**: Consume archive entry after successful restore (remove from archivedConversations array)
+- **FR-015**: Initialize fresh worktree/branch and reset runtime fields during restore
+
+### System Constraints (FR-010, FR-011, FR-012)
+- **FR-010**: Enforce MAX_CONVERSATIONS=100 limit check before restore operation
+- **FR-011**: No changes to existing finalized/preview/worktree flows (tested via regression)
+- **FR-012**: Support v1->v2 schema migration in conversationStorage.ts loader

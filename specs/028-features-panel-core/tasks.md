@@ -11,10 +11,5 @@
 
 ## FR Traceability Addendum (2026-02-16)
 
-- [ ] T900 [Traceability] Verify every FR in this child spec is explicitly mapped in this tasks file and update mappings when tasks change.
+- [ ] T900 [FR-001,FR-002,FR-003,FR-004] Verify every FR in this child spec is explicitly mapped in this tasks file and update mappings when tasks change.
 
----
-
-## Inherited Backlog from 004
-
-- [ ] T700 [Traceability] Backfill spec editing FR mappings from current `004` [FR-019, FR-020, FR-021, FR-022].
