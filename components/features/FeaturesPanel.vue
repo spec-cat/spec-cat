@@ -471,7 +471,6 @@ async function handleCreateConfirm(baseBranch: string) {
     <!-- Header -->
     <div class="flex-shrink-0 flex items-center justify-between px-4 py-2 border-b border-retro-border">
       <div class="flex items-center gap-2 min-w-0">
-        <AutoModeToggle />
       </div>
 
       <div class="flex items-center gap-1">
