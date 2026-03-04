@@ -130,6 +130,13 @@ types/
 | FR-013 | Block preview if dirty main worktree | contracts/worktree-api.md §POST /api/chat/preview | server/api/chat/preview.post.ts |
 | FR-014 | Finalized conversation read-only | data-model.md §Conversation.finalized | stores/chat.ts |
 | FR-015 | Concurrent streaming sessions | data-model.md §ConversationStreamState | composables/useChatStream.ts, stores/chat.ts |
+| FR-024 | New-conversation base branch selector | contracts/worktree-api.md | components/conversations/NewConversationModal.vue, components/conversations/ConversationsPanel.vue, stores/chat.ts, server/api/chat/worktree.post.ts |
+| FR-025 | Bulk branch metadata query (no per-branch subprocess loop) | API performance hardening | server/api/git/branches.get.ts |
+| FR-026 | Server-side `excludeSc=true` filtering for branch API | API query contract extension | server/api/git/branches.get.ts, components/conversations/NewConversationModal.vue |
+| FR-027 | Incremental persistence on conversation create | Store persistence behavior | stores/chat.ts |
+| FR-028 | Worktree create path timing instrumentation | Worktree API observability hardening | server/api/chat/worktree.post.ts |
+| FR-029 | Unmount hidden panels in fullscreen mode | Layout render strategy | layouts/default.vue |
+| FR-030 | Repeatable branch API perf regression check | Perf harness docs/script | tests/perf/branch-api-benchmark.mjs, tests/perf/branch-api-scenarios.md, package.json |
 
 ## Complexity Tracking
 
@@ -159,6 +166,5 @@ types/
 | FR-022e | Rebase updates conversation baseBranch | contracts/worktree-api.md §POST /api/chat/rebase | server/api/chat/rebase.post.ts, stores/chat.ts |
 | FR-022f | Rebase conflict resolution flow | contracts/worktree-api.md §POST /api/chat/rebase | server/api/chat/rebase.post.ts, components/chat/ConflictResolutionModal.vue |
 | FR-023 | Per-conflict-block accept actions in editor | tasks phase 6 | components/chat/ConflictFileEditor.vue |
-| FR-024 | New-conversation base branch selector | contracts/worktree-api.md | components/conversations/NewConversationModal.vue, components/conversations/ConversationsPanel.vue, stores/chat.ts, server/api/chat/worktree.post.ts |
 | FR-034 | (Legacy from 007) Merged into current feature | N/A | N/A |
 | FR-042 | (Legacy from 007) Merged into current feature | N/A | N/A |

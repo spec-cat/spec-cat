@@ -34,7 +34,8 @@
     "typecheck": "nuxt typecheck",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "bench:branches": "node tests/perf/branch-api-benchmark.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.2",

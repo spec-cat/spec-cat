@@ -110,7 +110,7 @@ onUnmounted(() => {
     <div class="relative flex min-w-0" style="flex: 7">
       <!-- Column 2: Features (flex: 2 = 20%) -->
       <div
-        v-show="!rightColumnsHidden"
+        v-if="!rightColumnsHidden"
         class="flex flex-col overflow-hidden border-l border-retro-border"
         style="flex: 2"
       >
@@ -119,7 +119,7 @@ onUnmounted(() => {
 
       <!-- Column 3: Conversations (flex: 2 = 20%) -->
       <div
-        v-show="!rightColumnsHidden"
+        v-if="!rightColumnsHidden"
         class="flex flex-col overflow-hidden border-l border-retro-border"
         style="flex: 2"
       >

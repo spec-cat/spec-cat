@@ -1201,7 +1201,8 @@ export const useChatStore = defineStore('chat', () => {
       }
     }
 
-    saveAllConversations()
+    // Incremental save avoids rewriting the full conversation snapshot on create.
+    saveConversation(id, true)
     return id
   }
 

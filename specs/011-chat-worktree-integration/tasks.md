@@ -110,12 +110,22 @@ This file maintains parent-level task tracking for traceability.
 ### Legacy Support
 - [x] T054: Handle FR-034 and FR-042 legacy references [FR-034] [FR-042]
 
+## Phase 9: Performance Hardening
+
+### Branch API + Create Flow
+- [x] T055: Replace branch metadata N+1 (`git show` per branch) with a bulk `for-each-ref` query in branch API [FR-025]
+- [x] T056: Add `excludeSc=true` query support to branch API and use it from NewConversationModal [FR-026]
+- [x] T057: Switch `createConversation()` default create-path persistence from full snapshot save to incremental conversation save [FR-027]
+- [x] T058: Add per-step and total latency logs for worktree creation path and reduce verify/resolve command count [FR-028]
+- [x] T059: Unmount right-side panels in chat fullscreen mode (`v-if`) to prevent hidden reactive overhead [FR-029]
+- [x] T060: Add repeatable branch API benchmark script + scenario envelope docs + package script [FR-030]
+
 ## Summary
 
-- **Total Tasks**: 54
-- **Completed**: 42
+- **Total Tasks**: 60
+- **Completed**: 48
 - **Remaining**: 12 (Phase 5 & 6)
-- **Progress**: 78%
+- **Progress**: 80%
 
 ## Notes
 

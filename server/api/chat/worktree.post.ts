@@ -32,12 +32,32 @@ export default defineEventHandler(async (event) => {
     : `/tmp/sc-${conversationId}`
 
   logger.chat.info('Creating chat worktree', { conversationId, branchName, worktreePath })
+  const requestStart = process.hrtime.bigint()
+  const stepDurations: Record<string, number> = {}
+
+  async function execTimed(step: string, command: string, options?: { logFailure?: boolean }) {
+    const start = process.hrtime.bigint()
+    try {
+      const result = await execAsync(command, { cwd: projectDir })
+      const durationMs = Number(process.hrtime.bigint() - start) / 1_000_000
+      stepDurations[step] = durationMs
+      logger.chat.debug('Chat worktree step completed', { conversationId, step, durationMs })
+      return result
+    } catch (error) {
+      const durationMs = Number(process.hrtime.bigint() - start) / 1_000_000
+      stepDurations[step] = durationMs
+      if (options?.logFailure !== false) {
+        logger.chat.warn('Chat worktree step failed', { conversationId, step, durationMs })
+      }
+      throw error
+    }
+  }
 
   try {
     // Resolve base branch: use requested branch when provided, otherwise current branch.
     let baseBranch = requestedBaseBranch || ''
     if (!baseBranch) {
-      const { stdout: baseBranchRaw } = await execAsync('git rev-parse --abbrev-ref HEAD', { cwd: projectDir })
+      const { stdout: baseBranchRaw } = await execTimed('resolve-current-branch', 'git rev-parse --abbrev-ref HEAD')
       baseBranch = baseBranchRaw.trim()
     }
     if (baseBranch.startsWith('sc/')) {
@@ -46,8 +66,11 @@ export default defineEventHandler(async (event) => {
         error: `Invalid base branch "${baseBranch}"`,
       }
     }
+    // Resolve and verify selected base branch HEAD commit in one step.
+    let base = ''
     try {
-      await execAsync(`git show-ref --verify --quiet "refs/heads/${baseBranch}"`, { cwd: projectDir })
+      const { stdout: head } = await execTimed('resolve-base-head', `git rev-parse --verify "refs/heads/${baseBranch}^{commit}"`)
+      base = head.trim()
     } catch {
       return {
         success: false,
@@ -55,14 +78,10 @@ export default defineEventHandler(async (event) => {
       }
     }
 
-    // Resolve selected base branch HEAD commit.
-    const { stdout: head } = await execAsync(`git rev-parse "refs/heads/${baseBranch}"`, { cwd: projectDir })
-    const base = head.trim()
-
     // Feature branches must not already exist — each feature gets one branch
     if (featureId) {
       try {
-        await execAsync(`git rev-parse --verify "${branchName}"`, { cwd: projectDir })
+        await execTimed('check-feature-branch-exists', `git rev-parse --verify "${branchName}"`, { logFailure: false })
         // Branch exists — error
         return {
           success: false,
@@ -74,11 +93,17 @@ export default defineEventHandler(async (event) => {
     }
 
     // Create worktree with new branch
-    await execAsync(`git worktree add -b "${branchName}" "${worktreePath}" "${base}"`, {
-      cwd: projectDir,
-    })
+    await execTimed('worktree-add', `git worktree add -b "${branchName}" "${worktreePath}" "${base}"`)
 
-    logger.chat.info('Chat worktree created', { conversationId, worktreePath, branchName, baseBranch })
+    const totalDurationMs = Number(process.hrtime.bigint() - requestStart) / 1_000_000
+    logger.chat.info('Chat worktree created', {
+      conversationId,
+      worktreePath,
+      branchName,
+      baseBranch,
+      totalDurationMs,
+      steps: stepDurations,
+    })
 
     return {
       success: true,
@@ -88,7 +113,13 @@ export default defineEventHandler(async (event) => {
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error)
-    logger.chat.error('Failed to create chat worktree', { conversationId, error: errorMessage })
+    const totalDurationMs = Number(process.hrtime.bigint() - requestStart) / 1_000_000
+    logger.chat.error('Failed to create chat worktree', {
+      conversationId,
+      error: errorMessage,
+      totalDurationMs,
+      steps: stepDurations,
+    })
 
     return {
       success: false,

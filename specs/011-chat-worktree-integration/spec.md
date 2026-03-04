@@ -76,6 +76,12 @@ As a developer, I want to see which conversation (worktree) is currently being p
 - **FR-001b**: Feature-originated conversations MUST validate branch uniqueness BEFORE creating the conversation — if the feature branch already exists, the conversation MUST NOT be created and the user MUST see an error toast
 - **FR-002**: System MUST use branch naming — regular: `sc/{conversationId}`, feature-originated: `{featureId}`
 - **FR-024**: System MUST provide a base-branch selector when creating a new conversation. The selected branch MUST be passed to worktree creation and stored as the conversation's `baseBranch`.
+- **FR-025**: `/api/git/branches` MUST avoid per-branch subprocess loops when returning branch metadata (single bulk git query for branch + date metadata).
+- **FR-026**: `/api/git/branches` MUST support server-side exclusion of chat worktree branches via `excludeSc=true` and omit `sc/*` branches from the response payload.
+- **FR-027**: Conversation creation MUST persist incrementally (single conversation save) by default and MUST NOT require full conversation snapshot writes unless structure-wide changes are required.
+- **FR-028**: `POST /api/chat/worktree` MUST emit per-step timing logs and total duration for key git steps in the creation path.
+- **FR-029**: Fullscreen chat mode MUST unmount hidden right-side panels (features/conversations) so hidden panel reactive logic does not continue running.
+- **FR-030**: Repository MUST provide a repeatable lightweight benchmark/check for branch API latency envelopes across `10/30/50` chat-branch scenarios.
 - **FR-003**: System MUST auto-commit changes in worktree after each streaming turn (using `git add -A` to capture all changes including new files, respecting `.gitignore`)
 - **FR-004**: System MUST provide Preview mode — checkout worktree HEAD in main worktree for testing. Preview toggle is available via the Eye/EyeSlash icon in the chat panel header. In the conversation list, previewing conversations are indicated by a red-tinted background (no separate eye icon button).
 - **FR-005**: System MUST auto-sync preview branch to latest worktree HEAD on each turn (`git update-ref`)
@@ -121,6 +127,12 @@ See `specs/007-ai-provider-chat/data-model.md` for full entity definitions.
 - [x] Worktree isolation per conversation works
 - [x] Feature branch conflict blocks conversation creation (no ghost chat card)
 - [x] New conversation allows selecting a base branch before worktree creation
+- [x] Branch list API uses bulk metadata query without per-branch date subprocess calls
+- [x] New conversation branch query excludes `sc/*` server-side
+- [x] Conversation creation avoids full snapshot rewrite by default
+- [x] Worktree creation logs per-step + total timing data
+- [x] Fullscreen chat unmounts hidden side panels
+- [x] Branch API latency check is runnable for 10/30/50 chat-branch scenarios
 - [x] Preview mode shows worktree changes in main workspace
 - [x] Finalize squashes, rebases, and cleans up correctly
 - [x] Finalize allows selecting a different target base branch via dropdown
