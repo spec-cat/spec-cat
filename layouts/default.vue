@@ -155,5 +155,8 @@ onUnmounted(() => {
     <!-- Toast notifications -->
     <ToastContainer />
 
+    <!-- Nuxt page outlet for route content -->
+    <slot />
+
   </div>
 </template>
