@@ -375,6 +375,12 @@ export function useChatStream() {
       ws.onerror = (event) => {
         console.error(`[useChatStream] WebSocket error for conversation ${conversationId}:`, event)
         const conn = connections.get(conversationId)
+
+        // If the connection pool already holds a different WebSocket for this
+        // conversation (e.g. a new message was sent after abort), this close/error
+        // belongs to the OLD socket — skip cleanup so we don't corrupt the new one.
+        if (conn && conn.ws !== ws) return
+
         if (conn) {
           conn.lastSocketError = 'Browser reported a WebSocket transport error (network/proxy/server)'
         }
@@ -393,6 +399,10 @@ export function useChatStream() {
 
       ws.onclose = (event) => {
         const conn = connections.get(conversationId)
+
+        // Stale close: a new WebSocket already replaced this one — bail out.
+        if (conn && conn.ws !== ws) return
+
         if (conn) clearHealthCheck(conn)
         connections.delete(conversationId)
         cascadeStates.delete(conversationId)
@@ -416,6 +426,9 @@ export function useChatStream() {
       }
 
       ws.onmessage = (event) => {
+        // Ignore messages from a stale WebSocket that has been replaced
+        const conn = connections.get(conversationId)
+        if (conn && conn.ws !== ws) return
         handleMessage(event.data, conversationId)
       }
     })
