@@ -8,6 +8,7 @@ import type {
   UIStreamPermissionRequestEvent,
   UIStreamTurnResultEvent,
   UIStreamSessionInitEvent,
+  UIStreamErrorEvent,
   ContentBlockType,
 } from '~/types/chat'
 
@@ -50,6 +51,111 @@ function normalizeTurnResultSubtype(value: unknown, isError: boolean): UIStreamT
   if (raw === 'max_turns' || raw === 'error_max_turns') return 'max_turns'
   if (raw.startsWith('error')) return 'error'
   return 'success'
+}
+
+function stringifyClaudeErrorEntry(entry: unknown): string {
+  if (typeof entry === 'string') {
+    return entry.trim()
+  }
+  if (!entry || typeof entry !== 'object') {
+    return ''
+  }
+  const obj = entry as Record<string, unknown>
+  if (typeof obj.message === 'string' && obj.message.trim()) {
+    return obj.message.trim()
+  }
+  try {
+    return JSON.stringify(obj)
+  } catch {
+    return String(entry)
+  }
+}
+
+function buildClaudeResultErrorMessage(event: Record<string, unknown>): string | null {
+  const errors = event.errors
+  if (Array.isArray(errors) && errors.length > 0) {
+    const lines: string[] = []
+    for (const entry of errors) {
+      const text = stringifyClaudeErrorEntry(entry)
+      if (text) {
+        lines.push(text)
+      }
+    }
+    if (lines.length > 0) {
+      const unique = Array.from(new Set(lines.map((line) => line.trim()))).filter(Boolean)
+      if (unique.length > 0) {
+        return unique.slice(0, 3).join('\n')
+      }
+    }
+  }
+
+  const directError = stringifyClaudeErrorEntry(event.error)
+  if (directError) {
+    return directError
+  }
+
+  const directMessage = stringifyClaudeErrorEntry(event.message)
+  if (directMessage) {
+    return directMessage
+  }
+
+  const nestedResult = event.result
+  if (nestedResult && typeof nestedResult === 'object' && !Array.isArray(nestedResult)) {
+    const nested = nestedResult as Record<string, unknown>
+    const nestedErrors = nested.errors
+    if (Array.isArray(nestedErrors) && nestedErrors.length > 0) {
+      const lines: string[] = []
+      for (const entry of nestedErrors) {
+        const text = stringifyClaudeErrorEntry(entry)
+        if (text) {
+          lines.push(text)
+        }
+      }
+      if (lines.length > 0) {
+        const unique = Array.from(new Set(lines.map((line) => line.trim()))).filter(Boolean)
+        if (unique.length > 0) {
+          return unique.slice(0, 3).join('\n')
+        }
+      }
+    }
+
+    const nestedError = stringifyClaudeErrorEntry(nested.error)
+    if (nestedError) {
+      return nestedError
+    }
+
+    const nestedMessage = stringifyClaudeErrorEntry(nested.message)
+    if (nestedMessage) {
+      return nestedMessage
+    }
+  }
+
+  return null
+}
+
+function extractClaudeAssistantText(event: Record<string, unknown>): string {
+  const message = event.message
+  if (!message || typeof message !== 'object' || Array.isArray(message)) {
+    return ''
+  }
+
+  const content = (message as Record<string, unknown>).content
+  if (!Array.isArray(content)) {
+    return ''
+  }
+
+  const chunks: string[] = []
+  for (const block of content) {
+    if (!block || typeof block !== 'object') {
+      continue
+    }
+    const record = block as Record<string, unknown>
+    if (record.type === 'text' && typeof record.text === 'string' && record.text.trim()) {
+      chunks.push(record.text)
+    }
+  }
+
+  return chunks.join('')
 }
 
 /**
@@ -115,6 +221,24 @@ export function transformClaudeEvent(event: Record<string, unknown>): UIStreamEv
     } as UIStreamToolResultEvent)
   }
 
+  if (event.type === 'assistant') {
+    const assistantText = extractClaudeAssistantText(event)
+    if (assistantText) {
+      events.push({
+        type: 'block_start',
+        sessionId,
+        blockId: `blk-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        blockType: 'text',
+        text: assistantText,
+      } as UIStreamBlockStartEvent)
+      events.push({
+        type: 'block_end',
+        sessionId,
+        blockId: '',
+      } as UIStreamBlockEndEvent)
+    }
+  }
+
   if (event.type === 'permission_request' && event.permission && typeof event.permission === 'object') {
     const perm = event.permission as Record<string, unknown>
     events.push({
@@ -143,6 +267,15 @@ export function transformClaudeEvent(event: Record<string, unknown>): UIStreamEv
         cacheReadInputTokens: usage.cache_read_input_tokens || 0,
       } : undefined,
     } as UIStreamTurnResultEvent)
+
+    if (isError) {
+      const errorMessage = buildClaudeResultErrorMessage(event) || 'Provider reported an execution error.'
+      events.push({
+        type: 'error',
+        sessionId,
+        error: errorMessage,
+      } as UIStreamErrorEvent)
+    }
   }
 
   if (event.type === 'system' && event.subtype === 'init') {

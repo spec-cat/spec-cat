@@ -6,6 +6,7 @@ import type {
   UIStreamToolResultEvent,
   UIStreamPermissionRequestEvent,
   UIStreamTurnResultEvent,
+  UIStreamErrorEvent,
 } from '~/types/chat'
 
 export function extractCodexDiagnosticFromEvent(event: Record<string, unknown>): string | null {
@@ -449,6 +450,40 @@ function extractReasoningTextFromEvent(event: Record<string, unknown>): string {
   return ''
 }
 
+function extractErrorMessage(event: Record<string, unknown>): string {
+  const directCandidates = [event.message, event.error, event.content, event.text]
+  for (const value of directCandidates) {
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim()
+    }
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const message = (value as Record<string, unknown>).message
+      if (typeof message === 'string' && message.trim()) {
+        return message.trim()
+      }
+    }
+  }
+
+  const result = event.result
+  if (result && typeof result === 'object' && !Array.isArray(result)) {
+    const resultObj = result as Record<string, unknown>
+    const nestedCandidates = [resultObj.message, resultObj.error, resultObj.content, resultObj.text]
+    for (const value of nestedCandidates) {
+      if (typeof value === 'string' && value.trim()) {
+        return value.trim()
+      }
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        const message = (value as Record<string, unknown>).message
+        if (typeof message === 'string' && message.trim()) {
+          return message.trim()
+        }
+      }
+    }
+  }
+
+  return ''
+}
+
 export function mapCodexEventToUIEvents(event: Record<string, unknown>): UIStreamEvent[] {
   const eventType = typeof event.type === 'string' ? event.type : ''
   const sessionId = extractSessionId(event) || undefined
@@ -626,6 +661,40 @@ export function mapCodexEventToUIEvents(event: Record<string, unknown>): UIStrea
       ...asTextStreamEvents(finalText),
       resultEvent,
     ]
+  }
+
+  if (eventType === 'turn.failed' || eventType === 'error') {
+    const errorMessage = extractErrorMessage(event) || 'Provider reported an execution error.'
+    const resultEvent: UIStreamTurnResultEvent = {
+      type: 'turn_result',
+      sessionId,
+      subtype: 'error',
+    }
+    const errorEvent: UIStreamErrorEvent = {
+      type: 'error',
+      sessionId,
+      error: errorMessage,
+    }
+    return [resultEvent, errorEvent]
+  }
+
+  if (eventType === 'result') {
+    const status = getStringValue(event, ['status']).toLowerCase()
+    const isError = event.is_error === true || status === 'error' || status === 'failed' || status === 'failure'
+    if (isError) {
+      const errorMessage = extractErrorMessage(event) || 'Provider reported an execution error.'
+      const resultEvent: UIStreamTurnResultEvent = {
+        type: 'turn_result',
+        sessionId,
+        subtype: 'error',
+      }
+      const errorEvent: UIStreamErrorEvent = {
+        type: 'error',
+        sessionId,
+        error: errorMessage,
+      }
+      return [resultEvent, errorEvent]
+    }
   }
 
   const permissionEvent = mapPermissionRequest()

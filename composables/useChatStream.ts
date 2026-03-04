@@ -927,6 +927,8 @@ export function useChatStream() {
           disableCascade(conversationId)
           if (event.subtype === 'max_turns') {
             chatStore.setSessionError('Maximum conversation turns reached. Please start a new conversation.', conversationId)
+          } else {
+            chatStore.setSessionError('Provider reported an execution error.', conversationId)
           }
         }
 

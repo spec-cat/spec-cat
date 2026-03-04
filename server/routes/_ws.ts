@@ -479,6 +479,7 @@ async function runProvider(peer: any, state: PeerState, msg: ChatMessage, isRetr
   const generation = state.procGeneration
   let permissionRequested = false
   let emittedRenderableContent = false
+  let emittedTerminalErrorEvent = false
 
   const attachments = normalizeImageAttachments(msg.attachments)
   const providerMessage = buildProviderMessage(msg.message, attachments)
@@ -505,6 +506,9 @@ async function runProvider(peer: any, state: PeerState, msg: ChatMessage, isRetr
             }
             if (isRenderableEvent(event)) {
               emittedRenderableContent = true
+            }
+            if (event.type === 'error' || (event.type === 'turn_result' && event.subtype !== 'success')) {
+              emittedTerminalErrorEvent = true
             }
 
             // Handle permission interception
@@ -593,6 +597,12 @@ async function runProvider(peer: any, state: PeerState, msg: ChatMessage, isRetr
                 }
 
                 const summary = summarizeProviderProcessError(nonJsonOutput, 700)
+                if (!summary && emittedTerminalErrorEvent && emittedRenderableContent) {
+                  peer.send(JSON.stringify({ type: 'done', requestId: msg.requestId }))
+                  state.pendingMessage = null
+                  return
+                }
+
                 const details = summary ? ` — ${summary}` : ''
                 peer.send(JSON.stringify({
                   type: 'error',

@@ -15,6 +15,22 @@ describe('codexStreamParser', () => {
     expect(result.diagnostics).toContain('Codex turn failed: boom')
   })
 
+  it('maps turn.failed into canonical turn_result(error) + error events', () => {
+    const line = JSON.stringify({ type: 'turn.failed', error: { message: 'boom' }, thread_id: 'thread-fail-1' })
+    const result = processCodexJsonLine(line)
+    expect(result.mappedEvents).toHaveLength(2)
+    expect(result.mappedEvents[0]).toMatchObject({
+      type: 'turn_result',
+      sessionId: 'thread-fail-1',
+      subtype: 'error',
+    })
+    expect(result.mappedEvents[1]).toMatchObject({
+      type: 'error',
+      sessionId: 'thread-fail-1',
+      error: 'boom',
+    })
+  })
+
   it('unwraps event_msg payload for agent_message', () => {
     const line = JSON.stringify({
       type: 'event_msg',

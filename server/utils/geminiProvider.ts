@@ -49,6 +49,44 @@ const geminiProvider: AIProvider = {
     const event = data as Record<string, unknown>
     const events: UIStreamEvent[] = []
     const sessionId = (event.session_id as string) || 'default-session'
+    const getErrorText = (): string => {
+      const direct = event.error
+      if (typeof direct === 'string' && direct.trim()) {
+        return direct.trim()
+      }
+      if (direct && typeof direct === 'object' && !Array.isArray(direct)) {
+        const msg = (direct as Record<string, unknown>).message
+        if (typeof msg === 'string' && msg.trim()) {
+          return msg.trim()
+        }
+      }
+
+      const msg = event.message
+      if (typeof msg === 'string' && msg.trim()) {
+        return msg.trim()
+      }
+
+      const result = event.result
+      if (result && typeof result === 'object' && !Array.isArray(result)) {
+        const resultObj = result as Record<string, unknown>
+        const nestedError = resultObj.error
+        if (typeof nestedError === 'string' && nestedError.trim()) {
+          return nestedError.trim()
+        }
+        if (nestedError && typeof nestedError === 'object' && !Array.isArray(nestedError)) {
+          const nestedMsg = (nestedError as Record<string, unknown>).message
+          if (typeof nestedMsg === 'string' && nestedMsg.trim()) {
+            return nestedMsg.trim()
+          }
+        }
+        const nestedMsg = resultObj.message
+        if (typeof nestedMsg === 'string' && nestedMsg.trim()) {
+          return nestedMsg.trim()
+        }
+      }
+
+      return ''
+    }
 
     if (event.type === 'message' && event.role === 'assistant') {
       const blockId = 'gemini-text-block'
@@ -105,11 +143,13 @@ const geminiProvider: AIProvider = {
       // Clean up session state on completion
       startedSessions.delete(sessionId)
       
+      const status = (event.status as string) || ''
+      const isError = status !== 'success'
       const stats = event.stats as Record<string, number> | undefined
       events.push({
         type: 'turn_result',
         sessionId,
-        subtype: (event.status as string) === 'success' ? 'success' : 'error',
+        subtype: isError ? 'error' : 'success',
         durationMs: stats?.duration_ms,
         usage: stats ? {
           inputTokens: stats.input_tokens || 0,
@@ -118,13 +158,21 @@ const geminiProvider: AIProvider = {
           cacheReadInputTokens: 0,
         } : undefined,
       } as UIStreamTurnResultEvent)
+
+      if (isError) {
+        events.push({
+          type: 'error',
+          sessionId,
+          error: getErrorText() || 'Provider reported an execution error.',
+        } as any)
+      }
     }
 
     if (event.type === 'error') {
       events.push({
         type: 'error',
         sessionId,
-        error: (event.error as any)?.message || String(event.error),
+        error: getErrorText() || 'Provider reported an execution error.',
       } as any)
     }
 
