@@ -37,6 +37,48 @@ const metadata = {
   },
 } satisfies AIProvider['metadata']
 
+export function buildClaudeExecArgs(opts: AIProviderStreamOptions, modelId: string): string[] {
+  const args: string[] = [
+    '-p', opts.message,
+    '--output-format', 'stream-json',
+    '--verbose',
+    '--include-partial-messages',
+    '--model', modelId,
+  ]
+
+  const mode = opts.permissionMode || 'ask'
+  switch (mode) {
+    case 'plan':
+      // Newer/alternate Claude CLI builds may not support `--plan`.
+      // Keep plan mode compatible by using ask-mode permissions without a fragile CLI flag.
+      if (opts.approvedTools && opts.approvedTools.length > 0) {
+        args.push('--allowedTools', opts.approvedTools.join(','))
+      }
+      break
+    case 'auto':
+      args.push('--allowedTools', 'Read,Glob,Grep,Edit,Write,Bash,WebFetch,WebSearch')
+      break
+    case 'bypass':
+      args.push('--dangerously-skip-permissions')
+      break
+    case 'ask':
+      if (opts.approvedTools && opts.approvedTools.length > 0) {
+        args.push('--allowedTools', opts.approvedTools.join(','))
+      }
+      break
+  }
+
+  if (opts.resumeSessionId) {
+    args.push('--resume', opts.resumeSessionId)
+  }
+
+  if (opts.systemPrompt) {
+    args.push('--append-system-prompt', opts.systemPrompt)
+  }
+
+  return args
+}
+
 const claudeProvider: AIProvider = {
   metadata,
   toCanonicalEvents(data) {
@@ -45,40 +87,7 @@ const claudeProvider: AIProvider = {
   streamChat(opts: AIProviderStreamOptions, callbacks: AIProviderStreamCallbacks): AIProviderStreamController {
     const cliPath = getClaudeCliPath()
     const modelId = getClaudeModelId(opts.selection.modelKey)
-
-    const args: string[] = [
-      '-p', opts.message,
-      '--output-format', 'stream-json',
-      '--verbose',
-      '--include-partial-messages',
-      '--model', modelId,
-    ]
-
-    const mode = opts.permissionMode || 'ask'
-    switch (mode) {
-      case 'plan':
-        args.push('--plan')
-        break
-      case 'auto':
-        args.push('--allowedTools', 'Read,Glob,Grep,Edit,Write,Bash,WebFetch,WebSearch')
-        break
-      case 'bypass':
-        args.push('--dangerously-skip-permissions')
-        break
-      case 'ask':
-        if (opts.approvedTools && opts.approvedTools.length > 0) {
-          args.push('--allowedTools', opts.approvedTools.join(','))
-        }
-        break
-    }
-
-    if (opts.resumeSessionId) {
-      args.push('--resume', opts.resumeSessionId)
-    }
-
-    if (opts.systemPrompt) {
-      args.push('--append-system-prompt', opts.systemPrompt)
-    }
+    const args = buildClaudeExecArgs(opts, modelId)
 
     const proc = spawn(cliPath, args, {
       cwd: opts.cwd,
