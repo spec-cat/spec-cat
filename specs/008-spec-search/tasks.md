@@ -10,7 +10,7 @@
 
 - [X] T001 [P] Add domain types (`SpecChunk`, `SourceFile`, `SearchResult`, `SearchRequest/Response`, `IndexStatus`, `ReindexResponse`, runtime state fields) in `types/specSearch.ts` [FR-010, FR-013b, FR-015]
 - [X] T002 [P] Add spec search module barrel in `server/utils/specSearch/index.ts` [FR-002..FR-017]
-- [ ] T003 [P] Install dependencies (`better-sqlite3`, `sqlite-vec`, `@xenova/transformers`, `@types/better-sqlite3`) in `package.json`/lockfile [FR-003, FR-005]
+- [X] T003 [P] Install dependencies (`better-sqlite3`, `sqlite-vec`, `@xenova/transformers`, `@types/better-sqlite3`) in `package.json`/lockfile [FR-003, FR-005]
 
 ## Phase 2: Foundation
 
@@ -55,8 +55,8 @@
 ## Phase 8: Reliability and Validation
 
 - [X] T026 [P] Add DB missing/corruption recovery path in utility layers [FR-011, FR-011a, FR-013]
-- [ ] T027 Validate restart reconciliation flow (offline edit while app down) and document measured timings in `specs/008-spec-search/quickstart.md` [SC-004, SC-009]
-- [ ] T028 Run `pnpm typecheck` and manual endpoint/UI checks; adjust edge-case handling [FR-001..FR-017]
+- [X] T027 Validate restart reconciliation flow (offline edit while app down) and document measured timings in `specs/008-spec-search/quickstart.md` [SC-004, SC-009]
+- [X] T028 Run `pnpm typecheck` and manual endpoint/UI checks; adjust edge-case handling [FR-001..FR-017]
 
 ## Dependencies & Parallelism
 

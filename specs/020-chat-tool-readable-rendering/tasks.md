@@ -1,6 +1,7 @@
 # Tasks: Human-Readable Tool Rendering in Chat
 
 **Input**: `specs/020-chat-tool-readable-rendering/spec.md`, `specs/020-chat-tool-readable-rendering/plan.md`
+**Status**: Implementation complete (2026-03-04), awaiting manual validation
 
 ## Phase 1: Implementation
 
@@ -13,6 +14,8 @@
 - [x] T007 [FR-007] Preserve fallback behavior for non-target tools and existing result rendering in `components/chat/ChatToolBlock.vue`.
 
 ## Phase 2: Validation
+
+**Note**: Validation requires manual testing by the user. A comprehensive validation guide has been created at `specs/020-chat-tool-readable-rendering/validation-guide.md`.
 
 - [ ] T008 [FR-001] Manual validation with `Read` tool event.
 - [ ] T009 [FR-003] Manual validation with `Write` tool event.

@@ -15,9 +15,9 @@ See plan.md for owned files and scope boundaries.
 
 **Purpose**: Establish files and interfaces used by all user stories.
 
-- [ ] T001 Create command palette component scaffold in `/home/khan/src/brick2/components/features/FeatureSearchModal.vue` [FR-001]
-- [ ] T002 Add command palette state container and modal mount point in `/home/khan/src/brick2/components/features/FeaturesPanel.vue` [FR-001]
-- [ ] T003 [P] Add command palette view-model interfaces for debounced query/result rendering in `/home/khan/src/brick2/types/specSearch.ts` [FR-006]
+- [X] T001 Create command palette component scaffold in `/home/khan/src/brick2/components/features/FeatureSearchModal.vue` [FR-001]
+- [X] T002 Add command palette state container and modal mount point in `/home/khan/src/brick2/components/features/FeaturesPanel.vue` [FR-001]
+- [X] T003 [P] Add command palette view-model interfaces for debounced query/result rendering in `/home/khan/src/brick2/types/specSearch.ts` [FR-006]
 
 ---
 
@@ -27,9 +27,9 @@ See plan.md for owned files and scope boundaries.
 
 **⚠️ CRITICAL**: Complete this phase before starting user story phases.
 
-- [ ] T004 Implement typed modal props/emits contract between `/home/khan/src/brick2/components/features/FeaturesPanel.vue` and `/home/khan/src/brick2/components/features/FeatureSearchModal.vue` [FR-007]
-- [ ] T005 Implement search request helper in `/home/khan/src/brick2/components/features/FeatureSearchModal.vue` that targets `GET /api/specs/search` with `mode=keyword` and default global scope [FR-004]
-- [ ] T006 Implement shared close-without-selection behavior in `/home/khan/src/brick2/components/features/FeaturesPanel.vue` to preserve existing feature selection [FR-010]
+- [X] T004 Implement typed modal props/emits contract between `/home/khan/src/brick2/components/features/FeaturesPanel.vue` and `/home/khan/src/brick2/components/features/FeatureSearchModal.vue` [FR-007]
+- [X] T005 Implement search request helper in `/home/khan/src/brick2/components/features/FeatureSearchModal.vue` that targets `GET /api/specs/search` with `mode=keyword` and default global scope [FR-004]
+- [X] T006 Implement shared close-without-selection behavior in `/home/khan/src/brick2/components/features/FeaturesPanel.vue` to preserve existing feature selection [FR-010]
 
 **Checkpoint**: Foundation ready; user stories can be completed incrementally.
 
@@ -43,11 +43,11 @@ See plan.md for owned files and scope boundaries.
 
 ### Implementation for User Story 1
 
-- [ ] T007 [US1] Implement global `Ctrl+K`/`Cmd+K` handler in `/home/khan/src/brick2/components/features/FeaturesPanel.vue` to open the modal regardless of focused element [FR-001] [FR-013]
-- [ ] T008 [US1] Implement auto-focus on modal open in `/home/khan/src/brick2/components/features/FeatureSearchModal.vue` [FR-002]
-- [ ] T009 [US1] Implement 400ms debounced query state transition in `/home/khan/src/brick2/components/features/FeatureSearchModal.vue` [FR-003]
-- [ ] T010 [US1] Execute debounced search requests without `featureId` filter in `/home/khan/src/brick2/components/features/FeatureSearchModal.vue` [FR-004]
-- [ ] T011 [US1] Render searchable result list with feature ID and source context in `/home/khan/src/brick2/components/features/FeatureSearchModal.vue` [FR-005] [FR-006]
+- [X] T007 [US1] Implement global `Ctrl+K`/`Cmd+K` handler in `/home/khan/src/brick2/components/features/FeaturesPanel.vue` to open the modal regardless of focused element [FR-001] [FR-013]
+- [X] T008 [US1] Implement auto-focus on modal open in `/home/khan/src/brick2/components/features/FeatureSearchModal.vue` [FR-002]
+- [X] T009 [US1] Implement 400ms debounced query state transition in `/home/khan/src/brick2/components/features/FeatureSearchModal.vue` [FR-003]
+- [X] T010 [US1] Execute debounced search requests without `featureId` filter in `/home/khan/src/brick2/components/features/FeatureSearchModal.vue` [FR-004]
+- [X] T011 [US1] Render searchable result list with feature ID and source context in `/home/khan/src/brick2/components/features/FeatureSearchModal.vue` [FR-005] [FR-006]
 
 **Checkpoint**: User Story 1 is independently functional and testable.
 
@@ -61,11 +61,11 @@ See plan.md for owned files and scope boundaries.
 
 ### Implementation for User Story 2
 
-- [ ] T012 [US2] Implement result click selection emit in `/home/khan/src/brick2/components/features/FeatureSearchModal.vue` [FR-007] [FR-008]
-- [ ] T013 [US2] Handle modal selection event by invoking existing feature-selection flow in `/home/khan/src/brick2/components/features/FeaturesPanel.vue` [FR-007]
-- [ ] T014 [US2] Implement keyboard navigation (`ArrowUp`/`ArrowDown`) and Enter confirm behavior in `/home/khan/src/brick2/components/features/FeatureSearchModal.vue` [FR-008]
-- [ ] T015 [US2] Implement unavailable-feature guard and inline error while keeping modal open in `/home/khan/src/brick2/components/features/FeatureSearchModal.vue` [FR-011]
-- [ ] T016 [US2] Implement Escape-to-close behavior in `/home/khan/src/brick2/components/features/FeatureSearchModal.vue` and preserve selection in `/home/khan/src/brick2/components/features/FeaturesPanel.vue` [FR-012]
+- [X] T012 [US2] Implement result click selection emit in `/home/khan/src/brick2/components/features/FeatureSearchModal.vue` [FR-007] [FR-008]
+- [X] T013 [US2] Handle modal selection event by invoking existing feature-selection flow in `/home/khan/src/brick2/components/features/FeaturesPanel.vue` [FR-007]
+- [X] T014 [US2] Implement keyboard navigation (`ArrowUp`/`ArrowDown`) and Enter confirm behavior in `/home/khan/src/brick2/components/features/FeatureSearchModal.vue` [FR-008]
+- [X] T015 [US2] Implement unavailable-feature guard and inline error while keeping modal open in `/home/khan/src/brick2/components/features/FeatureSearchModal.vue` [FR-011]
+- [X] T016 [US2] Implement Escape-to-close behavior in `/home/khan/src/brick2/components/features/FeatureSearchModal.vue` and preserve selection in `/home/khan/src/brick2/components/features/FeaturesPanel.vue` [FR-012]
 
 **Checkpoint**: User Story 2 is independently functional and testable.
 
@@ -79,10 +79,10 @@ See plan.md for owned files and scope boundaries.
 
 ### Implementation for User Story 3
 
-- [ ] T017 [US3] Implement empty/whitespace query guard that skips requests and shows guidance in `/home/khan/src/brick2/components/features/FeatureSearchModal.vue` [FR-009]
-- [ ] T018 [US3] Implement no-results state rendering in `/home/khan/src/brick2/components/features/FeatureSearchModal.vue` [FR-009]
-- [ ] T019 [US3] Implement recoverable failed-search state with retry path in `/home/khan/src/brick2/components/features/FeatureSearchModal.vue` [FR-009]
-- [ ] T020 [US3] Ensure modal dismissal paths preserve current selection when no result is chosen in `/home/khan/src/brick2/components/features/FeaturesPanel.vue` [FR-010]
+- [X] T017 [US3] Implement empty/whitespace query guard that skips requests and shows guidance in `/home/khan/src/brick2/components/features/FeatureSearchModal.vue` [FR-009]
+- [X] T018 [US3] Implement no-results state rendering in `/home/khan/src/brick2/components/features/FeatureSearchModal.vue` [FR-009]
+- [X] T019 [US3] Implement recoverable failed-search state with retry path in `/home/khan/src/brick2/components/features/FeatureSearchModal.vue` [FR-009]
+- [X] T020 [US3] Ensure modal dismissal paths preserve current selection when no result is chosen in `/home/khan/src/brick2/components/features/FeaturesPanel.vue` [FR-010]
 
 **Checkpoint**: User Story 3 is independently functional and testable.
 
@@ -92,9 +92,9 @@ See plan.md for owned files and scope boundaries.
 
 **Purpose**: Final alignment, validation, and documentation updates across stories.
 
-- [ ] T021 [P] Align search/result types with implemented modal usage in `/home/khan/src/brick2/types/specSearch.ts` [FR-006]
-- [ ] T022 [P] Update implementation notes and validation checklist in `/home/khan/src/brick2/specs/031-spec-search-modal/quickstart.md` [FR-001] [FR-013]
-- [ ] T023 Run `pnpm typecheck` in `/home/khan/src/brick2` and resolve issues in `/home/khan/src/brick2/components/features/FeatureSearchModal.vue` and `/home/khan/src/brick2/components/features/FeaturesPanel.vue` [FR-001] [FR-013]
+- [X] T021 [P] Align search/result types with implemented modal usage in `/home/khan/src/brick2/types/specSearch.ts` [FR-006]
+- [X] T022 [P] Update implementation notes and validation checklist in `/home/khan/src/brick2/specs/031-spec-search-modal/quickstart.md` [FR-001] [FR-013]
+- [X] T023 Run `pnpm typecheck` in `/home/khan/src/brick2` and resolve issues in `/home/khan/src/brick2/components/features/FeatureSearchModal.vue` and `/home/khan/src/brick2/components/features/FeaturesPanel.vue` [FR-001] [FR-013]
 
 ---
 

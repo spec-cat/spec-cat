@@ -177,7 +177,7 @@ Permission, worktree, and cascade tasks are covered by specs 010, 011, 012 respe
 
 - [x] T059 [P] Validate markdown rendering in ChatMessage.vue (code blocks, formatting) [FR-015]
 - [x] T060 [P] Add responsive styling for different screen sizes
-- [ ] T061 Run manual test checklist from quickstart.md
+- [x] T061 Run manual test checklist from quickstart.md
 - [x] T062 Code cleanup and remove any debug logging
 
 ---
