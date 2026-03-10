@@ -186,10 +186,15 @@ const metadata = {
   description: 'Codex provider metadata and model defaults for capability-gated selection.',
   models: [
     {
-      key: 'gpt-5.3-codex',
-      label: 'gpt-5.3-codex (current)',
-      description: 'Latest frontier agentic coding model.',
+      key: 'gpt-5.4',
+      label: 'gpt-5.4 (current)',
+      description: 'Latest frontier model for coding and general reasoning.',
       default: true,
+    },
+    {
+      key: 'gpt-5.3-codex',
+      label: 'gpt-5.3-codex',
+      description: 'Latest frontier agentic coding model.',
     },
     {
       key: 'gpt-5.3-codex-spark',
