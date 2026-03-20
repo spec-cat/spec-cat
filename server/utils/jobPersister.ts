@@ -333,25 +333,18 @@ function markRemainingToolBlocks(acc: JobAccumulator, status: 'complete' | 'erro
 
 /**
  * Write the accumulated messages to conversation storage.
+ *
+ * For client-initiated chats the conversation file already contains the
+ * user message and a placeholder assistant message (status 'streaming')
+ * saved by the browser.  We find and update that message in place so
+ * previous turns are preserved.
+ *
+ * For server-initiated chats (POST /api/jobs) the conversation may have
+ * no messages yet, so we append user + assistant pair.
  */
 async function flush(acc: JobAccumulator): Promise<void> {
   const now = new Date().toISOString()
-
-  const userMsg: ChatMessage = {
-    id: generateMessageId(),
-    role: 'user',
-    content: acc.userMessage,
-    timestamp: now,
-  }
-
-  const assistantMsg: ChatMessage = {
-    id: acc.assistantMessageId,
-    role: 'assistant',
-    content: acc.flatText,
-    contentBlocks: acc.contentBlocks,
-    timestamp: now,
-    status: acc.status === 'streaming' ? 'complete' : acc.status,
-  }
+  const finalStatus = acc.status === 'streaming' ? 'complete' : acc.status
 
   try {
     const dataDir = getSpecCatDataDir()
@@ -373,9 +366,43 @@ async function flush(acc: JobAccumulator): Promise<void> {
       }
     }
 
-    // Replace messages — persister is authoritative; client may have saved
-    // a streaming version via useChatStream, so we overwrite rather than append.
-    conversation.messages = [userMsg, assistantMsg]
+    // Try to find the existing streaming assistant message (client-initiated).
+    // Search from the end since it's always the last assistant message.
+    let updated = false
+    for (let i = conversation.messages.length - 1; i >= 0; i--) {
+      const m = conversation.messages[i]
+      if (m.role === 'assistant' && m.status === 'streaming') {
+        conversation.messages[i] = {
+          ...m,
+          content: acc.flatText,
+          contentBlocks: acc.contentBlocks,
+          status: finalStatus,
+          timestamp: now,
+        }
+        updated = true
+        break
+      }
+    }
+
+    if (!updated) {
+      // Server-initiated or conversation had no streaming message — append
+      const userMsg: ChatMessage = {
+        id: generateMessageId(),
+        role: 'user',
+        content: acc.userMessage,
+        timestamp: now,
+      }
+      const assistantMsg: ChatMessage = {
+        id: acc.assistantMessageId,
+        role: 'assistant',
+        content: acc.flatText,
+        contentBlocks: acc.contentBlocks,
+        timestamp: now,
+        status: finalStatus,
+      }
+      conversation.messages.push(userMsg, assistantMsg)
+    }
+
     conversation.updatedAt = now
     if (acc.providerSessionId) {
       conversation.providerSessionId = acc.providerSessionId
@@ -395,6 +422,7 @@ async function flush(acc: JobAccumulator): Promise<void> {
       status: acc.status,
       blocks: acc.contentBlocks.length,
       textLength: acc.flatText.length,
+      updatedExisting: updated,
     })
   } catch (err) {
     console.error('[JobPersister] Failed to flush conversation:', err)

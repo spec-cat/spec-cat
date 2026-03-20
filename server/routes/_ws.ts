@@ -9,6 +9,7 @@
 import { eventBus, GLOBAL_CHANNEL } from '~/server/utils/eventBus'
 import { jobQueue, normalizeImageAttachments } from '~/server/utils/jobQueue'
 import type { ChatJobMessage } from '~/server/utils/jobQueue'
+import { startPersisting } from '~/server/utils/jobPersister'
 
 type PermissionMode = 'plan' | 'ask' | 'auto' | 'bypass'
 
@@ -116,9 +117,8 @@ export default defineWebSocketHandler({
     if (conn) {
       if (conn.unsubscribe) conn.unsubscribe()
       if (conn.unsubscribeGlobal) conn.unsubscribeGlobal()
-      if (conn.conversationId) {
-        jobQueue.cleanup(conn.conversationId)
-      }
+      // Jobs are NOT aborted on disconnect — they run to completion
+      // so reconnecting clients can subscribe and replay buffered events.
     }
     peerConnections.delete(peer.id)
   },
@@ -215,6 +215,11 @@ function handleChatMessage(peer: any, msg: ChatMessage) {
     providerId: msg.providerId,
     providerModelKey: msg.providerModelKey,
   }
+
+  // Subscribe server-side persister BEFORE submit so no events are missed.
+  // This ensures the server owns the conversation state for ALL jobs,
+  // not just server-initiated ones (POST /api/jobs).
+  startPersisting(msg.conversationId, msg.message)
 
   jobQueue.submit(jobMessage)
 }

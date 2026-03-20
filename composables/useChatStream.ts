@@ -8,6 +8,7 @@ import { useSettingsStore } from '~/stores/settings'
 import type {
   PermissionRequest,
   PlanApproval,
+  ContentBlock,
   TextBlock,
   ThinkingBlock,
   ToolUseBlock,
@@ -94,10 +95,16 @@ interface ConnectionState {
   lastMessageTime: number
   lastServerError: string | null
   lastSocketError: string | null
+  // Replay buffering: accumulate events during replay_start → replay_end
+  isReplaying: boolean
+  replayBuffer: WSResponse[]
 }
 
 // Module-level connection pool (shared across all composable instances)
 const connections = new Map<string, ConnectionState>()
+
+// Reference count for composable instances — only disconnect when the last one unmounts
+let composableRefCount = 0
 
 // Per-conversation cascade state
 const cascadeStates = new Map<string, { queue: string[], featureId: string }>()
@@ -167,6 +174,8 @@ function buildCloseReason(event: CloseEvent, conn?: ConnectionState): string {
 export function useChatStream() {
   const chatStore = useChatStore()
   const settingsStore = useSettingsStore()
+
+  composableRefCount++
 
   function isPageFocused(): boolean {
     if (typeof document === 'undefined') return false
@@ -373,6 +382,8 @@ export function useChatStream() {
         lastMessageTime: Date.now(),
         lastServerError: null,
         lastSocketError: null,
+        isReplaying: false,
+        replayBuffer: [],
       }
       connections.set(conversationId, connState)
 
@@ -503,6 +514,18 @@ export function useChatStream() {
         eventType: response.type,
         payload: response,
       }, conversationId)
+
+      // During replay, buffer ui_event/done/error for batch processing.
+      // Must check before the normal error/done handlers below.
+      if (conn.isReplaying) {
+        if (response.type === 'ui_event' || response.type === 'done' || response.type === 'error') {
+          conn.replayBuffer.push(response)
+        }
+        // replay_end is handled below in the normal flow
+        if (response.type !== 'replay_end') {
+          return
+        }
+      }
 
       if (response.type === 'error') {
         console.error(`[useChatStream] Server error for ${conversationId}:`, response.error)
@@ -708,14 +731,26 @@ export function useChatStream() {
       // Handle subscribe/replay responses
       if (response.type === 'subscribed') {
         console.log(`[useChatStream] Subscribed to ${conversationId}`, response.jobId ? `(job: ${response.jobId}, status: ${response.jobStatus})` : '(no active job)')
+        // If server has no active job (e.g. server restarted, job lost),
+        // clean up the streaming state so the UI doesn't stay stuck.
+        if (!response.jobId) {
+          chatStore.endSession(conversationId)
+          chatStore.endConversationStreaming(conversationId)
+        }
         return
       }
       if (response.type === 'replay_start') {
         console.log(`[useChatStream] Replay start for ${conversationId}: ${response.eventCount} events from job ${response.jobId}`)
+        conn.isReplaying = true
+        conn.replayBuffer = []
         return
       }
       if (response.type === 'replay_end') {
         console.log(`[useChatStream] Replay end for ${conversationId}: nextCursor=${response.nextCursor}`)
+        // Batch-process all buffered events into content blocks
+        processReplayBuffer(conn, conversationId)
+        conn.isReplaying = false
+        conn.replayBuffer = []
         return
       }
 
@@ -1015,6 +1050,217 @@ export function useChatStream() {
         chatStore.updateMessage(conn.currentMessageId, { status: 'error' }, conversationId)
         chatStore.setSessionError(event.error, conversationId)
         break
+      }
+    }
+  }
+
+  /**
+   * Batch-process all buffered replay events into content blocks without
+   * triggering per-event Vue reactivity. Mirrors the jobPersister accumulator
+   * pattern but runs on the client.
+   */
+  function processReplayBuffer(conn: ConnectionState, conversationId: string) {
+    const events = conn.replayBuffer
+    if (events.length === 0) return
+
+    // Accumulate into plain (non-reactive) arrays
+    const contentBlocks: ContentBlock[] = []
+    let flatText = ''
+    let currentTextBlockId: string | null = null
+    let currentThinkingBlockId: string | null = null
+    const activeTools = new Map<number, ActiveTool>()
+    let finalStatus: 'streaming' | 'complete' | 'error' | 'stopped' = 'streaming'
+    let isDone = false
+
+    for (const response of events) {
+      if (response.type === 'done') {
+        if (response.denied) {
+          markToolBlocks(contentBlocks, 'error')
+          finalStatus = 'stopped'
+        } else if (finalStatus === 'error' || finalStatus === 'stopped') {
+          markToolBlocks(contentBlocks, 'error')
+        } else {
+          markToolBlocks(contentBlocks, 'complete')
+          finalStatus = 'complete'
+        }
+        isDone = true
+        continue
+      }
+
+      if (response.type === 'error') {
+        markToolBlocks(contentBlocks, 'error')
+        finalStatus = 'error'
+        continue
+      }
+
+      if (response.type !== 'ui_event' || !response.event) continue
+      const event = response.event
+
+      if (event.sessionId) {
+        chatStore.setProviderSessionId(event.sessionId, conversationId)
+      }
+
+      switch (event.type) {
+        case 'session_init': {
+          const block: SessionInitBlock = {
+            id: generateBlockId(),
+            type: 'session_init',
+            model: event.model,
+            tools: event.tools,
+            permissionMode: event.permissionMode,
+            cwd: event.cwd,
+          }
+          contentBlocks.push(block)
+          break
+        }
+
+        case 'block_start': {
+          const blockId = event.blockId || generateBlockId()
+          if (event.blockType === 'text') {
+            const block: TextBlock = { id: blockId, type: 'text', text: event.text || '' }
+            contentBlocks.push(block)
+            currentTextBlockId = blockId
+            if (event.text) flatText += event.text
+          } else if (event.blockType === 'thinking') {
+            const block: ThinkingBlock = { id: blockId, type: 'thinking', thinking: event.thinking || '' }
+            contentBlocks.push(block)
+            currentThinkingBlockId = blockId
+          } else if (event.blockType === 'tool_use' && event.toolUseId && event.name) {
+            const block: ToolUseBlock = {
+              id: blockId,
+              type: 'tool_use',
+              toolUseId: event.toolUseId,
+              name: event.name,
+              input: {},
+              inputSummary: '',
+              status: 'running',
+            }
+            contentBlocks.push(block)
+            activeTools.set(event.index ?? 0, {
+              blockId,
+              toolUseId: event.toolUseId,
+              name: event.name,
+              inputJson: '',
+            })
+          }
+          break
+        }
+
+        case 'block_delta': {
+          if (event.text && currentTextBlockId) {
+            const block = contentBlocks.find(b => b.id === currentTextBlockId)
+            if (block && block.type === 'text') {
+              (block as TextBlock).text += event.text
+              flatText += event.text
+            }
+          }
+          if (event.thinking && currentThinkingBlockId) {
+            const block = contentBlocks.find(b => b.id === currentThinkingBlockId)
+            if (block && block.type === 'thinking') {
+              (block as ThinkingBlock).thinking += event.thinking
+            }
+          }
+          if (event.partialJson && event.index !== undefined) {
+            const tool = activeTools.get(event.index)
+            if (tool) tool.inputJson += event.partialJson
+          }
+          break
+        }
+
+        case 'block_end': {
+          if (currentTextBlockId) currentTextBlockId = null
+          if (currentThinkingBlockId) currentThinkingBlockId = null
+          if (event.index !== undefined) {
+            const tool = activeTools.get(event.index)
+            if (tool) {
+              let input: Record<string, unknown> = {}
+              try { input = JSON.parse(tool.inputJson) } catch {}
+              const block = contentBlocks.find(b => b.id === tool.blockId)
+              if (block && block.type === 'tool_use') {
+                const tb = block as ToolUseBlock
+                tb.input = input
+                tb.inputSummary = formatToolInputSummary(input)
+                tb.status = 'pending'
+              }
+            }
+          }
+          break
+        }
+
+        case 'tool_result': {
+          const toolBlock = contentBlocks.find(
+            b => b.type === 'tool_use' && (b as ToolUseBlock).toolUseId === event.toolUseId,
+          )
+          if (toolBlock && toolBlock.type === 'tool_use') {
+            (toolBlock as ToolUseBlock).status = event.isError ? 'error' : 'complete'
+          }
+          const block: ToolResultBlock = {
+            id: generateBlockId(),
+            type: 'tool_result',
+            toolUseId: event.toolUseId,
+            content: event.content || '',
+            isError: !!event.isError,
+          }
+          contentBlocks.push(block)
+          break
+        }
+
+        case 'turn_result': {
+          if (event.subtype !== 'success') {
+            finalStatus = 'error'
+          }
+          if (event.subtype === 'success' && event.usage) {
+            const block: ResultSummaryBlock = {
+              id: generateBlockId(),
+              type: 'result_summary',
+              totalCostUsd: event.totalCostUsd ?? 0,
+              durationMs: event.durationMs ?? 0,
+              numTurns: event.numTurns ?? 0,
+              usage: event.usage,
+            }
+            contentBlocks.push(block)
+          }
+          break
+        }
+
+        case 'error': {
+          finalStatus = 'error'
+          break
+        }
+      }
+    }
+
+    // Single reactive update — sets content blocks and flat text at once
+    chatStore.batchSetMessageBlocks(
+      conn.currentMessageId,
+      contentBlocks,
+      flatText,
+      finalStatus,
+      conversationId,
+    )
+
+    // Update connection state for any live events that arrive after replay
+    conn.currentTextBlockId = currentTextBlockId
+    conn.currentThinkingBlockId = currentThinkingBlockId
+    conn.activeTools = activeTools
+
+    if (isDone) {
+      clearHealthCheck(conn)
+      chatStore.endSession(conversationId)
+      chatStore.endConversationStreaming(conversationId)
+      notifyChatCompleted(conversationId)
+    }
+
+    console.log(`[useChatStream] Replay batch processed: ${events.length} events → ${contentBlocks.length} blocks, status=${finalStatus}`)
+  }
+
+  function markToolBlocks(blocks: ContentBlock[], status: 'complete' | 'error') {
+    for (const block of blocks) {
+      if (block.type === 'tool_use') {
+        const tb = block as ToolUseBlock
+        if (tb.status === 'running' || tb.status === 'pending') {
+          tb.status = status
+        }
       }
     }
   }
@@ -1340,15 +1586,78 @@ export function useChatStream() {
     chatStore.clearPendingPlanApproval(convId)
   }
 
-  // Cleanup on unmount
+  /**
+   * Try to resume streaming for a conversation after page reload.
+   * Checks if the server has an active job, clears partial message state,
+   * and subscribes to replay buffered events.
+   */
+  async function tryResumeStreaming(conversationId: string): Promise<boolean> {
+    if (typeof window === 'undefined') return false
+
+    try {
+      const jobs = await $fetch<Array<{ id: string; status: string; eventCount: number }>>('/api/jobs', {
+        params: { conversationId },
+      })
+
+      const activeJob = jobs.find(j => j.status === 'running' || j.status === 'waiting_permission' || j.status === 'queued')
+      // Also consider completed jobs with buffered events — the job may have
+      // finished during the brief page-reload window.  The server's
+      // handleSubscribe / getActiveJob still returns the last job regardless of
+      // status and can replay its buffered events.
+      const resumableJob = activeJob
+        || [...jobs].sort((a, b) => b.eventCount - a.eventCount).find(j => j.eventCount > 0)
+
+      const conv = chatStore.conversations.find((c: { id: string }) => c.id === conversationId)
+      if (!conv) return false
+
+      // Find the last assistant message (the one that was mid-stream)
+      const lastAssistantMsg = [...conv.messages].reverse().find((m: { role: string }) => m.role === 'assistant')
+
+      if (!resumableJob) {
+        // No job at all — clean up any stale streaming state from persisted messages
+        if (lastAssistantMsg && lastAssistantMsg.status === 'streaming') {
+          chatStore.updateMessage(lastAssistantMsg.id, { status: 'error' }, conversationId)
+          chatStore.setSessionError('Streaming was interrupted (server job no longer active)', conversationId)
+        }
+        return false
+      }
+
+      if (!lastAssistantMsg) return false
+
+      console.log('[useChatStream] Resuming streaming for', conversationId, 'job:', resumableJob.id, 'status:', resumableJob.status, 'events:', resumableJob.eventCount)
+
+      // Reset the partial message atomically for clean replay (Bug fix: use store
+      // method instead of direct mutation — the readonly proxy and object spread
+      // in updateMessage prevented contentBlocks from being cleared)
+      chatStore.resetMessageForReplay(lastAssistantMsg.id, conversationId)
+
+      // Start session so isStreaming computed is consistent
+      chatStore.startSession(`resume-${Date.now()}`, conversationId)
+
+      // Subscribe with cursor=0 to replay all buffered events
+      await subscribe(conversationId, lastAssistantMsg.id, 0)
+
+      return true
+    } catch (error) {
+      console.error('[useChatStream] Failed to resume streaming:', error)
+      return false
+    }
+  }
+
+  // Cleanup on unmount — only disconnect when the last composable instance unmounts
   onUnmounted(() => {
-    disconnect()
+    composableRefCount--
+    if (composableRefCount <= 0) {
+      composableRefCount = 0
+      disconnect()
+    }
   })
 
   return {
     sendMessage,
     sendPermissionResponse,
     subscribe,
+    tryResumeStreaming,
     approvePlan,
     rejectPlan,
     abort,

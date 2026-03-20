@@ -27,6 +27,8 @@ interface ServerJobState {
   conversationId: string
   messageId: string
   currentTextBlockId: string | null
+  isReplaying: boolean
+  replayBuffer: any[]
 }
 let activeServerJob: ServerJobState | null = null
 
@@ -75,9 +77,27 @@ export function useGlobalNotifications() {
       return
     }
 
-    // Add user message if not yet present
+    // Add user message if not yet present (skip if resuming and message unknown)
     if (conv.messages.length === 0 && message) {
       chatStore.addUserMessage(message, conversationId)
+    }
+
+    // If there's already an assistant message (e.g. from persisted partial state),
+    // reuse it instead of creating a duplicate
+    const existingAssistant = [...conv.messages].reverse().find((m: { role: string }) => m.role === 'assistant')
+    if (existingAssistant) {
+      chatStore.resetMessageForReplay(existingAssistant.id, conversationId)
+      chatStore.startConversationStreaming(conversationId)
+      activeServerJob = {
+        conversationId,
+        messageId: existingAssistant.id,
+        currentTextBlockId: null,
+        isReplaying: false,
+        replayBuffer: [],
+      }
+      ws.send(JSON.stringify({ type: 'subscribe', conversationId, cursor: 0 }))
+      console.log('[GlobalNotifications] Resumed server job streaming (existing msg):', conversationId)
+      return
     }
 
     // Add assistant message placeholder
@@ -89,6 +109,8 @@ export function useGlobalNotifications() {
       conversationId,
       messageId: assistantMsg.id,
       currentTextBlockId: null,
+      isReplaying: false,
+      replayBuffer: [],
     }
 
     // Subscribe this WebSocket to the conversation's event channel with full replay
@@ -158,6 +180,26 @@ export function useGlobalNotifications() {
     const job = activeServerJob!
     const convId = job.conversationId
 
+    // Replay buffering: accumulate events during replay for batch processing
+    if (msg.type === 'replay_start') {
+      job.isReplaying = true
+      job.replayBuffer = []
+      return
+    }
+    if (msg.type === 'replay_end') {
+      processReplayBatch(job)
+      job.isReplaying = false
+      job.replayBuffer = []
+      return
+    }
+
+    if (job.isReplaying) {
+      if (msg.type === 'ui_event' || msg.type === 'done' || msg.type === 'error') {
+        job.replayBuffer.push(msg)
+      }
+      return
+    }
+
     if (msg.type === 'ui_event' && msg.event) {
       processUIEvent(job, msg.event as UIStreamEvent, convId)
       return
@@ -177,7 +219,59 @@ export function useGlobalNotifications() {
       return
     }
 
-    // replay_start / replay_end / subscribed — informational, ignore
+    // subscribed — informational, ignore
+  }
+
+  /**
+   * Batch-process replay buffer: extract text blocks only (lightweight)
+   * and set them in a single store update.
+   */
+  function processReplayBatch(job: ServerJobState) {
+    const blocks: TextBlock[] = []
+    let flatText = ''
+    let currentBlockId: string | null = null
+
+    for (const msg of job.replayBuffer) {
+      if (msg.type !== 'ui_event' || !msg.event) continue
+      const event = msg.event as UIStreamEvent
+
+      switch (event.type) {
+        case 'block_start':
+          if (event.blockType === 'text') {
+            const blockId = event.blockId || generateBlockId()
+            blocks.push({ id: blockId, type: 'text', text: event.text || '' })
+            currentBlockId = blockId
+            if (event.text) flatText += event.text
+          }
+          break
+        case 'block_delta':
+          if (event.text && currentBlockId) {
+            const block = blocks.find(b => b.id === currentBlockId)
+            if (block) {
+              block.text += event.text
+              flatText += event.text
+            }
+          }
+          break
+        case 'block_end':
+          if (currentBlockId) currentBlockId = null
+          break
+      }
+    }
+
+    // Single reactive update
+    if (blocks.length > 0) {
+      chatStore.batchSetMessageBlocks(
+        job.messageId,
+        blocks,
+        flatText,
+        'streaming', // job_persisted will set final status
+        job.conversationId,
+      )
+    }
+
+    job.currentTextBlockId = currentBlockId
+    console.log(`[GlobalNotifications] Replay batch: ${job.replayBuffer.length} events → ${blocks.length} text blocks`)
   }
 
   function processUIEvent(job: ServerJobState, event: UIStreamEvent, convId: string) {
@@ -278,8 +372,55 @@ export function useGlobalNotifications() {
     }
   }
 
+  /**
+   * After connecting, check for active server-initiated jobs that were
+   * running before a page reload and resume streaming for them.
+   */
+  async function resumeActiveServerJobs() {
+    try {
+      const allJobs = await $fetch<Array<{
+        id: string
+        status: string
+        eventCount: number
+        conversationId: string
+        source?: string
+      }>>('/api/jobs')
+
+      // Find active non-user jobs that have events to replay
+      const activeServerJobs = allJobs.filter(j =>
+        j.source !== 'user'
+        && (j.status === 'running' || j.status === 'waiting_permission' || j.status === 'queued'
+          || (j.status === 'completed' && j.eventCount > 0))
+      )
+
+      if (activeServerJobs.length === 0) return
+
+      // Refresh conversations first so the store has them
+      await chatStore.refreshServerConversations()
+
+      for (const job of activeServerJobs) {
+        // Skip if already streaming (e.g. another path already resumed it)
+        if (chatStore.isConversationStreaming(job.conversationId)) continue
+
+        const conv = chatStore.conversations.find((c: { id: string }) => c.id === job.conversationId)
+        if (!conv) continue
+
+        // If conversation already has a completed assistant message, skip
+        const lastMsg = [...conv.messages].reverse().find((m: { role: string }) => m.role === 'assistant')
+        if (lastMsg && (lastMsg.status === 'complete' || lastMsg.status === 'error' || lastMsg.status === 'stopped')) continue
+
+        console.log('[GlobalNotifications] Resuming active server job:', job.id, 'for conversation:', job.conversationId)
+        setupServerJobStreaming(job.conversationId, '')
+      }
+    } catch (err) {
+      console.warn('[GlobalNotifications] Failed to check for active server jobs:', err)
+    }
+  }
+
   onMounted(() => {
     connect()
+    // Check for server jobs that were running before page reload
+    resumeActiveServerJobs()
   })
 
   onUnmounted(() => {

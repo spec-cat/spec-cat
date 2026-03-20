@@ -627,6 +627,9 @@ function startAssistantStreamingTurn(conversationId: string) {
   const assistantMessage = chatStore.addAssistantMessage(conversationId)
   chatStore.startSession(`session-${Date.now()}`, conversationId)
   chatStore.startConversationStreaming(conversationId)
+  // Save immediately so the assistant message is persisted before streaming
+  // starts — enables tryResumeStreaming to find it after a page reload
+  chatStore.saveConversation(conversationId, true)
   return assistantMessage
 }
 

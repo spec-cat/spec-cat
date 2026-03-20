@@ -13,12 +13,14 @@ import { useChatStore } from '~/stores/chat'
 import { useGitGraphStore } from '~/stores/gitGraph'
 import { useTheme } from '~/composables/useTheme'
 import { useGlobalNotifications } from '~/composables/useGlobalNotifications'
+import { useChatStream } from '~/composables/useChatStream'
 
 const layoutStore = useLayoutStore()
 const settingsStore = useSettingsStore()
 const chatStore = useChatStore()
 const gitGraphStore = useGitGraphStore()
 const { isDark, toggleTheme } = useTheme()
+const { tryResumeStreaming } = useChatStream()
 useGlobalNotifications()
 
 const isDiffViewerOpen = computed(() => gitGraphStore.diffViewerFile !== null)
@@ -57,6 +59,11 @@ onMounted(async () => {
   await settingsStore.hydrate()
   await chatStore.initialize()
   await chatStore.loadConversations()
+
+  // Resume streaming if a job was active before page reload
+  if (chatStore.activeConversationId) {
+    tryResumeStreaming(chatStore.activeConversationId)
+  }
 
   try {
     const response = await $fetch<{ cwd: string }>('/api/cwd')

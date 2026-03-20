@@ -653,6 +653,18 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   /**
+   * Reset a message for clean replay (clears content and contentBlocks atomically)
+   */
+  function resetMessageForReplay(id: string, conversationId: string) {
+    const conv = conversations.value.find(c => c.id === conversationId)
+    if (!conv) return
+    const index = conv.messages.findIndex(m => m.id === id)
+    if (index !== -1) {
+      conv.messages[index] = { ...conv.messages[index], content: '', status: 'streaming', contentBlocks: [] }
+    }
+  }
+
+  /**
    * Append content to a message (for streaming)
    */
   function appendToMessage(id: string, chunk: string, conversationId?: string) {
@@ -843,6 +855,30 @@ export const useChatStore = defineStore('chat', () => {
     const msg = conv.messages.find(m => m.id === messageId)
     if (!msg?.contentBlocks) return null
     return msg.contentBlocks.find(b => b.type === 'tool_use' && b.toolUseId === toolUseId) ?? null
+  }
+
+  /**
+   * Batch-set content blocks and flat text on a message in one reactive update.
+   * Used for replay to avoid per-event reactive churn.
+   */
+  function batchSetMessageBlocks(
+    messageId: string,
+    contentBlocks: ContentBlock[],
+    flatText: string,
+    status: 'streaming' | 'complete' | 'error' | 'stopped',
+    conversationId: string,
+  ) {
+    const conv = conversations.value.find(c => c.id === conversationId)
+    if (!conv) return
+    const index = conv.messages.findIndex(m => m.id === messageId)
+    if (index === -1) return
+    conv.messages[index] = {
+      ...conv.messages[index],
+      content: flatText,
+      contentBlocks,
+      status,
+    }
+    saveConversation(conversationId, true)
   }
 
   /**
@@ -1897,6 +1933,7 @@ export const useChatStore = defineStore('chat', () => {
     addUserMessage,
     addAssistantMessage,
     updateMessage,
+    resetMessageForReplay,
     appendToMessage,
     addToolToMessage,
     updateToolInMessage,
@@ -1906,6 +1943,7 @@ export const useChatStore = defineStore('chat', () => {
     updateBlockById,
     updateBlockWithSave,
     findToolUseBlock,
+    batchSetMessageBlocks,
     syncContentFromBlocks,
     setSessionStatus,
     startSession,

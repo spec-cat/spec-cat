@@ -362,16 +362,13 @@ class ChatJobQueue {
   }
 
   /**
-   * Clean up on peer disconnect. Aborts user-initiated jobs.
+   * Clean up on peer disconnect.
+   * Jobs are NOT aborted — they run to completion so that a reconnecting
+   * client (e.g. after browser refresh) can subscribe and replay events.
    */
-  cleanup(conversationId: string): void {
-    const convState = this.conversationStates.get(conversationId)
-    if (!convState?.activeJobId) return
-
-    const job = this.jobs.get(convState.activeJobId)
-    if (job && job.source === 'user') {
-      this.abort(conversationId)
-    }
+  cleanup(_conversationId: string): void {
+    // Intentionally no-op: the job process keeps running and events
+    // continue to buffer in ChatJob.events for later replay.
   }
 
   getJob(id: string): ChatJob | undefined {
