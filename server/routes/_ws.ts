@@ -95,11 +95,16 @@ function subscribePeerToConversation(peer: any, conversationId: string): void {
 
 export default defineWebSocketHandler({
   open(peer) {
+    console.log('[WS] Peer connected:', peer.id)
     // Subscribe to global notification channel for push events
     const conn = getPeerConnection(peer.id)
     conn.unsubscribeGlobal = eventBus.subscribe(GLOBAL_CHANNEL, (event) => {
       try {
-        peer.send(JSON.stringify(event))
+        const payload = JSON.stringify(event)
+        if (event.type === 'notification') {
+          console.log('[WS] Forwarding global notification to peer', peer.id, ':', (event as any).notificationEvent)
+        }
+        peer.send(payload)
       } catch (err) {
         console.error('[WS] Failed to send global event to peer:', err)
       }

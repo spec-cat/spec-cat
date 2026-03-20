@@ -7,6 +7,7 @@
 
 import { jobQueue } from '~/server/utils/jobQueue'
 import type { ChatJobMessage, JobSource } from '~/server/utils/jobQueue'
+import { startPersisting } from '~/server/utils/jobPersister'
 import { getProjectDir } from '~/server/utils/projectDir'
 import { upsertConversationInStorage } from '~/server/utils/conversationStore'
 import { generateConversationId, generateConversationTitle, STORAGE_VERSION } from '~/types/chat'
@@ -62,6 +63,9 @@ export default defineEventHandler(async (event) => {
     providerId: body.providerId,
     providerModelKey: body.providerModelKey,
   }
+
+  // Subscribe server-side persister before submitting so no events are missed
+  startPersisting(conversationId, body.message)
 
   const jobId = jobQueue.submit(jobMessage, source)
 

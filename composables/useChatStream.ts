@@ -797,10 +797,11 @@ export function useChatStream() {
       status: response.status,
     })
 
-    // Refresh conversation list for server-initiated jobs or any job completion
+    // Refresh conversation list for server-initiated jobs, completion, or persisted data
     const shouldRefresh =
       (eventName === 'job_created' && source !== 'user') ||
-      eventName === 'job_completed'
+      eventName === 'job_completed' ||
+      eventName === 'job_persisted'
 
     if (shouldRefresh) {
       // Debounce to avoid rapid successive refreshes

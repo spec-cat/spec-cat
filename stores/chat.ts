@@ -1037,22 +1037,39 @@ export const useChatStore = defineStore('chat', () => {
    */
   async function refreshServerConversations() {
     const loaded = await loadFromStorage()
-    const existingIds = new Set(conversations.value.map(c => c.id))
+    const existingMap = new Map(conversations.value.map(c => [c.id, c]))
     let added = 0
+    let updated = 0
 
     for (const conv of loaded.conversations) {
-      if (!existingIds.has(conv.id)) {
+      const existing = existingMap.get(conv.id)
+      if (!existing) {
         conversations.value.push(conv)
-        existingIds.add(conv.id)
+        existingMap.set(conv.id, conv)
         added++
+        console.log(`[chat] refresh: added new conversation ${conv.id} (source=${conv.source}, msgs=${conv.messages.length})`)
+      } else if (
+        conv.source !== 'user'
+        && (conv.messages.length > existing.messages.length
+          || conv.updatedAt > (existing.updatedAt || ''))
+      ) {
+        // Replace the entire object in the array so Vue reactivity triggers re-render
+        const idx = conversations.value.findIndex(c => c.id === conv.id)
+        if (idx !== -1) {
+          conversations.value.splice(idx, 1, conv)
+          console.log(`[chat] refresh: updated conversation ${conv.id} (msgs: ${existing.messages.length} → ${conv.messages.length}, updatedAt: ${existing.updatedAt} → ${conv.updatedAt})`)
+        }
+        updated++
+      } else if (existing && conv.messages.length !== existing.messages.length) {
+        console.log(`[chat] refresh: skipped update for ${conv.id} (source=${conv.source}, server msgs=${conv.messages.length}, local msgs=${existing.messages.length})`)
       }
     }
 
-    if (added > 0) {
+    if (added > 0 || updated > 0) {
       sortConversations()
-      console.log(`[chat] Refreshed: ${added} new server-initiated conversation(s)`)
     }
-    return added
+    console.log(`[chat] refreshServerConversations: loaded=${loaded.conversations.length}, added=${added}, updated=${updated}`)
+    return added + updated
   }
 
   /**

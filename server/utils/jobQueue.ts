@@ -271,6 +271,7 @@ class ChatJobQueue {
       jobId: job.id,
       conversationId,
       source,
+      message: msg.message,
     })
 
     this.runProvider(job, false, false)

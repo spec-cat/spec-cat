@@ -12,12 +12,14 @@ import { useSettingsStore } from '~/stores/settings'
 import { useChatStore } from '~/stores/chat'
 import { useGitGraphStore } from '~/stores/gitGraph'
 import { useTheme } from '~/composables/useTheme'
+import { useGlobalNotifications } from '~/composables/useGlobalNotifications'
 
 const layoutStore = useLayoutStore()
 const settingsStore = useSettingsStore()
 const chatStore = useChatStore()
 const gitGraphStore = useGitGraphStore()
 const { isDark, toggleTheme } = useTheme()
+useGlobalNotifications()
 
 const isDiffViewerOpen = computed(() => gitGraphStore.diffViewerFile !== null)
 const isChatFullscreen = computed(() => layoutStore.isChatFullscreen)
