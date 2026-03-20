@@ -5,7 +5,7 @@
  */
 
 import { existsSync } from 'node:fs'
-import { eventBus, type JobEvent } from './eventBus'
+import { eventBus, GLOBAL_CHANNEL, type JobEvent } from './eventBus'
 import { getProjectDir } from './projectDir'
 import { ensureChatWorktree } from './ensureChatWorktree'
 import { loadSpecContext } from './specContext'
@@ -178,6 +178,25 @@ class ChatJobQueue {
     eventBus.emit(job.conversationId, event)
   }
 
+  private emitGlobal(event: JobEvent): void {
+    eventBus.emit(GLOBAL_CHANNEL, event)
+  }
+
+  private setJobStatus(job: ChatJob, status: JobStatus): void {
+    const prev = job.status
+    job.status = status
+    if (prev !== status && (status === 'done' || status === 'error')) {
+      this.emitGlobal({
+        type: 'notification',
+        notificationEvent: 'job_completed',
+        jobId: job.id,
+        conversationId: job.conversationId,
+        source: job.source,
+        status,
+      })
+    }
+  }
+
   // ── Public API ─────────────────────────────────────
 
   /**
@@ -199,7 +218,7 @@ class ChatJobQueue {
       }
       const prevJob = this.jobs.get(convState.activeJobId)
       if (prevJob && (prevJob.status === 'running' || prevJob.status === 'waiting_permission')) {
-        prevJob.status = 'done'
+        this.setJobStatus(prevJob, 'done')
       }
     }
 
@@ -245,6 +264,15 @@ class ChatJobQueue {
       isSpeckitCommand: speckitCommand,
     })
 
+    // Notify all connected clients about the new job
+    this.emitGlobal({
+      type: 'notification',
+      notificationEvent: 'job_created',
+      jobId: job.id,
+      conversationId,
+      source,
+    })
+
     this.runProvider(job, false, false)
     return job.id
   }
@@ -282,7 +310,7 @@ class ChatJobQueue {
       this.runProvider(job, false, false)
     } else {
       procState.pendingTools = []
-      job.status = 'done'
+      this.setJobStatus(job, 'done')
       this.emitAndBuffer(job, { type: 'done', requestId: 'denied', denied: true })
     }
   }
@@ -306,7 +334,7 @@ class ChatJobQueue {
       procState.proc = null
     }
     procState.pendingTools = []
-    job.status = 'done'
+    this.setJobStatus(job, 'done')
   }
 
   /**
@@ -359,6 +387,10 @@ class ChatJobQueue {
     return Array.from(this.jobs.values()).filter(j => j.conversationId === conversationId)
   }
 
+  listAllJobs(): ChatJob[] {
+    return Array.from(this.jobs.values())
+  }
+
   // ── Provider Execution ─────────────────────────────
 
   private async runProvider(job: ChatJob, isRetry: boolean, forceEphemeral: boolean): Promise<void> {
@@ -380,7 +412,7 @@ class ChatJobQueue {
         error: `Provider "${selection.providerId}" is not registered`,
         requestId: msg.requestId,
       })
-      job.status = 'error'
+      this.setJobStatus(job, 'error')
       return
     }
 
@@ -395,7 +427,7 @@ class ChatJobQueue {
         error: providerGuard.failure.error,
         requestId: msg.requestId,
       })
-      job.status = 'error'
+      this.setJobStatus(job, 'error')
       return
     }
 
@@ -415,7 +447,7 @@ class ChatJobQueue {
           error: permissionGuard.failure.error,
           requestId: msg.requestId,
         })
-        job.status = 'error'
+        this.setJobStatus(job, 'error')
         return
       }
     }
@@ -431,7 +463,7 @@ class ChatJobQueue {
           error: `Worktree recovery failed: ${result.error}`,
           requestId: msg.requestId,
         })
-        job.status = 'error'
+        this.setJobStatus(job, 'error')
         return
       }
     }
@@ -587,7 +619,7 @@ class ChatJobQueue {
                   const summary = summarizeProviderProcessError(nonJsonOutput, 700)
                   if (!summary && emittedTerminalErrorEvent && emittedRenderableContent) {
                     this.emitAndBuffer(job, { type: 'done', requestId: msg.requestId })
-                    job.status = 'done'
+                    this.setJobStatus(job, 'done')
                     return
                   }
 
@@ -597,7 +629,7 @@ class ChatJobQueue {
                     error: `Provider process exited unexpectedly (code: ${exitCode}${signal ? ', signal: ' + signal : ''})${details}`,
                     requestId: msg.requestId,
                   })
-                  job.status = 'error'
+                  this.setJobStatus(job, 'error')
                 } else if (exitCode === null && signal) {
                   const summary = summarizeProviderProcessError(nonJsonOutput, 700)
                   const details = summary ? ` — ${summary}` : ''
@@ -606,7 +638,7 @@ class ChatJobQueue {
                     error: `Provider process was killed by signal ${signal}${details}`,
                     requestId: msg.requestId,
                   })
-                  job.status = 'error'
+                  this.setJobStatus(job, 'error')
                   console.error('[JobQueue] Provider killed by signal', {
                     providerId: selection.providerId,
                     modelKey: selection.modelKey,
@@ -624,7 +656,7 @@ class ChatJobQueue {
                     this.emitAssistantText(job, fallbackText, convState.providerSessionId)
                   }
                   this.emitAndBuffer(job, { type: 'done', requestId: msg.requestId })
-                  job.status = 'done'
+                  this.setJobStatus(job, 'done')
                 }
               }
             } finally {
@@ -639,7 +671,7 @@ class ChatJobQueue {
                 error: `Provider process error: ${error.message}`,
                 requestId: msg.requestId,
               })
-              job.status = 'error'
+              this.setJobStatus(job, 'error')
             } finally {
               procState.pendingTools = []
               procState.proc = null
@@ -654,7 +686,7 @@ class ChatJobQueue {
         error: errorMsg,
         requestId: msg.requestId,
       })
-      job.status = 'error'
+      this.setJobStatus(job, 'error')
       procState.pendingTools = []
       procState.proc = null
     }

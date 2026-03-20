@@ -1032,6 +1032,30 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   /**
+   * Refresh conversations from server storage, merging any new
+   * server-initiated conversations into the local state.
+   */
+  async function refreshServerConversations() {
+    const loaded = await loadFromStorage()
+    const existingIds = new Set(conversations.value.map(c => c.id))
+    let added = 0
+
+    for (const conv of loaded.conversations) {
+      if (!existingIds.has(conv.id)) {
+        conversations.value.push(conv)
+        existingIds.add(conv.id)
+        added++
+      }
+    }
+
+    if (added > 0) {
+      sortConversations()
+      console.log(`[chat] Refreshed: ${added} new server-initiated conversation(s)`)
+    }
+    return added
+  }
+
+  /**
    * Save all conversations to server-side storage (T038)
    */
   function saveAllConversations() {
@@ -1878,6 +1902,7 @@ export const useChatStore = defineStore('chat', () => {
 
     // Conversation actions
     loadConversations,
+    refreshServerConversations,
     saveAllConversations,
     saveCurrentConversation,
     saveConversation,

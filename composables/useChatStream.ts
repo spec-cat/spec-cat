@@ -29,8 +29,8 @@ import {
 } from '~/utils/chatStream'
 
 interface WSResponse {
-  type: 'ui_event' | 'provider_json' | 'done' | 'error' | 'pong' | 'permission_prompt' | 'permission_request' | 'session_reset' | 'worktree_recovered' | 'aborted' | 'context_reset'
-  event?: UIStreamEvent
+  type: 'ui_event' | 'provider_json' | 'done' | 'error' | 'pong' | 'permission_prompt' | 'permission_request' | 'session_reset' | 'worktree_recovered' | 'aborted' | 'context_reset' | 'replay_start' | 'replay_end' | 'subscribed' | 'notification'
+  event?: UIStreamEvent  // Canonical UI stream event (for ui_event type)
   data?: any // Legacy provider JSON payload
   error?: string
   requestId?: string
@@ -39,6 +39,14 @@ interface WSResponse {
   description?: string  // For permission_request
   reason?: string  // For session_reset
   denied?: boolean  // For done after permission denial
+  jobId?: string  // For subscribe/replay responses and notifications
+  jobStatus?: string  // For subscribe/replay responses
+  eventCount?: number  // For replay_start
+  nextCursor?: number  // For replay_end
+  conversationId?: string  // For subscribed and notifications
+  notificationEvent?: string  // For notifications (job_created, job_completed)
+  source?: string  // For notifications (job source: user/scheduler/cascade)
+  status?: string  // For notifications (job final status)
 }
 
 function extractProviderSessionId(msg: any): string | null {
@@ -697,6 +705,26 @@ export function useChatStream() {
         return
       }
 
+      // Handle subscribe/replay responses
+      if (response.type === 'subscribed') {
+        console.log(`[useChatStream] Subscribed to ${conversationId}`, response.jobId ? `(job: ${response.jobId}, status: ${response.jobStatus})` : '(no active job)')
+        return
+      }
+      if (response.type === 'replay_start') {
+        console.log(`[useChatStream] Replay start for ${conversationId}: ${response.eventCount} events from job ${response.jobId}`)
+        return
+      }
+      if (response.type === 'replay_end') {
+        console.log(`[useChatStream] Replay end for ${conversationId}: nextCursor=${response.nextCursor}`)
+        return
+      }
+
+      // Handle global notifications (job lifecycle events pushed to all peers)
+      if (response.type === 'notification') {
+        handleGlobalNotification(response)
+        return
+      }
+
       // Handle permission request from server
       if (response.type === 'permission_request') {
         // Claude CLI exits while waiting for permission approval.
@@ -747,6 +775,40 @@ export function useChatStream() {
       disableCascade(conversationId)
       chatStore.saveConversation(conversationId, true)
       cleanupConnection(conversationId)
+    }
+  }
+
+  // Debounce global notification refreshes to avoid redundant fetches
+  let notificationRefreshTimer: ReturnType<typeof setTimeout> | null = null
+  const NOTIFICATION_REFRESH_DEBOUNCE_MS = 500
+
+  /**
+   * Handle global notification events (job_created, job_completed)
+   * Refreshes the conversation list when server-initiated changes occur
+   */
+  function handleGlobalNotification(response: WSResponse) {
+    const eventName = response.notificationEvent
+    const source = response.source
+
+    console.log(`[useChatStream] Global notification: ${eventName}`, {
+      jobId: response.jobId,
+      conversationId: response.conversationId,
+      source,
+      status: response.status,
+    })
+
+    // Refresh conversation list for server-initiated jobs or any job completion
+    const shouldRefresh =
+      (eventName === 'job_created' && source !== 'user') ||
+      eventName === 'job_completed'
+
+    if (shouldRefresh) {
+      // Debounce to avoid rapid successive refreshes
+      if (notificationRefreshTimer) clearTimeout(notificationRefreshTimer)
+      notificationRefreshTimer = setTimeout(() => {
+        notificationRefreshTimer = null
+        chatStore.refreshServerConversations()
+      }, NOTIFICATION_REFRESH_DEBOUNCE_MS)
     }
   }
 
@@ -1144,6 +1206,45 @@ export function useChatStream() {
   }
 
   /**
+   * Subscribe to a conversation's events (for observing server-initiated jobs).
+   * Connects to WebSocket, sends subscribe message, and replays buffered events.
+   * The caller should ensure an assistant message exists to receive replay events.
+   */
+  async function subscribe(conversationId: string, messageId: string, cursor: number = 0) {
+    if (typeof window === 'undefined') return
+
+    try {
+      const socket = await ensureConnection(conversationId)
+      const conn = connections.get(conversationId)
+      if (conn) {
+        conn.currentMessageId = messageId
+        conn.activeTools.clear()
+        conn.currentTextBlockId = null
+        conn.currentThinkingBlockId = null
+        startHealthCheck(conn)
+      }
+
+      chatStore.startConversationStreaming(conversationId)
+
+      const payload = {
+        type: 'subscribe',
+        conversationId,
+        cursor,
+      }
+      chatStore.pushDebugEvent({
+        direction: 'out',
+        channel: 'ws',
+        eventType: 'subscribe',
+        payload,
+      }, conversationId)
+      socket.send(JSON.stringify(payload))
+    } catch (error) {
+      console.error(`[useChatStream] Failed to subscribe to ${conversationId}:`, error)
+      chatStore.setSessionError((error as Error).message || 'Subscribe failed', conversationId)
+    }
+  }
+
+  /**
    * Abort stream for a specific conversation
    */
   function abort(conversationId?: string) {
@@ -1246,6 +1347,7 @@ export function useChatStream() {
   return {
     sendMessage,
     sendPermissionResponse,
+    subscribe,
     approvePlan,
     rejectPlan,
     abort,

@@ -59,3 +59,9 @@ class ConversationEventBus {
 }
 
 export const eventBus = new ConversationEventBus()
+
+/**
+ * Well-known channel for system-wide notifications (new job, job completed, etc.).
+ * Subscribe all WebSocket peers to this channel to receive global push events.
+ */
+export const GLOBAL_CHANNEL = '__global__'

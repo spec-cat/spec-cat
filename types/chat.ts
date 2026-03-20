@@ -98,6 +98,9 @@ export function extractTextFromBlocks(blocks: ContentBlock[]): string {
 // AI provider permission modes
 export type PermissionMode = 'plan' | 'ask' | 'auto' | 'bypass'
 
+// Conversation source — who initiated the conversation
+export type ConversationSource = 'user' | 'scheduler' | 'cascade'
+
 export const PERMISSION_MODE_LABELS: Record<PermissionMode, string> = {
   plan: 'Plan Mode',
   ask: 'Ask Before',
@@ -399,6 +402,7 @@ export interface Conversation {
   createdAt: string             // ISO 8601 timestamp
   updatedAt: string             // ISO 8601 timestamp (for sorting)
   cwd: string                   // Working directory context
+  source?: ConversationSource   // Who initiated ('user' | 'scheduler' | 'cascade')
   providerId?: string           // Provider ID used for this conversation
   providerModelKey?: string     // Provider model key used for this conversation
   providerSessionId?: string    // Provider session ID for resuming conversation

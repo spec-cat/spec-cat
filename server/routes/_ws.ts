@@ -6,7 +6,7 @@
  * and forwards EventBus events to the connected peer.
  */
 
-import { eventBus } from '~/server/utils/eventBus'
+import { eventBus, GLOBAL_CHANNEL } from '~/server/utils/eventBus'
 import { jobQueue, normalizeImageAttachments } from '~/server/utils/jobQueue'
 import type { ChatJobMessage } from '~/server/utils/jobQueue'
 
@@ -44,12 +44,19 @@ interface ResetContextMessage {
   type: 'reset_context'
 }
 
-type ClientMessage = ChatMessage | PingMessage | PermissionResponse | AbortMessage | ResetContextMessage
+interface SubscribeMessage {
+  type: 'subscribe'
+  conversationId: string
+  cursor?: number // event index to replay from (0 = all)
+}
+
+type ClientMessage = ChatMessage | PingMessage | PermissionResponse | AbortMessage | ResetContextMessage | SubscribeMessage
 
 // Track peer → conversation mapping and EventBus subscription
 interface PeerConnection {
   conversationId: string | null
   unsubscribe: (() => void) | null
+  unsubscribeGlobal: (() => void) | null
 }
 
 const peerConnections = new Map<string, PeerConnection>()
@@ -57,7 +64,7 @@ const peerConnections = new Map<string, PeerConnection>()
 function getPeerConnection(peerId: string): PeerConnection {
   let conn = peerConnections.get(peerId)
   if (!conn) {
-    conn = { conversationId: null, unsubscribe: null }
+    conn = { conversationId: null, unsubscribe: null, unsubscribeGlobal: null }
     peerConnections.set(peerId, conn)
   }
   return conn
@@ -87,14 +94,23 @@ function subscribePeerToConversation(peer: any, conversationId: string): void {
 }
 
 export default defineWebSocketHandler({
-  open(_peer) {
-    // Client connected
+  open(peer) {
+    // Subscribe to global notification channel for push events
+    const conn = getPeerConnection(peer.id)
+    conn.unsubscribeGlobal = eventBus.subscribe(GLOBAL_CHANNEL, (event) => {
+      try {
+        peer.send(JSON.stringify(event))
+      } catch (err) {
+        console.error('[WS] Failed to send global event to peer:', err)
+      }
+    })
   },
 
   close(peer) {
     const conn = peerConnections.get(peer.id)
     if (conn) {
       if (conn.unsubscribe) conn.unsubscribe()
+      if (conn.unsubscribeGlobal) conn.unsubscribeGlobal()
       if (conn.conversationId) {
         jobQueue.cleanup(conn.conversationId)
       }
@@ -137,6 +153,11 @@ export default defineWebSocketHandler({
 
     if (msg.type === 'reset_context') {
       handleResetContext(peer)
+      return
+    }
+
+    if (msg.type === 'subscribe') {
+      handleSubscribe(peer, msg)
       return
     }
   },
@@ -212,6 +233,59 @@ function handleAbort(peer: any) {
   peer.send(JSON.stringify({ type: 'aborted' }))
 
   console.log('[WS] Abort completed for peer:', peer.id)
+}
+
+function handleSubscribe(peer: any, msg: SubscribeMessage) {
+  if (!msg.conversationId) {
+    peer.send(JSON.stringify({ type: 'error', error: 'conversationId is required for subscribe' }))
+    return
+  }
+
+  // Subscribe to future events
+  subscribePeerToConversation(peer, msg.conversationId)
+
+  // Replay buffered events from active job
+  const activeJob = jobQueue.getActiveJob(msg.conversationId)
+  if (activeJob) {
+    const cursor = typeof msg.cursor === 'number' && msg.cursor >= 0 ? msg.cursor : 0
+    const bufferedEvents = activeJob.events.slice(cursor)
+
+    if (bufferedEvents.length > 0) {
+      peer.send(JSON.stringify({
+        type: 'replay_start',
+        jobId: activeJob.id,
+        jobStatus: activeJob.status,
+        eventCount: bufferedEvents.length,
+        cursor,
+      }))
+
+      for (const event of bufferedEvents) {
+        try {
+          peer.send(JSON.stringify(event))
+        } catch {
+          break
+        }
+      }
+
+      peer.send(JSON.stringify({
+        type: 'replay_end',
+        jobId: activeJob.id,
+        nextCursor: activeJob.events.length,
+      }))
+    } else {
+      peer.send(JSON.stringify({
+        type: 'subscribed',
+        conversationId: msg.conversationId,
+        jobId: activeJob.id,
+        jobStatus: activeJob.status,
+      }))
+    }
+  } else {
+    peer.send(JSON.stringify({
+      type: 'subscribed',
+      conversationId: msg.conversationId,
+    }))
+  }
 }
 
 function handleResetContext(peer: any) {
