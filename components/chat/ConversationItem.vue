@@ -93,13 +93,16 @@ const formattedDate = computed(() => {
     class="p-3 rounded border cursor-pointer transition-colors"
     :class="[
       isPreviewing && isActive
-        ? 'border-retro-red bg-retro-red/20 ring-1 ring-retro-red/60 shadow-[0_0_0_1px_rgba(248,113,113,0.35)]'
+        ? 'border-retro-magenta bg-retro-magenta/15 ring-1 ring-retro-magenta/40'
         : isPreviewing
-          ? 'border-retro-red/40 bg-retro-red/10'
+          ? 'border-retro-magenta/40 bg-retro-magenta/5'
           : isActive
-            ? 'border-retro-cyan bg-retro-cyan/10'
-            : 'border-retro-border hover:border-retro-cyan/50',
-      isStreaming ? 'streaming-border' : ''
+            ? 'border-retro-cyan/80 bg-retro-cyan/8'
+            : 'border-retro-border hover:border-retro-cyan/40',
+      isStreaming && isPreviewing && isActive ? 'streaming-preview-active-border'
+        : isStreaming && isPreviewing ? 'streaming-preview-border'
+        : isStreaming ? 'streaming-border' : '',
+      conversation.finalized ? 'opacity-50' : ''
     ]"
     @click="emit('select')"
   >
@@ -132,15 +135,15 @@ const formattedDate = computed(() => {
           <!-- Previewing badge (T027: FR-012) -->
           <span
             v-else-if="isPreviewing"
-            class="text-xs font-mono px-1.5 py-0.5 rounded border border-retro-red/35 flex-shrink-0"
-            :class="isActive ? 'text-retro-red bg-retro-red/20' : 'text-retro-red bg-retro-red/10'"
+            class="text-xs font-mono px-1.5 py-0.5 rounded border border-retro-magenta/30 flex-shrink-0"
+            :class="isActive ? 'text-retro-magenta bg-retro-magenta/15' : 'text-retro-magenta/80 bg-retro-magenta/5'"
           >
             previewing
           </span>
           <!-- Streaming badge -->
           <span
             v-if="isStreaming"
-            class="text-xs font-mono text-retro-orange bg-retro-orange/10 px-1.5 py-0.5 rounded border border-retro-orange/35 flex-shrink-0"
+            class="text-xs font-mono text-retro-cyan bg-retro-cyan/10 px-1.5 py-0.5 rounded border border-retro-cyan/30 flex-shrink-0"
           >
             streaming
           </span>
@@ -208,22 +211,63 @@ const formattedDate = computed(() => {
 
 <style scoped>
 .streaming-border {
-  animation: streaming-border-pulse 2.4s ease-in-out infinite;
+  position: relative;
+  overflow: hidden;
+  border-color: rgb(var(--color-retro-cyan) / 0.4) !important;
+  background-image: linear-gradient(
+    270deg,
+    rgb(var(--color-retro-cyan) / 0.04),
+    rgb(var(--color-retro-cyan) / 0.12),
+    rgb(var(--color-retro-cyan) / 0.04),
+    rgb(var(--color-retro-cyan) / 0.12)
+  ) !important;
+  background-size: 300% 100% !important;
+  background-color: transparent !important;
+  animation: streaming-bg-sweep 3s ease-in-out infinite;
 }
 
-@keyframes streaming-border-pulse {
-  0%,
-  100% {
-    border-color: rgb(var(--color-retro-orange) / 0.25);
-    box-shadow:
-      0 0 0 1px rgb(var(--color-retro-orange) / 0.15),
-      0 0 0 0 rgb(var(--color-retro-orange) / 0);
+.streaming-preview-border {
+  position: relative;
+  overflow: hidden;
+  border-color: rgb(var(--color-retro-magenta) / 0.3) !important;
+  background-image: linear-gradient(
+    270deg,
+    rgb(var(--color-retro-magenta) / 0.03),
+    rgb(var(--color-retro-magenta) / 0.08),
+    rgb(var(--color-retro-magenta) / 0.03),
+    rgb(var(--color-retro-magenta) / 0.08)
+  ) !important;
+  background-size: 300% 100% !important;
+  background-color: transparent !important;
+  animation: streaming-bg-sweep 3s ease-in-out infinite;
+}
+
+.streaming-preview-active-border {
+  position: relative;
+  overflow: hidden;
+  border-color: rgb(var(--color-retro-magenta) / 0.7) !important;
+  box-shadow: 0 0 0 1px rgb(var(--color-retro-magenta) / 0.3);
+  background-image: linear-gradient(
+    270deg,
+    rgb(var(--color-retro-cyan) / 0.06),
+    rgb(var(--color-retro-magenta) / 0.18),
+    rgb(var(--color-retro-cyan) / 0.06),
+    rgb(var(--color-retro-magenta) / 0.18)
+  ) !important;
+  background-size: 300% 100% !important;
+  background-color: transparent !important;
+  animation: streaming-bg-sweep 3s ease-in-out infinite;
+}
+
+@keyframes streaming-bg-sweep {
+  0% {
+    background-position: 0% 50%;
   }
   50% {
-    border-color: rgb(var(--color-retro-orange) / 0.95);
-    box-shadow:
-      0 0 0 1px rgb(var(--color-retro-orange) / 0.85),
-      0 0 12px 2px rgb(var(--color-retro-orange) / 0.35);
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
   }
 }
 </style>

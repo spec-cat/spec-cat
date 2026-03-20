@@ -181,7 +181,7 @@ function getMessageFirstLine(message: string): string {
 <template>
   <div
     class="flex items-center cursor-pointer group focus:outline-none focus:ring-1 focus:ring-retro-cyan/50 focus:ring-inset"
-    :class="{ 'opacity-40': isMuted, 'bg-retro-red/10': isPreviewHighlighted, 'bg-retro-yellow/20': isFeatureHighlighted && !isPreviewHighlighted }"
+    :class="{ 'opacity-40': isMuted, 'bg-retro-magenta/10': isPreviewHighlighted, 'bg-retro-yellow/20': isFeatureHighlighted && !isPreviewHighlighted }"
     :style="{ height: `${ROW_HEIGHT}px` }"
     role="row"
     tabindex="0"
@@ -202,7 +202,7 @@ function getMessageFirstLine(message: string): string {
     <div
       class="flex-1 flex items-center gap-2 px-2 min-w-0 rounded-r transition-colors"
       :class="{
-        'bg-retro-red/10 border-l-2 border-retro-red/40': isPreviewHighlighted,
+        'bg-retro-magenta/10 border-l-2 border-retro-magenta/40': isPreviewHighlighted,
         'bg-retro-yellow/30 border-l-2 border-retro-yellow': isFeatureHighlighted && !isPreviewHighlighted,
         'bg-retro-cyan/15': isSelected && !isFeatureHighlighted && !isPreviewHighlighted,
         'bg-retro-yellow/10': isHighlighted && !isSelected && !isFeatureHighlighted && !isPreviewHighlighted,
@@ -229,7 +229,7 @@ function getMessageFirstLine(message: string): string {
           :class="commit.isHead && grouped.isLocal
             ? 'bg-retro-cyan/20 text-retro-cyan border border-retro-cyan/40'
             : isPreviewHighlighted
-              ? 'bg-retro-red/10 text-retro-red border border-retro-red/40'
+              ? 'bg-retro-magenta/10 text-retro-magenta border border-retro-magenta/40'
               : isFeatureHighlighted
                 ? 'bg-retro-yellow/15 text-retro-yellow border border-retro-yellow/30'
                 : isBranchHighlighted
