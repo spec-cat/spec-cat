@@ -1,75 +1,118 @@
-# Chat Streaming Performance TODO
+# Server-Driven Chat Architecture TODO
 
 ## Goal
-- Prevent chat creation latency from degrading (target: keep creation flow under ~2s in normal local repo state, excluding model response time).
+서버에서 스케줄러/트리거로 AI 작업을 독립 실행하고, 클라이언트는 이벤트를 구독하여 열람/interaction하는 구조로 전환.
 
-## 1) Fix branch list API N+1 calls (highest impact)
-- Problem
-  - `server/api/git/branches.get.ts` runs one extra `git show` per branch in a sequential loop.
-  - Chat creation modal calls this API every open, so latency grows as `sc/*` branches increase.
-- Tasks
-  - Replace per-branch `git show` loop with a single bulk git command (`for-each-ref`-based output including date).
-  - Parse branch metadata in one pass.
-  - Keep response shape backward-compatible with `BranchResponse`.
-- Acceptance Criteria
-  - API runtime does not scale linearly with branch count due to per-branch subprocess calls.
-  - Modal branch dropdown loads noticeably faster with many `sc/*` branches.
+```
+Before:  Client ──── drives ────→ Server (passive)
+After:   Client ←── subscribes ── EventBus ←── Server (active)
+                                     ↑
+                                JobQueue + Scheduler
+```
 
-## 2) Filter `sc/*` branches on server side
-- Problem
-  - UI filters out `sc/*` after receiving full branch list, so server still computes/returns unnecessary data.
-- Tasks
-  - Add query option (e.g., `excludeSc=true`) to `/api/git/branches`.
-  - Apply filter server-side before expensive formatting/serialization.
-  - Update `NewConversationModal.vue` to request filtered list.
-- Acceptance Criteria
-  - New conversation modal API excludes `sc/*` from payload at source.
-  - Branch list payload size and processing time are reduced when many chat branches exist.
+---
 
-## 3) Reduce full conversation snapshot writes on create
-- Problem
-  - `createConversation()` calls `saveAllConversations()` (full dataset write), and `conversations.json` can grow large.
-- Tasks
-  - Switch creation path to incremental save (`saveConversation`) where safe.
-  - Keep full save only when structure-wide changes are required.
-  - Validate no regressions in archive/restore ordering behavior.
-- Acceptance Criteria
-  - Creating one conversation does not rewrite all conversations by default.
-  - No data loss/regression in persisted conversation list.
+## Phase 1: EventBus + Job Buffer 도입
 
-## 4) Review chat worktree creation latency path
-- Problem
-  - `/api/chat/worktree` does multiple git commands and `git worktree add` synchronously in the create path.
-- Tasks
-  - Add timing logs around each git step in `server/api/chat/worktree.post.ts`.
-  - Identify dominant step (`show-ref`, `rev-parse`, or `worktree add`).
-  - Based on findings, optimize command sequence or defer non-critical work.
-- Acceptance Criteria
-  - Per-step latency is visible in logs.
-  - Confirmed optimization plan based on measured hotspot.
+### 1-1. EventBus 생성 (`server/utils/eventBus.ts`)
+- Conversation별 이벤트 발행/구독 싱글턴
+- `emit(conversationId, event: UIStreamEvent)` — 이벤트 발행
+- `subscribe(conversationId, callback)` / `unsubscribe()` — 구독 관리
+- 다수 subscriber 지원 (같은 conversation을 여러 클라이언트가 볼 수 있음)
 
-## 5) Prevent hidden panel reactive overhead
-- Problem
-  - Right panels are `v-show` mounted; hidden `ConversationsPanel` still runs watchers/computed.
-- Tasks
-  - Evaluate `v-if` unmount strategy for `ConversationsPanel` and `FeaturesPanel` when fullscreen.
-  - If unmounting is risky, gate expensive computed/watch logic when panel is hidden.
-- Acceptance Criteria
-  - Hidden panels do not continue expensive reactive work during streaming.
-  - No UX regressions when toggling fullscreen.
+### 1-2. JobQueue 생성 (`server/utils/jobQueue.ts`)
+- Job 데이터 모델:
+  ```
+  ChatJob {
+    id, conversationId, message,
+    source: 'user' | 'scheduler' | 'cascade',
+    status: 'queued' | 'running' | 'waiting_permission' | 'done' | 'error',
+    events: UIStreamEvent[],          // 이벤트 버퍼
+    eventCursor: Map<string, number>  // per-subscriber 커서
+  }
+  ```
+- `submit(job)` — Provider 실행 + EventBus로 이벤트 발행
+- `getJob(id)` / `listJobs(conversationId)` — 상태 조회
+- 이벤트 버퍼: 클라이언트 미접속 시에도 누적, 접속 시 replay
 
-## 6) Add regression/perf checks
-- Tasks
-  - Add lightweight benchmark script or test helper for branch API response time.
-  - Add scenario notes: 10/30/50 chat branches and expected modal load time envelope.
-- Acceptance Criteria
-  - Team can re-run perf checks after changes.
-  - Performance regressions are detectable before merge.
+### 1-3. `_ws.ts` 리팩터링
+- 현재: `handleChatMessage()` → `runProvider()` → `peer.send()` 직접 전송
+- 변경: `handleChatMessage()` → `jobQueue.submit()` → EventBus 구독 → `peer.send()`
+- WS 접속 시 해당 conversation의 미수신 이벤트 replay 지원
 
-## Suggested execution order
-1. Branch API N+1 제거
-2. 서버측 `sc/*` 필터링
-3. 저장 경로(full write) 최적화
-4. worktree 생성 경로 계측 및 개선
-5. hidden panel reactive 비용 최적화
-6. 회귀/성능 검증 추가
+### 1-4. `aiProvider.ts` 출력 대상 변경
+- 현재: 콜백(`onProviderJson`) → peer 직접 전송
+- 변경: 콜백 → EventBus.emit()으로 변경
+- Provider 라이프사이클을 WebSocket peer에서 분리
+
+---
+
+## Phase 2: 클라이언트 구독 모델 전환
+
+### 2-1. `useChatStream.ts` 수정
+- WS 접속 시 conversation의 미수신 이벤트 replay 요청 추가
+- 메시지 타입에 `replay_events` 추가 (버퍼된 이벤트 수신)
+- 기존 실시간 이벤트 처리 로직은 그대로 유지
+
+### 2-2. `stores/chat.ts` 확장
+- Conversation에 `source: 'user' | 'scheduler'` 필드 추가
+- 서버 주도 conversation 표시 구분 (badge 등)
+- 서버에서 새 conversation 생성 알림 수신 처리
+
+### 2-3. Job 상태 API (`server/api/jobs/*.ts`)
+- `GET /api/jobs` — 활성 Job 목록
+- `GET /api/jobs/:id` — Job 상태 및 이벤트 조회
+- `POST /api/jobs/:id/cancel` — Job 취소
+
+---
+
+## Phase 3: 스케줄러 도입
+
+### 3-1. Scheduler 생성 (`server/utils/scheduler.ts`)
+- 크론/트리거 기반 작업 정의
+- 실행 시 conversation 자동 생성 + jobQueue.submit()
+- worktree 자동 할당
+
+### 3-2. Permission 모델 확장
+- 스케줄러 작업: 기본 `bypass` 모드 (자동 승인)
+- 선택적 `ask` 모드: 이벤트 버퍼에 permission_request 저장 → 클라이언트 접속 시 표시
+- 타임아웃 설정: N분 내 응답 없으면 자동 deny/approve 정책
+
+### 3-3. 스케줄러 설정 UI
+- 스케줄 정의 (크론식 또는 이벤트 트리거)
+- 실행 이력 조회
+- 실행 결과 conversation으로 바로 이동
+
+---
+
+## Phase 4: 알림 + 동기화
+
+### 4-1. 서버 → 클라이언트 푸시 알림
+- WS를 통한 새 conversation/job 알림
+- 클라이언트 conversation 목록 자동 갱신
+
+### 4-2. 다중 클라이언트 동기화
+- 같은 conversation을 여러 탭/클라이언트에서 동시 구독
+- EventBus의 다중 subscriber로 자연스럽게 지원
+
+---
+
+## 수정 대상 파일 요약
+
+| 구분 | 파일 | 변경 내용 |
+|------|------|----------|
+| 신규 | `server/utils/eventBus.ts` | 이벤트 브로드캐스트 싱글턴 |
+| 신규 | `server/utils/jobQueue.ts` | Job 큐 + 실행 관리 |
+| 신규 | `server/utils/scheduler.ts` | 크론/트리거 스케줄러 |
+| 신규 | `server/api/jobs/*.ts` | Job CRUD API |
+| 수정 | `server/routes/_ws.ts` | runProvider 직접호출 → jobQueue.submit + EventBus 구독 |
+| 수정 | `server/utils/aiProvider.ts` | 출력 대상을 EventBus로 변경 |
+| 수정 | `composables/useChatStream.ts` | 이벤트 replay 요청 추가 |
+| 수정 | `stores/chat.ts` | source 필드 + 서버 주도 conversation 지원 |
+| 수정 | `types/chat.ts` | Job, source 관련 타입 추가 |
+
+## 실행 순서
+1. Phase 1 (EventBus + JobQueue) — 핵심 인프라, 기존 동작 유지하며 간접화
+2. Phase 2 (클라이언트 구독 모델) — replay + 서버 주도 conversation 지원
+3. Phase 3 (스케줄러) — 서버 독립 실행 기능
+4. Phase 4 (알림/동기화) — UX 완성
