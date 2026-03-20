@@ -647,7 +647,7 @@ async function sendMessage() {
   let assistantMessageId: string | null = null
 
   // Check for /reset command
-  if (message === '/reset' || message === '/reset-context') {
+  if (message === '/reset' || message === '/reset-context' || message === '/new' || message === '/clear') {
     await handleResetContext()
     return
   }
@@ -1139,7 +1139,7 @@ watch(() => chatStore.activeConversationId, () => {
 
     <!-- Hint text -->
     <div class="mt-1 text-xs font-mono text-retro-muted">
-      Press Enter to send, Shift+Enter for new line. Slash commands: `/context`, `/reset`, `/spec-search`. You can attach up to 4 images (5 MB each).
+      Press Enter to send, Shift+Enter for new line. Slash commands: `/context`, `/reset`, `/new`, `/clear`, `/spec-search`. You can attach up to 4 images (5 MB each).
     </div>
   </div>
 </template>
