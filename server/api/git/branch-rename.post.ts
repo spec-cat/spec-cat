@@ -1,15 +1,10 @@
-import { isGitRepository, renameBranch } from "~/server/utils/git";
+import { renameBranch } from "~/server/utils/git";
 import { logger } from "~/server/utils/logger";
-import { getProjectDir } from "~/server/utils/projectDir";
+import { resolveWorkingDirectoryFromBody, handleGitApiError } from "~/server/utils/gitApiHelpers";
 
 export default defineEventHandler(async (event) => {
   try {
-    const body = await readBody<{
-      workingDirectory?: string;
-      oldName: string;
-      newName: string;
-    }>(event);
-    const workingDirectory = body.workingDirectory || getProjectDir();
+    const { workingDirectory, body } = await resolveWorkingDirectoryFromBody(event);
 
     if (!body.oldName) {
       throw createError({
@@ -25,15 +20,8 @@ export default defineEventHandler(async (event) => {
       });
     }
 
-    if (!isGitRepository(workingDirectory)) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: "Not a Git repository",
-      });
-    }
-
     try {
-      renameBranch(workingDirectory, body.oldName, body.newName);
+      renameBranch(workingDirectory, body.oldName as string, body.newName as string);
     } catch (gitError) {
       const errorMessage =
         gitError instanceof Error ? gitError.message : "Unknown error";
@@ -41,14 +29,14 @@ export default defineEventHandler(async (event) => {
       if (errorMessage.includes("not found") || errorMessage.includes("did not match")) {
         throw createError({
           statusCode: 404,
-          statusMessage: `Branch '${body.oldName}' not found`,
+          statusMessage: `Branch '${body.oldName as string}' not found`,
         });
       }
 
       if (errorMessage.includes("already exists")) {
         throw createError({
           statusCode: 409,
-          statusMessage: `Branch '${body.newName}' already exists`,
+          statusMessage: `Branch '${body.newName as string}' already exists`,
         });
       }
 
@@ -59,20 +47,12 @@ export default defineEventHandler(async (event) => {
     }
 
     logger.api.info("Git branch renamed", {
-      oldName: body.oldName,
-      newName: body.newName,
+      oldName: body.oldName as string,
+      newName: body.newName as string,
     });
 
     return { success: true };
   } catch (error) {
-    if (error && typeof error === "object" && "statusCode" in error) {
-      throw error;
-    }
-
-    logger.api.error("Error renaming git branch", { error });
-    throw createError({
-      statusCode: 500,
-      statusMessage: "Failed to rename branch",
-    });
+    handleGitApiError(error, "Error renaming git branch", "Failed to rename branch");
   }
 });

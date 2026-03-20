@@ -1,14 +1,13 @@
-import { isGitRepository, revertCommit } from "~/server/utils/git";
+import { revertCommit } from "~/server/utils/git";
 import { logger } from "~/server/utils/logger";
-import { getProjectDir } from "~/server/utils/projectDir";
+import {
+  resolveWorkingDirectoryFromBody,
+  handleGitApiError,
+} from "~/server/utils/gitApiHelpers";
 
 export default defineEventHandler(async (event) => {
   try {
-    const body = await readBody<{
-      workingDirectory?: string;
-      hash: string;
-    }>(event);
-    const workingDirectory = body.workingDirectory || getProjectDir();
+    const { workingDirectory, body } = await resolveWorkingDirectoryFromBody(event);
 
     if (!body.hash) {
       throw createError({
@@ -17,15 +16,8 @@ export default defineEventHandler(async (event) => {
       });
     }
 
-    if (!(await isGitRepository(workingDirectory))) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: "Not a Git repository",
-      });
-    }
-
     try {
-      revertCommit(workingDirectory, body.hash);
+      revertCommit(workingDirectory, body.hash as string);
     } catch (gitError) {
       const errorMessage = gitError instanceof Error ? gitError.message : "Unknown error";
 
@@ -46,14 +38,6 @@ export default defineEventHandler(async (event) => {
 
     return { success: true };
   } catch (error) {
-    if (error && typeof error === "object" && "statusCode" in error) {
-      throw error;
-    }
-
-    logger.api.error("Error during git revert", { error });
-    throw createError({
-      statusCode: 500,
-      statusMessage: "Failed to revert commit",
-    });
+    handleGitApiError(error, "Error during git revert", "Failed to revert commit");
   }
 });

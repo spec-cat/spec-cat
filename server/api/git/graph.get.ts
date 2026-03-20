@@ -1,31 +1,24 @@
 import type { GraphResponse, GraphQueryParams } from '~/types/git'
 import {
   execGitCommand,
-  isGitRepository,
   getRepositoryRoot,
   generateBranchColor,
   getCommitHistory
 } from '~/server/utils/git'
-import { getProjectDir } from '~/server/utils/projectDir'
+import { resolveWorkingDirectoryFromQuery, handleGitApiError } from '~/server/utils/gitApiHelpers'
+
+const DEFAULT_COMMIT_LIMIT = 300
+const MAX_COMMIT_LIMIT = 500
 
 export default defineEventHandler(async (event) => {
   const query = getQuery(event) as Partial<GraphQueryParams>
 
   try {
-    // Get configured project directory
-    const cwd = getProjectDir()
-    
-    // Validate git repository
-    if (!(await isGitRepository(cwd))) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: 'Not a valid git repository'
-      })
-    }
+    const cwd = resolveWorkingDirectoryFromQuery(event)
 
     // Parse query parameters with defaults
     const {
-      limit = 300,
+      limit = DEFAULT_COMMIT_LIMIT,
       offset = 0,
       branch,
       author,
@@ -35,7 +28,7 @@ export default defineEventHandler(async (event) => {
     } = query
 
     // Validate parameters
-    if (limit && (limit < 1 || limit > 500)) {
+    if (limit && (limit < 1 || limit > MAX_COMMIT_LIMIT)) {
       throw createError({
         statusCode: 400,
         statusMessage: 'Limit must be between 1 and 500'
@@ -83,16 +76,7 @@ export default defineEventHandler(async (event) => {
 
     return response
   } catch (error: any) {
-    if (error.statusCode) {
-      throw error
-    }
-
-    console.error('Git graph API error:', error)
-    throw createError({
-      statusCode: 500,
-      statusMessage: 'Failed to retrieve git graph data',
-      data: { error: error.message }
-    })
+    handleGitApiError(error, 'Git graph API error', 'Failed to retrieve git graph data')
   }
 })
 

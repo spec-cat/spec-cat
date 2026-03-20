@@ -140,34 +140,38 @@ function handleItemClick(item: MenuItem) {
 
 // --- Viewport boundary detection ---
 
+// Menu sizing constants for viewport boundary detection
+const MENU_WIDTH = 220;
+const MENU_ITEM_HEIGHT = 36;
+const MENU_SEPARATOR_HEIGHT = 9;
+const MENU_TITLE_HEIGHT = 29;
+const MENU_PADDING = 8;
+
 const menuStyle = computed(() => {
-  const menuWidth = 220;
-  // Estimate height: title header ~28px + border 1px, each item ~36px, separators ~9px
-  const titleHeight = props.title ? 29 : 0;
+  const titleHeight = props.title ? MENU_TITLE_HEIGHT : 0;
   const separatorCount = props.items.filter((item) => item.separator).length;
-  const itemsHeight = props.items.length * 36 + separatorCount * 9 + 8; // 8 for py-1
+  const itemsHeight = props.items.length * MENU_ITEM_HEIGHT + separatorCount * MENU_SEPARATOR_HEIGHT + MENU_PADDING;
   const menuHeight = titleHeight + itemsHeight;
-  const padding = 8;
 
   let left = props.x;
   let top = props.y;
 
   if (typeof window !== 'undefined') {
     // Adjust if menu would overflow right edge
-    if (left + menuWidth > window.innerWidth - padding) {
-      left = window.innerWidth - menuWidth - padding;
+    if (left + MENU_WIDTH > window.innerWidth - MENU_PADDING) {
+      left = window.innerWidth - MENU_WIDTH - MENU_PADDING;
     }
     // Adjust if menu would overflow left edge
-    if (left < padding) {
-      left = padding;
+    if (left < MENU_PADDING) {
+      left = MENU_PADDING;
     }
     // Adjust if menu would overflow bottom edge
-    if (top + menuHeight > window.innerHeight - padding) {
-      top = window.innerHeight - menuHeight - padding;
+    if (top + menuHeight > window.innerHeight - MENU_PADDING) {
+      top = window.innerHeight - menuHeight - MENU_PADDING;
     }
     // Adjust if menu would overflow top edge
-    if (top < padding) {
-      top = padding;
+    if (top < MENU_PADDING) {
+      top = MENU_PADDING;
     }
   }
 

@@ -91,8 +91,6 @@ const menuItems = computed<MenuItem[]>(() => [
   },
 ]);
 
-// --- Action dispatch ---
-
 const actionMap: Record<string, () => void> = {
   addTag: () => emit("addTag"),
   createBranch: () => emit("createBranch"),
@@ -106,10 +104,7 @@ const actionMap: Record<string, () => void> = {
 };
 
 function handleAction(key: string) {
-  const handler = actionMap[key];
-  if (handler) {
-    handler();
-  }
+  actionMap[key]?.();
   emit("close");
 }
 </script>

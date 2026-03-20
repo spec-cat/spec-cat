@@ -1,6 +1,6 @@
-import { isGitRepositorySync, editRemote } from "~/server/utils/git";
+import { editRemote } from "~/server/utils/git";
+import { resolveWorkingDirectoryFromBody, handleGitApiError } from "~/server/utils/gitApiHelpers";
 import { logger } from "~/server/utils/logger";
-import { getProjectDir } from "~/server/utils/projectDir";
 
 /**
  * PUT /api/git/remote
@@ -8,12 +8,7 @@ import { getProjectDir } from "~/server/utils/projectDir";
  */
 export default defineEventHandler(async (event) => {
   try {
-    const body = await readBody<{
-      workingDirectory?: string;
-      name: string;
-      newUrl: string;
-    }>(event);
-    const workingDirectory = body.workingDirectory || getProjectDir();
+    const { workingDirectory, body } = await resolveWorkingDirectoryFromBody(event);
 
     if (!body.name) {
       throw createError({
@@ -29,15 +24,8 @@ export default defineEventHandler(async (event) => {
       });
     }
 
-    if (!isGitRepositorySync(workingDirectory)) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: "Not a Git repository",
-      });
-    }
-
     try {
-      editRemote(workingDirectory, body.name, body.newUrl);
+      editRemote(workingDirectory, body.name as string, body.newUrl as string);
     } catch (gitError) {
       const errorMessage =
         gitError instanceof Error ? gitError.message : "Unknown error";
@@ -54,14 +42,6 @@ export default defineEventHandler(async (event) => {
 
     return { success: true };
   } catch (error) {
-    if (error && typeof error === "object" && "statusCode" in error) {
-      throw error;
-    }
-
-    logger.api.error("Error editing git remote", { error });
-    throw createError({
-      statusCode: 500,
-      statusMessage: "Failed to edit remote",
-    });
+    handleGitApiError(error, "editing git remote", "Failed to edit remote");
   }
 });

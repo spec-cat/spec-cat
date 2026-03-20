@@ -1,32 +1,18 @@
-import { isGitRepository, execGitArgs } from "~/server/utils/git";
+import { execGitArgs } from "~/server/utils/git";
+import { resolveWorkingDirectoryFromBody, handleGitApiError } from "~/server/utils/gitApiHelpers";
 import { logger } from "~/server/utils/logger";
-import { getProjectDir } from "~/server/utils/projectDir";
 
 export default defineEventHandler(async (event) => {
   try {
-    const body = await readBody<{
-      workingDirectory?: string;
-      branchName: string;
-      force?: boolean;
-      remote?: boolean;
-    }>(event);
-    const workingDirectory = body.workingDirectory || getProjectDir();
-    const branchName = body.branchName;
-    const force = body.force ?? false;
-    const remote = body.remote ?? false;
+    const { workingDirectory, body } = await resolveWorkingDirectoryFromBody(event);
+    const branchName = body.branchName as string;
+    const force = (body.force as boolean) ?? false;
+    const remote = (body.remote as boolean) ?? false;
 
     if (!branchName) {
       throw createError({
         statusCode: 400,
         statusMessage: "branchName is required",
-      });
-    }
-
-    // Check if directory is a git repository
-    if (!(await isGitRepository(workingDirectory))) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: "Not a Git repository",
       });
     }
 
@@ -84,14 +70,6 @@ export default defineEventHandler(async (event) => {
       success: true,
     };
   } catch (error) {
-    if (error && typeof error === "object" && "statusCode" in error) {
-      throw error;
-    }
-
-    logger.api.error("Error deleting git branch", { error });
-    throw createError({
-      statusCode: 500,
-      statusMessage: "Failed to delete branch",
-    });
+    handleGitApiError(error, "deleting git branch", "Failed to delete branch");
   }
 });

@@ -5,10 +5,6 @@ import type {
   Commit,
   CommitDetail,
   Branch,
-  RepositoryStatus,
-  WorkingDirectoryStatus,
-  StagingAreaStatus,
-  Remote,
   CommitAuthor,
   CommitStats,
   FileChange,
@@ -18,6 +14,8 @@ import type {
 const execAsync = promisify(exec)
 const execFileAsync = promisify(execFile)
 
+const GIT_MAX_BUFFER = 1024 * 1024 * 10 // 10MB
+
 /**
  * Execute a git command synchronously (simple string command)
  */
@@ -25,7 +23,7 @@ export function execGit(cwd: string, command: string): string {
   try {
     const output = execSync(`git ${command}`, {
       cwd,
-      maxBuffer: 1024 * 1024 * 10, // 10MB buffer
+      maxBuffer: GIT_MAX_BUFFER, // 10MB buffer
       encoding: 'utf-8'
     })
     return output.trim()
@@ -41,7 +39,7 @@ export function execGitArgs(cwd: string, args: string[]): string {
   try {
     const output = execFileSync('git', args, {
       cwd,
-      maxBuffer: 1024 * 1024 * 10,
+      maxBuffer: GIT_MAX_BUFFER,
       encoding: 'utf-8'
     })
     return output.trim()
@@ -60,7 +58,7 @@ export async function execGitCommand(
   try {
     const { stdout } = await execFileAsync('git', args, {
       cwd,
-      maxBuffer: 1024 * 1024 * 10 // 10MB buffer for large repositories
+      maxBuffer: GIT_MAX_BUFFER // 10MB buffer for large repositories
     })
     return stdout.trim()
   } catch (error: any) {
@@ -288,107 +286,6 @@ export async function getBranches(
 }
 
 /**
- * Get repository status including working directory and staging area
- */
-export async function getRepositoryStatus(
-  cwd: string = getProjectDir()
-): Promise<RepositoryStatus> {
-  // Get current branch and HEAD
-  const currentBranch = await execGitCommand(['branch', '--show-current'], cwd)
-  const head = await execGitCommand(['rev-parse', 'HEAD'], cwd)
-  const gitDir = await execGitCommand(['rev-parse', '--git-dir'], cwd)
-
-  // Get working directory status
-  const statusOutput = await execGitCommand(['status', '--porcelain'], cwd)
-  
-  const untracked: string[] = []
-  const modified: string[] = []
-  const deleted: string[] = []
-  const staged: string[] = []
-  const partiallyStaged: string[] = []
-
-  for (const line of statusOutput.split('\n').filter(Boolean)) {
-    const indexStatus = line.charAt(0)
-    const workingStatus = line.charAt(1)
-    const filepath = line.substring(3)
-
-    // Working directory changes
-    if (workingStatus === 'M') modified.push(filepath)
-    if (workingStatus === 'D') deleted.push(filepath)
-    if (indexStatus === '?' && workingStatus === '?') untracked.push(filepath)
-
-    // Staged changes
-    if (indexStatus !== ' ' && indexStatus !== '?') staged.push(filepath)
-    
-    // Partially staged (both staged and working changes)
-    if (indexStatus !== ' ' && indexStatus !== '?' && workingStatus !== ' ') {
-      partiallyStaged.push(filepath)
-    }
-  }
-
-  // Get remotes
-  const remotesOutput = await execGitCommand(['remote', '-v'], cwd)
-  const remoteMap = new Map<string, { fetchUrl: string; pushUrl: string }>()
-  
-  for (const line of remotesOutput.split('\n').filter(Boolean)) {
-    const [name, url, type] = line.split(/\s+/)
-    if (!remoteMap.has(name)) {
-      remoteMap.set(name, { fetchUrl: url, pushUrl: url })
-    }
-    
-    const remote = remoteMap.get(name)!
-    if (type === '(fetch)') remote.fetchUrl = url
-    if (type === '(push)') remote.pushUrl = url
-  }
-
-  const remotes: Remote[] = Array.from(remoteMap.entries()).map(([name, urls]) => ({
-    name,
-    url: urls.fetchUrl, // Use fetch URL as primary
-    fetchUrl: urls.fetchUrl,
-    pushUrl: urls.pushUrl
-  }))
-
-  return {
-    currentBranch,
-    head,
-    workingDirectory: {
-      clean: modified.length === 0 && deleted.length === 0 && untracked.length === 0,
-      untracked,
-      modified,
-      deleted
-    },
-    stagingArea: {
-      hasChanges: staged.length > 0,
-      staged,
-      partiallyStaged
-    },
-    remotes,
-    lastUpdated: new Date().toISOString(),
-    gitDir
-  }
-}
-
-/**
- * Checkout a specific branch
- */
-export async function checkoutBranch(
-  branchName: string,
-  force: boolean = false,
-  cwd: string = getProjectDir()
-): Promise<{ success: boolean; error?: string }> {
-  try {
-    const args = ['checkout']
-    if (force) args.push('-f')
-    args.push(branchName)
-
-    await execGitCommand(args, cwd)
-    return { success: true }
-  } catch (error: any) {
-    return { success: false, error: error.message }
-  }
-}
-
-/**
  * Generate a deterministic color for a branch name (FR-003: 12-color palette)
  */
 export function generateBranchColor(branchName: string): string {
@@ -416,51 +313,6 @@ export function generateBranchColor(branchName: string): string {
   }
 
   return colors[Math.abs(hash) % colors.length]
-}
-
-/**
- * Get decorations (branches and tags) for commits
- */
-export async function getCommitDecorations(
-  commits: Commit[],
-  cwd: string = getProjectDir()
-): Promise<void> {
-  if (commits.length === 0) return
-
-  // Get branch decorations
-  const branchOutput = await execGitCommand([
-    'for-each-ref',
-    "--format='%(objectname) %(refname:short)'",
-    'refs/heads/',
-    'refs/remotes/'
-  ], cwd)
-
-  const branchMap = new Map<string, string[]>()
-  for (const line of branchOutput.split('\n').filter(Boolean)) {
-    const [hash, branchName] = line.split(' ', 2)
-    if (!branchMap.has(hash)) branchMap.set(hash, [])
-    branchMap.get(hash)!.push(branchName)
-  }
-
-  // Get tag decorations
-  const tagOutput = await execGitCommand([
-    'for-each-ref',
-    "--format='%(objectname) %(refname:short)'",
-    'refs/tags/'
-  ], cwd)
-
-  const tagMap = new Map<string, string[]>()
-  for (const line of tagOutput.split('\n').filter(Boolean)) {
-    const [hash, tagName] = line.split(' ', 2)
-    if (!tagMap.has(hash)) tagMap.set(hash, [])
-    tagMap.get(hash)!.push(tagName)
-  }
-
-  // Apply decorations to commits
-  for (const commit of commits) {
-    commit.branches = branchMap.get(commit.hash) || []
-    commit.tags = tagMap.get(commit.hash) || []
-  }
 }
 
 /**
@@ -965,7 +817,7 @@ export function getFileDiff(
   filePath: string,
   parentHash?: string
 ): { filePath: string; oldPath?: string; status: string; binary: boolean; lines: Array<{ type: 'add' | 'delete' | 'context' | 'header'; content: string; oldLineNumber?: number; newLineNumber?: number }>; truncated: boolean } {
-  const MAX_LINES = 10000
+  const MAX_DIFF_LINES = 10000
 
   // Determine the diff command based on whether this is the initial commit
   let diffOutput: string
@@ -1030,7 +882,7 @@ export function getFileDiff(
     let newLineNum = 0
 
     for (const line of diffLines) {
-      if (lines.length >= MAX_LINES) {
+      if (lines.length >= MAX_DIFF_LINES) {
         truncated = true
         break
       }

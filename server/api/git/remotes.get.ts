@@ -1,6 +1,6 @@
-import { isGitRepositorySync, listRemotes } from "~/server/utils/git";
+import { listRemotes } from "~/server/utils/git";
 import { logger } from "~/server/utils/logger";
-import { getProjectDir } from "~/server/utils/projectDir";
+import { resolveWorkingDirectoryFromQuery, handleGitApiError } from "~/server/utils/gitApiHelpers";
 
 /**
  * GET /api/git/remotes
@@ -8,15 +8,7 @@ import { getProjectDir } from "~/server/utils/projectDir";
  */
 export default defineEventHandler(async (event) => {
   try {
-    const query = getQuery(event);
-    const workingDirectory = (query.workingDirectory as string) || getProjectDir();
-
-    if (!isGitRepositorySync(workingDirectory)) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: "Not a Git repository",
-      });
-    }
+    const workingDirectory = resolveWorkingDirectoryFromQuery(event);
 
     try {
       const remotes = listRemotes(workingDirectory);
@@ -30,14 +22,6 @@ export default defineEventHandler(async (event) => {
       });
     }
   } catch (error) {
-    if (error && typeof error === "object" && "statusCode" in error) {
-      throw error;
-    }
-
-    logger.api.error("Error listing git remotes", { error });
-    throw createError({
-      statusCode: 500,
-      statusMessage: "Failed to list remotes",
-    });
+    handleGitApiError(error, "Error listing git remotes", "Failed to list remotes");
   }
 });

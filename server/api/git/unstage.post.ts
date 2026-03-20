@@ -1,27 +1,18 @@
-import type { GitUnstageRequest, GitUnstageResponse } from "~/types/git";
-import { isGitRepository, execGitArgs } from "~/server/utils/git";
+import type { GitUnstageResponse } from "~/types/git";
+import { execGitArgs } from "~/server/utils/git";
 import { logger } from "~/server/utils/logger";
-import { getProjectDir } from "~/server/utils/projectDir";
+import { resolveWorkingDirectoryFromBody, handleGitApiError } from "~/server/utils/gitApiHelpers";
 
 export default defineEventHandler(async (event): Promise<GitUnstageResponse> => {
   try {
-    const body = await readBody<GitUnstageRequest>(event);
-    const workingDirectory = body.workingDirectory || getProjectDir();
+    const { workingDirectory, body } = await resolveWorkingDirectoryFromBody(event);
 
-    if (!isGitRepository(workingDirectory)) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: "Not a Git repository",
-        data: { code: "NOT_GIT_REPO" },
-      });
-    }
-
-    if (body.files.length === 0) {
+    if ((body.files as string[]).length === 0) {
       // Unstage all
       execGitArgs(workingDirectory, ["reset", "HEAD"]);
     } else {
       // Unstage specific files
-      execGitArgs(workingDirectory, ["reset", "HEAD", "--", ...body.files]);
+      execGitArgs(workingDirectory, ["reset", "HEAD", "--", ...(body.files as string[])]);
     }
 
     // Count unstaged files after operation
@@ -37,20 +28,12 @@ export default defineEventHandler(async (event): Promise<GitUnstageResponse> => 
     }
 
     logger.api.info("Git unstage successful", {
-      files: body.files.length === 0 ? "all" : body.files,
+      files: (body.files as string[]).length === 0 ? "all" : body.files,
       unstagedCount,
     });
 
     return { success: true, unstagedCount };
   } catch (error) {
-    if (error && typeof error === "object" && "statusCode" in error) {
-      throw error;
-    }
-
-    logger.api.error("Error unstaging files", { error });
-    throw createError({
-      statusCode: 500,
-      statusMessage: "Failed to unstage files",
-    });
+    handleGitApiError(error, "Error unstaging files", "Failed to unstage files");
   }
 });

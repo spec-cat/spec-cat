@@ -1,17 +1,13 @@
-import { isGitRepository, mergeBranch } from "~/server/utils/git";
+import { mergeBranch } from "~/server/utils/git";
 import { logger } from "~/server/utils/logger";
-import { getProjectDir } from "~/server/utils/projectDir";
+import {
+  resolveWorkingDirectoryFromBody,
+  handleGitApiError,
+} from "~/server/utils/gitApiHelpers";
 
 export default defineEventHandler(async (event) => {
   try {
-    const body = await readBody<{
-      workingDirectory?: string;
-      branch: string;
-      noCommit?: boolean;
-      noFastForward?: boolean;
-      squash?: boolean;
-    }>(event);
-    const workingDirectory = body.workingDirectory || getProjectDir();
+    const { workingDirectory, body } = await resolveWorkingDirectoryFromBody(event);
 
     if (!body.branch) {
       throw createError({
@@ -20,18 +16,11 @@ export default defineEventHandler(async (event) => {
       });
     }
 
-    if (!isGitRepository(workingDirectory)) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: "Not a Git repository",
-      });
-    }
-
     try {
-      mergeBranch(workingDirectory, body.branch, {
-        noCommit: body.noCommit,
-        noFastForward: body.noFastForward,
-        squash: body.squash,
+      mergeBranch(workingDirectory, body.branch as string, {
+        noCommit: body.noCommit as boolean | undefined,
+        noFastForward: body.noFastForward as boolean | undefined,
+        squash: body.squash as boolean | undefined,
       });
     } catch (gitError) {
       const errorMessage =
@@ -70,14 +59,6 @@ export default defineEventHandler(async (event) => {
 
     return { success: true };
   } catch (error) {
-    if (error && typeof error === "object" && "statusCode" in error) {
-      throw error;
-    }
-
-    logger.api.error("Error during git merge", { error });
-    throw createError({
-      statusCode: 500,
-      statusMessage: "Failed to merge branch",
-    });
+    handleGitApiError(error, "Error during git merge", "Failed to merge branch");
   }
 });

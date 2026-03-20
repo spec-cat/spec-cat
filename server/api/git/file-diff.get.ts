@@ -1,20 +1,14 @@
-import { isGitRepositorySync, getFileDiff } from "~/server/utils/git";
+import { getFileDiff } from "~/server/utils/git";
 import { logger } from "~/server/utils/logger";
+import { resolveWorkingDirectoryFromQuery, handleGitApiError } from "~/server/utils/gitApiHelpers";
 
 export default defineEventHandler(async (event) => {
   try {
+    const workingDirectory = resolveWorkingDirectoryFromQuery(event);
     const query = getQuery(event);
-    const workingDirectory = query.workingDirectory as string | undefined;
     const commitHash = query.commitHash as string | undefined;
     const filePath = query.filePath as string | undefined;
     const parentHash = query.parentHash as string | undefined;
-
-    if (!workingDirectory) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: "workingDirectory query parameter is required",
-      });
-    }
 
     if (!commitHash) {
       throw createError({
@@ -30,14 +24,6 @@ export default defineEventHandler(async (event) => {
       });
     }
 
-    if (!isGitRepositorySync(workingDirectory)) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: "Not a Git repository",
-        data: { code: "NOT_GIT_REPO" },
-      });
-    }
-
     try {
       return getFileDiff(workingDirectory, commitHash, filePath, parentHash || undefined);
     } catch (gitError) {
@@ -49,14 +35,6 @@ export default defineEventHandler(async (event) => {
       });
     }
   } catch (error) {
-    if (error && typeof error === "object" && "statusCode" in error) {
-      throw error;
-    }
-
-    logger.api.error("Error getting file diff", { error });
-    throw createError({
-      statusCode: 500,
-      statusMessage: "Failed to get file diff",
-    });
+    handleGitApiError(error, "Error getting file diff", "Failed to get file diff");
   }
 });

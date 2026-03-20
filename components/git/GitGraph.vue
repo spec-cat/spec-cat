@@ -3,8 +3,10 @@ import { useGitGraphStore } from "~/stores/gitGraph";
 import { useChatStore } from "~/stores/chat";
 import { useAutoRefresh } from "~/composables/useAutoRefresh";
 import { useKeyboardShortcuts } from "~/composables/useKeyboardShortcuts";
+import { useGitDialogs } from "~/composables/useGitDialogs";
+import { useGitContextMenus } from "~/composables/useGitContextMenus";
 import { ExclamationTriangleIcon, MagnifyingGlassIcon, FunnelIcon, XMarkIcon, ArrowPathIcon, CloudArrowDownIcon, Cog6ToothIcon, AdjustmentsHorizontalIcon } from "@heroicons/vue/24/outline";
-import type { Branch, GitLogCommit, GitStash, GitTag } from "~/types/git";
+import type { Branch, GitLogCommit } from "~/types/git";
 import CherryPickDialog from "~/components/git/dialogs/CherryPickDialog.vue";
 import CreateBranchDialog from "~/components/git/dialogs/CreateBranchDialog.vue";
 import CleanUntrackedDialog from "~/components/git/dialogs/CleanUntrackedDialog.vue";
@@ -32,6 +34,49 @@ const props = withDefaults(defineProps<Props>(), {
 const store = useGitGraphStore();
 const chatStore = useChatStore();
 const autoRefresh = useAutoRefresh();
+const dialogs = useGitDialogs(store);
+const menus = useGitContextMenus(store, dialogs);
+
+// Destructure for template access
+const {
+  checkoutDialog, confirmCheckout,
+  createBranchDialog, confirmCreateBranch,
+  deleteBranchDialog, confirmDeleteBranch,
+  renameDialog, confirmRenameBranch,
+  mergeDialog, confirmMerge,
+  rebaseDialog, confirmRebase,
+  pushDialog, confirmPush,
+  pullDialog, confirmPull,
+  cherryPickDialog, confirmCherryPick,
+  resetDialog, confirmReset,
+  tagCreateDialog, confirmTagCreate,
+  tagDeleteDialog, confirmTagDelete,
+  tagDetailDialog,
+  stashDialog, confirmStash,
+  stashBranchDialog, stashBranchInput, confirmStashBranch,
+  resetWorkingDialog, confirmResetWorking,
+  cleanUntrackedDialog, confirmCleanUntracked,
+  isAnyDialogOpen,
+} = dialogs;
+
+const {
+  copyFeedback,
+  branchMenu, handleBranchContextMenu, closeBranchMenu,
+  handleBranchCheckout, handleBranchRename, handleBranchDelete,
+  handleBranchMerge, handleBranchRebase, handleBranchPush, handleBranchPull,
+  handleBranchFetch, handleBranchCopyName, handleBranchCreateBranch,
+  commitMenu, handleCommitContextMenu, closeCommitMenu,
+  handleCommitAddTag, handleCommitCreateBranch, handleCommitCheckout,
+  handleCommitCherryPick, handleCommitRevert, handleCommitMergeInto,
+  handleCommitReset, handleCommitCopyHash, handleCommitCopySubject,
+  tagMenu, handleTagContextMenu, closeTagMenu,
+  handleTagViewDetails, handleTagDelete, handleTagPush, handleTagCopyName,
+  uncommittedMenu, handleUncommittedContextMenu, closeUncommittedMenu,
+  handleUncommittedStash, handleUncommittedReset, handleUncommittedClean,
+  stashMenu, handleStashContextMenu, closeStashMenu,
+  handleStashApply, handleStashPop, handleStashDrop,
+  handleStashCreateBranch, handleStashCopyName, handleStashCopyHash,
+} = menus;
 
 // Branches to highlight based on active conversation's worktree branch
 const highlightBranches = computed<string[]>(() => {
@@ -179,6 +224,7 @@ const isNotGitRepo = computed(() => {
 // Last Updated Indicator (FR-035)
 // ============================================================================
 
+const TIMESTAMP_REFRESH_INTERVAL = 5000;
 const now = ref(Date.now());
 let nowTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -186,7 +232,7 @@ const startTimeUpdates = () => {
   if (nowTimer) return;
   nowTimer = setInterval(() => {
     now.value = Date.now();
-  }, 5000);
+  }, TIMESTAMP_REFRESH_INTERVAL);
 };
 
 const stopTimeUpdates = () => {
@@ -345,680 +391,8 @@ const groupedBranchFilter = computed(() => {
 });
 
 // ============================================================================
-// Branch Context Menu (FR-023 to FR-032)
-// ============================================================================
-const branchMenu = ref<{
-  visible: boolean;
-  branch: string;
-  x: number;
-  y: number;
-  isCurrentBranch: boolean;
-  isLocal: boolean;
-  commitHash: string;
-}>({
-  visible: false,
-  branch: "",
-  x: 0,
-  y: 0,
-  isCurrentBranch: false,
-  isLocal: true,
-  commitHash: "",
-});
-
-function handleBranchContextMenu(data: { branch: string; x: number; y: number; isCurrentBranch: boolean; isLocal: boolean; commitHash: string }) {
-  branchMenu.value = { visible: true, ...data };
-  store.setActiveContextMenu({ type: 'branch', props: data, position: { x: data.x, y: data.y } });
-}
-
-function closeBranchMenu() {
-  branchMenu.value.visible = false;
-  store.clearActiveContextMenu();
-}
-
-// Branch menu action handlers
-function handleBranchCheckout() {
-  closeBranchMenu();
-  checkoutDialog.value = {
-    visible: true,
-    branchName: branchMenu.value.branch,
-    loading: false,
-    error: null,
-  };
-}
-
-function handleBranchRename() {
-  const branch = branchMenu.value.branch;
-  closeBranchMenu();
-  renameDialog.value = { visible: true, branchName: branch, newName: branch, loading: false, error: null };
-}
-
-function handleBranchDelete() {
-  const { branch, isLocal } = branchMenu.value;
-  closeBranchMenu();
-  deleteBranchDialog.value = { visible: true, branchName: branch, isLocal, force: false, loading: false, error: null };
-}
-
-function handleBranchMerge() {
-  const branch = branchMenu.value.branch;
-  closeBranchMenu();
-  mergeDialog.value = { visible: true, branchName: branch, loading: false, error: null };
-}
-
-function handleBranchRebase() {
-  const branch = branchMenu.value.branch;
-  closeBranchMenu();
-  rebaseDialog.value = { visible: true, branchName: branch, loading: false, error: null };
-}
-
-function handleBranchPush() {
-  const branch = branchMenu.value.branch;
-  closeBranchMenu();
-  pushDialog.value = { visible: true, branchName: branch, loading: false, error: null };
-}
-
-function handleBranchPull() {
-  const branch = branchMenu.value.branch;
-  closeBranchMenu();
-  pullDialog.value = { visible: true, branchName: branch, loading: false, error: null };
-}
-
-async function handleBranchFetch() {
-  const branch = branchMenu.value.branch;
-  closeBranchMenu();
-  await store.fetchBranch(branch);
-}
-
-async function handleBranchCopyName() {
-  const name = branchMenu.value.branch;
-  closeBranchMenu();
-  await store.copyToClipboard(name);
-  showCopyFeedback(branchMenu.value.x, branchMenu.value.y);
-}
-
-function handleBranchCreateBranch() {
-  closeBranchMenu();
-  createBranchDialog.value = {
-    visible: true,
-    fromCommit: branchMenu.value.commitHash,
-    loading: false,
-    error: null,
-  };
-}
-
-// ============================================================================
-// Commit Context Menu (FR-033 to FR-039)
-// ============================================================================
-const commitMenu = ref<{
-  visible: boolean;
-  commit: GitLogCommit | null;
-  x: number;
-  y: number;
-}>({
-  visible: false,
-  commit: null,
-  x: 0,
-  y: 0,
-});
-
-function handleCommitContextMenu(data: { commit: GitLogCommit; x: number; y: number }) {
-  commitMenu.value = { visible: true, commit: data.commit, x: data.x, y: data.y };
-  store.setActiveContextMenu({ type: 'commit', props: data, position: { x: data.x, y: data.y } });
-}
-
-function closeCommitMenu() {
-  commitMenu.value.visible = false;
-  store.clearActiveContextMenu();
-}
-
-function withCommitMenuCommit(action: (commit: GitLogCommit) => unknown | Promise<unknown>): boolean | Promise<boolean> {
-  const commit = commitMenu.value.commit;
-  if (!commit) return false;
-  closeCommitMenu();
-  const result = action(commit);
-  if (result && typeof (result as Promise<unknown>).then === "function") {
-    return (result as Promise<unknown>).then(() => true);
-  }
-  return true;
-}
-
-function handleCommitAddTag() {
-  withCommitMenuCommit((commit) => {
-    tagCreateDialog.value = { visible: true, commitHash: commit.hash, loading: false, error: null };
-  });
-}
-
-function handleCommitCreateBranch() {
-  withCommitMenuCommit((commit) => {
-    createBranchDialog.value = { visible: true, fromCommit: commit.hash, loading: false, error: null };
-  });
-}
-
-function handleCommitCheckout() {
-  withCommitMenuCommit((commit) => {
-    checkoutDialog.value = { visible: true, branchName: commit.hash, loading: false, error: null };
-  });
-}
-
-function handleCommitCherryPick() {
-  withCommitMenuCommit((commit) => {
-    cherryPickDialog.value = { visible: true, commitHash: commit.hash, commitMessage: commit.message, loading: false, error: null };
-  });
-}
-
-async function handleCommitRevert() {
-  await withCommitMenuCommit((commit) => store.revertCommit(commit.hash));
-}
-
-function handleCommitMergeInto() {
-  withCommitMenuCommit((commit) => {
-    mergeDialog.value = { visible: true, branchName: commit.shortHash, loading: false, error: null };
-  });
-}
-
-function handleCommitReset() {
-  withCommitMenuCommit((commit) => {
-    resetDialog.value = { visible: true, commitHash: commit.hash, commitMessage: commit.message, loading: false, error: null };
-  });
-}
-
-async function handleCommitCopyHash() {
-  const { x, y } = commitMenu.value;
-  const copied = await withCommitMenuCommit((commit) => store.copyToClipboard(commit.hash));
-  if (!copied) return;
-  showCopyFeedback(x, y);
-}
-
-async function handleCommitCopySubject() {
-  await withCommitMenuCommit((commit) => store.copyCommitSubject(commit));
-}
-
-// ============================================================================
-// Tag Context Menu (FR-040 to FR-044)
-// ============================================================================
-const tagMenu = ref<{
-  visible: boolean;
-  tag: string;
-  x: number;
-  y: number;
-  commitHash: string;
-}>({
-  visible: false,
-  tag: "",
-  x: 0,
-  y: 0,
-  commitHash: "",
-});
-
-function handleTagContextMenu(data: { tag: string; x: number; y: number; commitHash: string }) {
-  tagMenu.value = { visible: true, ...data };
-  store.setActiveContextMenu({ type: 'tag', props: data, position: { x: data.x, y: data.y } });
-}
-
-function closeTagMenu() {
-  tagMenu.value.visible = false;
-  store.clearActiveContextMenu();
-}
-
-async function handleTagViewDetails() {
-  const tag = tagMenu.value.tag;
-  closeTagMenu();
-  tagDetailDialog.value = { visible: true, tagName: tag, loading: true, tagDetail: null };
-  const result = await store.getTagDetail(tag);
-  tagDetailDialog.value.loading = false;
-  if (result.success && result.data) {
-    tagDetailDialog.value.tagDetail = result.data;
-  }
-}
-
-function handleTagDelete() {
-  const tag = tagMenu.value.tag;
-  closeTagMenu();
-  tagDeleteDialog.value = { visible: true, tagName: tag, loading: false, error: null };
-}
-
-async function handleTagPush() {
-  const tag = tagMenu.value.tag;
-  closeTagMenu();
-  await store.pushTag(tag);
-}
-
-async function handleTagCopyName() {
-  const tag = tagMenu.value.tag;
-  closeTagMenu();
-  await store.copyToClipboard(tag);
-  showCopyFeedback(tagMenu.value.x, tagMenu.value.y);
-}
-
-// ============================================================================
-// Uncommitted Changes Context Menu
-// ============================================================================
-const uncommittedMenu = ref<{ visible: boolean; x: number; y: number }>({
-  visible: false, x: 0, y: 0,
-});
-
-function handleUncommittedContextMenu(data: { x: number; y: number }) {
-  uncommittedMenu.value = { visible: true, ...data };
-  store.setActiveContextMenu({ type: 'uncommitted', props: data, position: { x: data.x, y: data.y } });
-}
-
-function closeUncommittedMenu() {
-  uncommittedMenu.value.visible = false;
-  store.clearActiveContextMenu();
-}
-
-function handleUncommittedStash() {
-  closeUncommittedMenu();
-  stashDialog.value = { visible: true, loading: false, error: null };
-}
-
-function handleUncommittedReset() {
-  closeUncommittedMenu();
-  resetWorkingDialog.value = { visible: true, loading: false, error: null };
-}
-
-async function handleUncommittedClean() {
-  closeUncommittedMenu();
-  cleanUntrackedDialog.value = { visible: true, loading: false, error: null };
-}
-
-// ============================================================================
-// Stash Context Menu (FR-046 to FR-051)
-// ============================================================================
-const stashMenu = ref<{
-  visible: boolean;
-  stash: GitStash | null;
-  x: number;
-  y: number;
-}>({
-  visible: false,
-  stash: null,
-  x: 0,
-  y: 0,
-});
-
-function handleStashContextMenu(data: { stash: GitStash; x: number; y: number }) {
-  stashMenu.value = { visible: true, stash: data.stash, x: data.x, y: data.y };
-  store.setActiveContextMenu({ type: 'stash', props: data, position: { x: data.x, y: data.y } });
-}
-
-function closeStashMenu() {
-  stashMenu.value.visible = false;
-  store.clearActiveContextMenu();
-}
-
-function withStashMenuItem(action: (stash: GitStash) => unknown | Promise<unknown>): boolean | Promise<boolean> {
-  const stash = stashMenu.value.stash;
-  if (!stash) return false;
-  closeStashMenu();
-  const result = action(stash);
-  if (result && typeof (result as Promise<unknown>).then === "function") {
-    return (result as Promise<unknown>).then(() => true);
-  }
-  return true;
-}
-
-async function handleStashApply() {
-  await withStashMenuItem((stash) => store.applyStash(stash.index));
-}
-
-async function handleStashPop() {
-  await withStashMenuItem((stash) => store.popStash(stash.index));
-}
-
-async function handleStashDrop() {
-  await withStashMenuItem((stash) => store.dropStash(stash.index));
-}
-
-function handleStashCreateBranch() {
-  withStashMenuItem((stash) => {
-    stashBranchDialog.value = { visible: true, stashIndex: stash.index, loading: false, error: null };
-  });
-}
-
-async function handleStashCopyName() {
-  const { x, y } = stashMenu.value;
-  const copied = await withStashMenuItem((stash) => store.copyToClipboard(`stash@{${stash.index}}`));
-  if (!copied) return;
-  showCopyFeedback(x, y);
-}
-
-async function handleStashCopyHash() {
-  const { x, y } = stashMenu.value;
-  const copied = await withStashMenuItem((stash) => store.copyToClipboard(stash.hash));
-  if (!copied) return;
-  showCopyFeedback(x, y);
-}
-
-// ============================================================================
-// Dialogs State
-// ============================================================================
-
-// Checkout
-const checkoutDialog = ref<{ visible: boolean; branchName: string; loading: boolean; error: string | null }>({
-  visible: false, branchName: "", loading: false, error: null,
-});
-
-async function confirmCheckout() {
-  checkoutDialog.value.loading = true;
-  checkoutDialog.value.error = null;
-  const result = await store.checkoutBranch(checkoutDialog.value.branchName);
-  checkoutDialog.value.loading = false;
-  if (result.success) {
-    checkoutDialog.value.visible = false;
-  } else {
-    checkoutDialog.value.error = result.error || "Unknown error";
-  }
-}
-
-// Create Branch
-const createBranchDialog = ref<{ visible: boolean; fromCommit: string; loading: boolean; error: string | null }>({
-  visible: false, fromCommit: "", loading: false, error: null,
-});
-
-async function confirmCreateBranch(options: { name: string; checkout: boolean }) {
-  createBranchDialog.value.loading = true;
-  createBranchDialog.value.error = null;
-  const result = await store.createBranch(options.name, createBranchDialog.value.fromCommit);
-  createBranchDialog.value.loading = false;
-  if (result.success) {
-    if (options.checkout) {
-      await store.checkoutBranch(options.name);
-    }
-    createBranchDialog.value.visible = false;
-  } else {
-    createBranchDialog.value.error = result.error || "Unknown error";
-  }
-}
-
-// Delete Branch
-const deleteBranchDialog = ref<{ visible: boolean; branchName: string; isLocal: boolean; force: boolean; loading: boolean; error: string | null }>({
-  visible: false, branchName: "", isLocal: true, force: false, loading: false, error: null,
-});
-
-async function confirmDeleteBranch(options?: { force: boolean }) {
-  deleteBranchDialog.value.loading = true;
-  deleteBranchDialog.value.error = null;
-  const { branchName, isLocal } = deleteBranchDialog.value;
-  const force = options?.force ?? deleteBranchDialog.value.force;
-  const result = isLocal
-    ? await store.deleteLocalBranch(branchName, force)
-    : await store.deleteRemoteBranch(branchName);
-  deleteBranchDialog.value.loading = false;
-  if (result.success) {
-    deleteBranchDialog.value.visible = false;
-  } else {
-    deleteBranchDialog.value.error = result.error || "Unknown error";
-  }
-}
-
-// Rename Branch
-const renameDialog = ref<{ visible: boolean; branchName: string; newName: string; loading: boolean; error: string | null }>({
-  visible: false, branchName: "", newName: "", loading: false, error: null,
-});
-
-async function confirmRenameBranch() {
-  if (!renameDialog.value.newName.trim()) {
-    renameDialog.value.error = "Branch name is required";
-    return;
-  }
-  renameDialog.value.loading = true;
-  renameDialog.value.error = null;
-  const result = await store.renameBranch(renameDialog.value.branchName, renameDialog.value.newName.trim());
-  renameDialog.value.loading = false;
-  if (result.success) {
-    renameDialog.value.visible = false;
-  } else {
-    renameDialog.value.error = result.error || "Unknown error";
-  }
-}
-
-// Merge
-const mergeDialog = ref<{ visible: boolean; branchName: string; loading: boolean; error: string | null }>({
-  visible: false, branchName: "", loading: false, error: null,
-});
-
-async function confirmMerge(options: { noCommit: boolean; noFastForward: boolean; squash: boolean }) {
-  mergeDialog.value.loading = true;
-  mergeDialog.value.error = null;
-  const result = await store.mergeBranch(mergeDialog.value.branchName, options);
-  mergeDialog.value.loading = false;
-  if (result.success) {
-    mergeDialog.value.visible = false;
-  } else {
-    mergeDialog.value.error = result.error || "Unknown error";
-  }
-}
-
-// Rebase
-const rebaseDialog = ref<{ visible: boolean; branchName: string; loading: boolean; error: string | null }>({
-  visible: false, branchName: "", loading: false, error: null,
-});
-
-async function confirmRebase() {
-  rebaseDialog.value.loading = true;
-  rebaseDialog.value.error = null;
-  const result = await store.rebaseBranch(rebaseDialog.value.branchName);
-  rebaseDialog.value.loading = false;
-  if (result.success) {
-    rebaseDialog.value.visible = false;
-  } else {
-    rebaseDialog.value.error = result.error || "Unknown error";
-  }
-}
-
-// Push
-const pushDialog = ref<{ visible: boolean; branchName: string; loading: boolean; error: string | null }>({
-  visible: false, branchName: "", loading: false, error: null,
-});
-
-async function confirmPush(options: { remote: string; force: boolean; forceWithLease: boolean }) {
-  pushDialog.value.loading = true;
-  pushDialog.value.error = null;
-  const result = await store.pushBranch(pushDialog.value.branchName, options.remote, options.force, options.forceWithLease);
-  pushDialog.value.loading = false;
-  if (result.success) {
-    pushDialog.value.visible = false;
-  } else {
-    pushDialog.value.error = result.error || "Unknown error";
-  }
-}
-
-// Pull
-const pullDialog = ref<{ visible: boolean; branchName: string; loading: boolean; error: string | null }>({
-  visible: false, branchName: "", loading: false, error: null,
-});
-
-async function confirmPull(options: { remote: string; noFastForward: boolean; squash: boolean }) {
-  pullDialog.value.loading = true;
-  pullDialog.value.error = null;
-  const result = await store.pullBranch(pullDialog.value.branchName, options.remote, options.noFastForward, options.squash);
-  pullDialog.value.loading = false;
-  if (result.success) {
-    pullDialog.value.visible = false;
-  } else {
-    pullDialog.value.error = result.error || "Unknown error";
-  }
-}
-
-// Cherry Pick
-const cherryPickDialog = ref<{ visible: boolean; commitHash: string; commitMessage: string; loading: boolean; error: string | null }>({
-  visible: false, commitHash: "", commitMessage: "", loading: false, error: null,
-});
-
-async function confirmCherryPick(options: { recordOrigin: boolean; noCommit: boolean }) {
-  cherryPickDialog.value.loading = true;
-  cherryPickDialog.value.error = null;
-  const result = await store.cherryPickCommit(cherryPickDialog.value.commitHash, options.recordOrigin, options.noCommit);
-  cherryPickDialog.value.loading = false;
-  if (result.success) {
-    cherryPickDialog.value.visible = false;
-  } else {
-    cherryPickDialog.value.error = result.error || "Unknown error";
-  }
-}
-
-// Reset to commit
-const resetDialog = ref<{ visible: boolean; commitHash: string; commitMessage: string; loading: boolean; error: string | null }>({
-  visible: false, commitHash: "", commitMessage: "", loading: false, error: null,
-});
-
-async function confirmReset(options: { mode: 'soft' | 'mixed' | 'hard' }) {
-  resetDialog.value.loading = true;
-  resetDialog.value.error = null;
-  const result = await store.resetToCommit(resetDialog.value.commitHash, options.mode);
-  resetDialog.value.loading = false;
-  if (result.success) {
-    resetDialog.value.visible = false;
-  } else {
-    resetDialog.value.error = result.error || "Unknown error";
-  }
-}
-
-// Tag Create
-const tagCreateDialog = ref<{ visible: boolean; commitHash: string; loading: boolean; error: string | null }>({
-  visible: false, commitHash: "", loading: false, error: null,
-});
-
-async function confirmTagCreate(options: { name: string; annotated: boolean; message?: string; pushToRemote?: string }) {
-  tagCreateDialog.value.loading = true;
-  tagCreateDialog.value.error = null;
-  const result = await store.createTag(options.name, tagCreateDialog.value.commitHash, options.annotated, options.message, options.pushToRemote);
-  tagCreateDialog.value.loading = false;
-  if (result.success) {
-    tagCreateDialog.value.visible = false;
-  } else {
-    tagCreateDialog.value.error = result.error || "Unknown error";
-  }
-}
-
-// Tag Delete
-const tagDeleteDialog = ref<{ visible: boolean; tagName: string; loading: boolean; error: string | null }>({
-  visible: false, tagName: "", loading: false, error: null,
-});
-
-async function confirmTagDelete(options: { deleteFromRemote: boolean; remote?: string }) {
-  tagDeleteDialog.value.loading = true;
-  tagDeleteDialog.value.error = null;
-  const result = await store.deleteTag(tagDeleteDialog.value.tagName, options.deleteFromRemote ? (options.remote || 'origin') : undefined);
-  tagDeleteDialog.value.loading = false;
-  if (result.success) {
-    tagDeleteDialog.value.visible = false;
-  } else {
-    tagDeleteDialog.value.error = result.error || "Unknown error";
-  }
-}
-
-// Tag Detail
-const tagDetailDialog = ref<{ visible: boolean; tagName: string; loading: boolean; tagDetail: GitTag | null }>({
-  visible: false, tagName: "", loading: false, tagDetail: null,
-});
-
-// Stash Changes
-const stashDialog = ref<{ visible: boolean; loading: boolean; error: string | null }>({
-  visible: false, loading: false, error: null,
-});
-
-async function confirmStash(options: { message?: string; includeUntracked: boolean }) {
-  stashDialog.value.loading = true;
-  stashDialog.value.error = null;
-  const result = await store.stashChanges(options.message, options.includeUntracked);
-  stashDialog.value.loading = false;
-  if (result.success) {
-    stashDialog.value.visible = false;
-  } else {
-    stashDialog.value.error = result.error || "Unknown error";
-  }
-}
-
-// Stash Branch (FR-049)
-const stashBranchDialog = ref<{ visible: boolean; stashIndex: number; loading: boolean; error: string | null }>({
-  visible: false, stashIndex: 0, loading: false, error: null,
-});
-const stashBranchInput = ref("");
-
-async function confirmStashBranch(branchName: string) {
-  stashBranchDialog.value.loading = true;
-  stashBranchDialog.value.error = null;
-  const result = await store.stashBranch(stashBranchDialog.value.stashIndex, branchName);
-  stashBranchDialog.value.loading = false;
-  if (result.success) {
-    stashBranchDialog.value.visible = false;
-  } else {
-    stashBranchDialog.value.error = result.error || "Unknown error";
-  }
-}
-
-// Reset Working
-const resetWorkingDialog = ref<{ visible: boolean; loading: boolean; error: string | null }>({
-  visible: false, loading: false, error: null,
-});
-
-async function confirmResetWorking(options: { mode: 'mixed' | 'hard' }) {
-  resetWorkingDialog.value.loading = true;
-  resetWorkingDialog.value.error = null;
-  const result = await store.resetWorking(options.mode);
-  resetWorkingDialog.value.loading = false;
-  if (result.success) {
-    resetWorkingDialog.value.visible = false;
-  } else {
-    resetWorkingDialog.value.error = result.error || "Unknown error";
-  }
-}
-
-// Clean untracked files
-const cleanUntrackedDialog = ref<{ visible: boolean; loading: boolean; error: string | null }>({
-  visible: false, loading: false, error: null,
-});
-
-async function confirmCleanUntracked() {
-  cleanUntrackedDialog.value.loading = true;
-  cleanUntrackedDialog.value.error = null;
-  const result = await store.cleanUntracked();
-  cleanUntrackedDialog.value.loading = false;
-  if (result.success) {
-    cleanUntrackedDialog.value.visible = false;
-  } else {
-    cleanUntrackedDialog.value.error = result.error || "Unknown error";
-  }
-}
-
-// ============================================================================
-// Copy Feedback
-// ============================================================================
-const copyFeedback = ref<{ visible: boolean; x: number; y: number }>({
-  visible: false, x: 0, y: 0,
-});
-
-function showCopyFeedback(x: number, y: number) {
-  copyFeedback.value = { visible: true, x, y };
-  setTimeout(() => {
-    copyFeedback.value.visible = false;
-  }, 1500);
-}
-
-// ============================================================================
 // Dialog Registration for Auto-Refresh Deferral (FR-065, T115)
 // ============================================================================
-const isAnyDialogOpen = computed(() =>
-  checkoutDialog.value.visible ||
-  createBranchDialog.value.visible ||
-  deleteBranchDialog.value.visible ||
-  renameDialog.value.visible ||
-  mergeDialog.value.visible ||
-  rebaseDialog.value.visible ||
-  pushDialog.value.visible ||
-  pullDialog.value.visible ||
-  cherryPickDialog.value.visible ||
-  resetDialog.value.visible ||
-  tagCreateDialog.value.visible ||
-  tagDeleteDialog.value.visible ||
-  tagDetailDialog.value.visible ||
-  stashDialog.value.visible ||
-  stashBranchDialog.value.visible ||
-  resetWorkingDialog.value.visible ||
-  cleanUntrackedDialog.value.visible
-);
-
 watch(isAnyDialogOpen, (open) => {
   if (open) {
     store.setActiveDialog({ type: 'generic', props: {} });

@@ -1,25 +1,15 @@
-import { isGitRepositorySync, getTagDetail } from "~/server/utils/git";
-import { logger } from "~/server/utils/logger";
-import { getProjectDir } from "~/server/utils/projectDir";
+import { getTagDetail } from "~/server/utils/git";
+import { resolveWorkingDirectoryFromQuery, handleGitApiError } from "~/server/utils/gitApiHelpers";
 
 export default defineEventHandler(async (event) => {
   try {
+    const workingDirectory = resolveWorkingDirectoryFromQuery(event);
     const name = getRouterParam(event, "name");
-    const query = getQuery(event);
-    const workingDirectory =
-      (query.workingDirectory as string) || getProjectDir();
 
     if (!name) {
       throw createError({
         statusCode: 400,
         statusMessage: "Tag name is required",
-      });
-    }
-
-    if (!isGitRepositorySync(workingDirectory)) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: "Not a Git repository",
       });
     }
 
@@ -35,14 +25,6 @@ export default defineEventHandler(async (event) => {
       });
     }
   } catch (error) {
-    if (error && typeof error === "object" && "statusCode" in error) {
-      throw error;
-    }
-
-    logger.api.error("Error fetching tag detail", { error });
-    throw createError({
-      statusCode: 500,
-      statusMessage: "Failed to fetch tag detail",
-    });
+    handleGitApiError(error, "fetching tag detail", "Failed to fetch tag detail");
   }
 });

@@ -1,13 +1,15 @@
 import type { GitStateResponse, RepositoryState } from "~/types/git";
 import {
-  isGitRepositorySync,
   getHeadCommit,
   getBranchListHash,
   getUncommittedFileCount,
   getWorkingTreeHash,
   getStashListHash,
 } from "~/server/utils/git";
-import { logger } from "~/server/utils/logger";
+import {
+  resolveWorkingDirectoryFromQuery,
+  handleGitApiError,
+} from "~/server/utils/gitApiHelpers";
 
 /**
  * GET /api/git/state
@@ -16,26 +18,8 @@ import { logger } from "~/server/utils/logger";
  */
 export default defineEventHandler(async (event) => {
   try {
-    const query = getQuery(event);
-    const workingDirectory = query.workingDirectory as string | undefined;
+    const workingDirectory = resolveWorkingDirectoryFromQuery(event);
 
-    if (!workingDirectory) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: "workingDirectory query parameter is required",
-      });
-    }
-
-    // Check if directory is a git repository (NFR-003)
-    if (!isGitRepositorySync(workingDirectory)) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: "Not a Git repository",
-        data: { code: "NOT_GIT_REPO" },
-      });
-    }
-
-    // Build repository state snapshot
     const state: RepositoryState = {
       headCommit: getHeadCommit(workingDirectory),
       branchListHash: getBranchListHash(workingDirectory),
@@ -46,17 +30,8 @@ export default defineEventHandler(async (event) => {
     };
 
     const response: GitStateResponse = { state };
-
     return response;
   } catch (error) {
-    if (error && typeof error === "object" && "statusCode" in error) {
-      throw error;
-    }
-
-    logger.api.error("Error reading git state", { error });
-    throw createError({
-      statusCode: 500,
-      statusMessage: "Failed to read git state",
-    });
+    handleGitApiError(error, "Error reading git state", "Failed to read git state");
   }
 });

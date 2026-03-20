@@ -1,7 +1,10 @@
 import type { GitStatusResponse, GitStatusFile } from "~/types/git";
 import { FileChangeStatus } from "~/types/git";
-import { isGitRepository, execGit } from "~/server/utils/git";
-import { logger } from "~/server/utils/logger";
+import { execGit } from "~/server/utils/git";
+import {
+  resolveWorkingDirectoryFromQuery,
+  handleGitApiError,
+} from "~/server/utils/gitApiHelpers";
 
 /**
  * GET /api/git/status
@@ -9,23 +12,7 @@ import { logger } from "~/server/utils/logger";
  */
 export default defineEventHandler(async (event) => {
   try {
-    const query = getQuery(event);
-    const workingDirectory = query.workingDirectory as string | undefined;
-
-    if (!workingDirectory) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: "workingDirectory query parameter is required",
-      });
-    }
-
-    if (!isGitRepository(workingDirectory)) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: "Not a Git repository",
-        data: { code: "NOT_GIT_REPO" },
-      });
-    }
+    const workingDirectory = resolveWorkingDirectoryFromQuery(event);
 
     const output = execGit(workingDirectory, "status --porcelain");
     const lines = output.trim().split("\n").filter(Boolean);
@@ -74,7 +61,7 @@ export default defineEventHandler(async (event) => {
       if (workingStatus !== " " || isUntracked) {
         let status: FileChangeStatus;
         if (isUntracked) {
-          status = FileChangeStatus.Added; // Untracked = Added (new file)
+          status = FileChangeStatus.Added;
         } else if (workingStatus === "D") {
           status = FileChangeStatus.Deleted;
         } else {
@@ -102,14 +89,6 @@ export default defineEventHandler(async (event) => {
 
     return response;
   } catch (error) {
-    if (error && typeof error === "object" && "statusCode" in error) {
-      throw error;
-    }
-
-    logger.api.error("Error reading git status", { error });
-    throw createError({
-      statusCode: 500,
-      statusMessage: "Failed to read git status",
-    });
+    handleGitApiError(error, "Error reading git status", "Failed to read git status");
   }
 });

@@ -2,6 +2,9 @@
 import { computed, ref, watch } from 'vue'
 import { ChevronUpDownIcon, XMarkIcon } from '@heroicons/vue/24/outline'
 import type { BranchResponse } from '~/types/git'
+import { useWorktreeStore } from '~/stores/worktree'
+
+const worktreeStore = useWorktreeStore()
 
 const props = defineProps<{
   show: boolean
@@ -29,8 +32,9 @@ async function loadBranches() {
   loading.value = true
   error.value = ''
   try {
+    await worktreeStore.initialize()
     const res = await $fetch<BranchResponse>('/api/git/branches', {
-      query: { excludeSc: true }
+      query: { excludeSc: true, workingDirectory: worktreeStore.workingDirectory }
     })
     const localBranches = res.branches
       .filter(b => !b.isRemote)

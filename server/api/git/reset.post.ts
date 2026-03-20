@@ -1,24 +1,20 @@
-import { isGitRepository, resetBranch } from "~/server/utils/git";
+import { resetBranch } from "~/server/utils/git";
 import { logger } from "~/server/utils/logger";
-import { getProjectDir } from "~/server/utils/projectDir";
+import { resolveWorkingDirectoryFromBody, handleGitApiError } from "~/server/utils/gitApiHelpers";
 
 export default defineEventHandler(async (event) => {
   try {
-    const body = await readBody<{
-      workingDirectory?: string;
-      hash: string;
-      mode: "soft" | "mixed" | "hard";
-    }>(event);
-    const workingDirectory = body.workingDirectory || getProjectDir();
+    const { workingDirectory, body } = await resolveWorkingDirectoryFromBody(event);
+    const typedBody = body as { hash: string; mode: "soft" | "mixed" | "hard" };
 
-    if (!body.hash) {
+    if (!typedBody.hash) {
       throw createError({
         statusCode: 400,
         statusMessage: "hash is required",
       });
     }
 
-    if (!body.mode) {
+    if (!typedBody.mode) {
       throw createError({
         statusCode: 400,
         statusMessage: "mode is required",
@@ -26,22 +22,15 @@ export default defineEventHandler(async (event) => {
     }
 
     const validModes = ["soft", "mixed", "hard"];
-    if (!validModes.includes(body.mode)) {
+    if (!validModes.includes(typedBody.mode)) {
       throw createError({
         statusCode: 400,
-        statusMessage: `Invalid mode '${body.mode}'. Must be one of: soft, mixed, hard`,
-      });
-    }
-
-    if (!(await isGitRepository(workingDirectory))) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: "Not a Git repository",
+        statusMessage: `Invalid mode '${typedBody.mode}'. Must be one of: soft, mixed, hard`,
       });
     }
 
     try {
-      resetBranch(workingDirectory, body.hash, body.mode);
+      resetBranch(workingDirectory, typedBody.hash, typedBody.mode);
     } catch (gitError) {
       const errorMessage = gitError instanceof Error ? gitError.message : "Unknown error";
 
@@ -51,18 +40,10 @@ export default defineEventHandler(async (event) => {
       });
     }
 
-    logger.api.info("Git reset successful", { hash: body.hash, mode: body.mode });
+    logger.api.info("Git reset successful", { hash: typedBody.hash, mode: typedBody.mode });
 
     return { success: true };
   } catch (error) {
-    if (error && typeof error === "object" && "statusCode" in error) {
-      throw error;
-    }
-
-    logger.api.error("Error during git reset", { error });
-    throw createError({
-      statusCode: 500,
-      statusMessage: "Failed to reset branch",
-    });
+    handleGitApiError(error, "Error during git reset", "Failed to reset branch");
   }
 });

@@ -1,28 +1,15 @@
-import { isGitRepository, createStash } from "~/server/utils/git";
+import { createStash } from "~/server/utils/git";
 import { logger } from "~/server/utils/logger";
-import { getProjectDir } from "~/server/utils/projectDir";
+import { resolveWorkingDirectoryFromBody, handleGitApiError } from "~/server/utils/gitApiHelpers";
 
 export default defineEventHandler(async (event) => {
   try {
-    const body = await readBody<{
-      workingDirectory?: string;
-      message?: string;
-      includeUntracked?: boolean;
-    }>(event);
-    const workingDirectory = body.workingDirectory || getProjectDir();
-
-    if (!isGitRepository(workingDirectory)) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: "Not a Git repository",
-        data: { code: "NOT_GIT_REPO" },
-      });
-    }
+    const { workingDirectory, body } = await resolveWorkingDirectoryFromBody(event);
 
     try {
       createStash(workingDirectory, {
-        message: body.message,
-        includeUntracked: body.includeUntracked,
+        message: body.message as string | undefined,
+        includeUntracked: body.includeUntracked as boolean | undefined,
       });
     } catch (gitError) {
       const errorMessage = gitError instanceof Error ? gitError.message : "Unknown error";
@@ -39,14 +26,6 @@ export default defineEventHandler(async (event) => {
 
     return { success: true };
   } catch (error) {
-    if (error && typeof error === "object" && "statusCode" in error) {
-      throw error;
-    }
-
-    logger.api.error("Error creating stash", { error });
-    throw createError({
-      statusCode: 500,
-      statusMessage: "Failed to create stash",
-    });
+    handleGitApiError(error, "Error creating stash", "Failed to create stash");
   }
 });

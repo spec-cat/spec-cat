@@ -1,6 +1,6 @@
-import { isGitRepositorySync, deleteRemote } from "~/server/utils/git";
+import { deleteRemote } from "~/server/utils/git";
+import { resolveWorkingDirectoryFromBody, handleGitApiError } from "~/server/utils/gitApiHelpers";
 import { logger } from "~/server/utils/logger";
-import { getProjectDir } from "~/server/utils/projectDir";
 
 /**
  * DELETE /api/git/remote
@@ -8,11 +8,7 @@ import { getProjectDir } from "~/server/utils/projectDir";
  */
 export default defineEventHandler(async (event) => {
   try {
-    const body = await readBody<{
-      workingDirectory?: string;
-      name: string;
-    }>(event);
-    const workingDirectory = body.workingDirectory || getProjectDir();
+    const { workingDirectory, body } = await resolveWorkingDirectoryFromBody(event);
 
     if (!body.name) {
       throw createError({
@@ -21,15 +17,8 @@ export default defineEventHandler(async (event) => {
       });
     }
 
-    if (!isGitRepositorySync(workingDirectory)) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: "Not a Git repository",
-      });
-    }
-
     try {
-      deleteRemote(workingDirectory, body.name);
+      deleteRemote(workingDirectory, body.name as string);
     } catch (gitError) {
       const errorMessage =
         gitError instanceof Error ? gitError.message : "Unknown error";
@@ -43,14 +32,6 @@ export default defineEventHandler(async (event) => {
 
     return { success: true };
   } catch (error) {
-    if (error && typeof error === "object" && "statusCode" in error) {
-      throw error;
-    }
-
-    logger.api.error("Error deleting git remote", { error });
-    throw createError({
-      statusCode: 500,
-      statusMessage: "Failed to delete remote",
-    });
+    handleGitApiError(error, "deleting git remote", "Failed to delete remote");
   }
 });

@@ -129,8 +129,6 @@ const remoteItems = computed<MenuItem[]>(() => [
 
 const menuItems = computed(() => (props.isLocal ? localItems.value : remoteItems.value));
 
-// --- Action dispatch ---
-
 const actionMap: Record<string, () => void> = {
   checkout: () => emit("checkout"),
   createBranch: () => emit("createBranch"),
@@ -145,10 +143,7 @@ const actionMap: Record<string, () => void> = {
 };
 
 function handleAction(key: string) {
-  const handler = actionMap[key];
-  if (handler) {
-    handler();
-  }
+  actionMap[key]?.();
   emit("close");
 }
 </script>

@@ -30,21 +30,15 @@ const menuItems: MenuItem[] = [
   { key: 'copyName', label: 'Copy Tag Name', icon: ClipboardDocumentIcon, separator: true },
 ]
 
-function handleAction(actionKey: string) {
-  switch (actionKey) {
-    case 'viewDetails':
-      emit('viewDetails')
-      break
-    case 'deleteTag':
-      emit('deleteTag')
-      break
-    case 'pushTag':
-      emit('pushTag')
-      break
-    case 'copyName':
-      emit('copyName')
-      break
-  }
+const actionMap: Record<string, () => void> = {
+  viewDetails: () => emit('viewDetails'),
+  deleteTag: () => emit('deleteTag'),
+  pushTag: () => emit('pushTag'),
+  copyName: () => emit('copyName'),
+}
+
+function handleAction(key: string) {
+  actionMap[key]?.()
 }
 </script>
 

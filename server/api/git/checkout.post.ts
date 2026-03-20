@@ -1,26 +1,16 @@
-import type { GitCheckoutRequest, GitCheckoutResponse } from "~/types/git";
-import { isGitRepository, execGit } from "~/server/utils/git";
+import type { GitCheckoutResponse } from "~/types/git";
+import { execGit } from "~/server/utils/git";
 import { logger } from "~/server/utils/logger";
-import { getProjectDir } from "~/server/utils/projectDir";
+import { resolveWorkingDirectoryFromBody, handleGitApiError } from "~/server/utils/gitApiHelpers";
 
 export default defineEventHandler(async (event): Promise<GitCheckoutResponse> => {
   try {
-    const body = await readBody<GitCheckoutRequest>(event);
-    const workingDirectory = body.workingDirectory || getProjectDir();
+    const { workingDirectory, body } = await resolveWorkingDirectoryFromBody(event);
 
     if (!body.branchName) {
       throw createError({
         statusCode: 400,
         statusMessage: "branchName is required",
-      });
-    }
-
-    // Check if directory is a git repository (NFR-003)
-    if (!(await isGitRepository(workingDirectory))) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: "Not a Git repository",
-        data: { code: "NOT_GIT_REPO" },
       });
     }
     const currentBranchRaw = execGit(workingDirectory, "rev-parse --abbrev-ref HEAD").trim();
@@ -31,13 +21,13 @@ export default defineEventHandler(async (event): Promise<GitCheckoutResponse> =>
 
     if (body.createBranch) {
       // Create branch without checkout: git branch <name> [<start-point>]
-      gitCommand = `branch "${body.branchName}"`;
+      gitCommand = `branch "${body.branchName as string}"`;
       if (body.fromCommit) {
-        gitCommand += ` "${body.fromCommit}"`;
+        gitCommand += ` "${body.fromCommit as string}"`;
       }
     } else {
       // Checkout existing branch
-      gitCommand = `checkout "${body.branchName}"`;
+      gitCommand = `checkout "${body.branchName as string}"`;
     }
 
     // Execute git command
@@ -50,14 +40,14 @@ export default defineEventHandler(async (event): Promise<GitCheckoutResponse> =>
       if (errorMessage.includes("already exists")) {
         throw createError({
           statusCode: 409,
-          statusMessage: `Branch '${body.branchName}' already exists`,
+          statusMessage: `Branch '${body.branchName as string}' already exists`,
         });
       }
 
       if (errorMessage.includes("did not match any")) {
         throw createError({
           statusCode: 404,
-          statusMessage: `Branch '${body.branchName}' not found`,
+          statusMessage: `Branch '${body.branchName as string}' not found`,
         });
       }
 
@@ -78,26 +68,18 @@ export default defineEventHandler(async (event): Promise<GitCheckoutResponse> =>
     const newHead = execGit(workingDirectory, "rev-parse HEAD").trim();
 
     logger.api.info("Git checkout successful", {
-      branch: body.branchName,
+      branch: body.branchName as string,
       newHead,
-      createBranch: body.createBranch,
+      createBranch: body.createBranch as boolean | undefined,
     });
 
     return {
       success: true,
       newHead,
-      newBranch: body.createBranch ? body.branchName : undefined,
+      newBranch: body.createBranch ? (body.branchName as string) : undefined,
       previousBranch,
     };
   } catch (error) {
-    if (error && typeof error === "object" && "statusCode" in error) {
-      throw error;
-    }
-
-    logger.api.error("Error during git checkout", { error });
-    throw createError({
-      statusCode: 500,
-      statusMessage: "Failed to checkout branch",
-    });
+    handleGitApiError(error, "Error during git checkout", "Failed to checkout branch");
   }
 });

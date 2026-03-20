@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, computed } from "vue";
+import { onMounted, ref, computed } from "vue";
 import { XMarkIcon } from "@heroicons/vue/24/outline";
 import { FILE_STATUS_CONFIG } from "~/types/git";
 import type { FileDiffResponse, FileChange } from "~/types/git";
@@ -65,10 +65,6 @@ function handleKeydown(event: KeyboardEvent) {
 
 onMounted(() => {
   containerRef.value?.focus();
-});
-
-onUnmounted(() => {
-  // cleanup if needed
 });
 </script>
 

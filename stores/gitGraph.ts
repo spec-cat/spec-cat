@@ -1,4 +1,5 @@
 import { defineStore } from "pinia";
+import type { Ref } from "vue";
 import type {
   GitBranch,
   GitTag,
@@ -95,6 +96,7 @@ export const useGitGraphStore = defineStore("gitGraph", () => {
   const isCheckingOut = ref(false);
 
   // Operation error (transient, auto-cleared) (T048)
+  const OPERATION_ERROR_TIMEOUT = 8000;
   const operationError = ref<string | null>(null);
   let operationErrorTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -103,7 +105,7 @@ export const useGitGraphStore = defineStore("gitGraph", () => {
     if (operationErrorTimer) clearTimeout(operationErrorTimer);
     operationErrorTimer = setTimeout(() => {
       operationError.value = null;
-    }, 8000);
+    }, OPERATION_ERROR_TIMEOUT);
   }
 
   function clearOperationError() {
@@ -885,59 +887,38 @@ export const useGitGraphStore = defineStore("gitGraph", () => {
     }
   }
 
+  async function fetchMergeBase(
+    branch: string,
+    baseBranch: string | null | undefined,
+    target: Ref<string | null>,
+  ) {
+    try {
+      const data = await $fetch<{ mergeBase: string | null }>('/api/git/merge-base', {
+        params: {
+          workingDirectory: workingDirectory.value!,
+          branch,
+          baseBranch: baseBranch ?? undefined,
+        }
+      });
+      target.value = data.mergeBase;
+    } catch {
+      target.value = null;
+    }
+  }
+
   async function refreshHighlightMergeBases() {
     if (!workingDirectory.value) return;
 
     const requests: Promise<void>[] = [];
 
     if (selectedFeatureId.value) {
-      requests.push((async () => {
-        try {
-          const data = await $fetch<{ mergeBase: string | null }>('/api/git/merge-base', {
-            params: {
-              workingDirectory: workingDirectory.value!,
-              branch: selectedFeatureId.value!,
-            }
-          });
-          featureMergeBase.value = data.mergeBase;
-        } catch {
-          featureMergeBase.value = null;
-        }
-      })());
+      requests.push(fetchMergeBase(selectedFeatureId.value, undefined, featureMergeBase));
     }
-
     if (conversationBranch.value) {
-      requests.push((async () => {
-        try {
-          const data = await $fetch<{ mergeBase: string | null }>('/api/git/merge-base', {
-            params: {
-              workingDirectory: workingDirectory.value!,
-              branch: conversationBranch.value!,
-              baseBranch: conversationBaseBranch.value ?? undefined,
-            }
-          });
-          conversationMergeBase.value = data.mergeBase;
-        } catch {
-          conversationMergeBase.value = null;
-        }
-      })());
+      requests.push(fetchMergeBase(conversationBranch.value, conversationBaseBranch.value, conversationMergeBase));
     }
-
     if (previewBranch.value) {
-      requests.push((async () => {
-        try {
-          const data = await $fetch<{ mergeBase: string | null }>('/api/git/merge-base', {
-            params: {
-              workingDirectory: workingDirectory.value!,
-              branch: previewBranch.value!,
-              baseBranch: previewBaseBranch.value ?? undefined,
-            }
-          });
-          previewMergeBase.value = data.mergeBase;
-        } catch {
-          previewMergeBase.value = null;
-        }
-      })());
+      requests.push(fetchMergeBase(previewBranch.value, previewBaseBranch.value, previewMergeBase));
     }
 
     if (requests.length > 0) {

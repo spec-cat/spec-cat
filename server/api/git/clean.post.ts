@@ -1,20 +1,11 @@
 import type { CleanUntrackedRequest, GitOperationResponse } from "~/types/git";
-import { cleanUntrackedFiles, isGitRepository } from "~/server/utils/git";
+import { cleanUntrackedFiles } from "~/server/utils/git";
 import { logger } from "~/server/utils/logger";
-import { getProjectDir } from "~/server/utils/projectDir";
+import { resolveWorkingDirectoryFromBody, handleGitApiError } from "~/server/utils/gitApiHelpers";
 
 export default defineEventHandler(async (event): Promise<GitOperationResponse> => {
   try {
-    const body = await readBody<CleanUntrackedRequest>(event);
-    const workingDirectory = body.workingDirectory || getProjectDir();
-
-    if (!(await isGitRepository(workingDirectory))) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: "Not a Git repository",
-        data: { code: "NOT_GIT_REPO" },
-      });
-    }
+    const { workingDirectory } = await resolveWorkingDirectoryFromBody(event);
 
     try {
       cleanUntrackedFiles(workingDirectory);
@@ -30,14 +21,6 @@ export default defineEventHandler(async (event): Promise<GitOperationResponse> =
 
     return { success: true };
   } catch (error) {
-    if (error && typeof error === "object" && "statusCode" in error) {
-      throw error;
-    }
-
-    logger.api.error("Error during git clean", { error });
-    throw createError({
-      statusCode: 500,
-      statusMessage: "Failed to clean untracked files",
-    });
+    handleGitApiError(error, "Error during git clean", "Failed to clean untracked files");
   }
 });

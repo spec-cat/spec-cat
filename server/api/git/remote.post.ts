@@ -1,6 +1,6 @@
-import { isGitRepositorySync, addRemote } from "~/server/utils/git";
+import { addRemote } from "~/server/utils/git";
 import { logger } from "~/server/utils/logger";
-import { getProjectDir } from "~/server/utils/projectDir";
+import { resolveWorkingDirectoryFromBody, handleGitApiError } from "~/server/utils/gitApiHelpers";
 
 /**
  * POST /api/git/remote
@@ -8,36 +8,25 @@ import { getProjectDir } from "~/server/utils/projectDir";
  */
 export default defineEventHandler(async (event) => {
   try {
-    const body = await readBody<{
-      workingDirectory?: string;
-      name: string;
-      url: string;
-    }>(event);
-    const workingDirectory = body.workingDirectory || getProjectDir();
+    const { workingDirectory, body } = await resolveWorkingDirectoryFromBody(event);
+    const typedBody = body as { name: string; url: string };
 
-    if (!body.name) {
+    if (!typedBody.name) {
       throw createError({
         statusCode: 400,
         statusMessage: "name is required",
       });
     }
 
-    if (!body.url) {
+    if (!typedBody.url) {
       throw createError({
         statusCode: 400,
         statusMessage: "url is required",
       });
     }
 
-    if (!isGitRepositorySync(workingDirectory)) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: "Not a Git repository",
-      });
-    }
-
     try {
-      addRemote(workingDirectory, body.name, body.url);
+      addRemote(workingDirectory, typedBody.name, typedBody.url);
     } catch (gitError) {
       const errorMessage =
         gitError instanceof Error ? gitError.message : "Unknown error";
@@ -47,18 +36,10 @@ export default defineEventHandler(async (event) => {
       });
     }
 
-    logger.api.info("Git remote added", { name: body.name, url: body.url });
+    logger.api.info("Git remote added", { name: typedBody.name, url: typedBody.url });
 
     return { success: true };
   } catch (error) {
-    if (error && typeof error === "object" && "statusCode" in error) {
-      throw error;
-    }
-
-    logger.api.error("Error adding git remote", { error });
-    throw createError({
-      statusCode: 500,
-      statusMessage: "Failed to add remote",
-    });
+    handleGitApiError(error, "Error adding git remote", "Failed to add remote");
   }
 });

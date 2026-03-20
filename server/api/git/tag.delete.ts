@@ -1,15 +1,10 @@
-import { isGitRepositorySync, deleteTag, deleteRemoteTag } from "~/server/utils/git";
+import { deleteTag, deleteRemoteTag } from "~/server/utils/git";
+import { resolveWorkingDirectoryFromBody, handleGitApiError } from "~/server/utils/gitApiHelpers";
 import { logger } from "~/server/utils/logger";
-import { getProjectDir } from "~/server/utils/projectDir";
 
 export default defineEventHandler(async (event) => {
   try {
-    const body = await readBody<{
-      workingDirectory?: string;
-      name: string;
-      deleteFromRemote?: string;
-    }>(event);
-    const workingDirectory = body.workingDirectory || getProjectDir();
+    const { workingDirectory, body } = await resolveWorkingDirectoryFromBody(event);
 
     if (!body.name) {
       throw createError({
@@ -18,18 +13,11 @@ export default defineEventHandler(async (event) => {
       });
     }
 
-    if (!isGitRepositorySync(workingDirectory)) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: "Not a Git repository",
-      });
-    }
-
     try {
-      deleteTag(workingDirectory, body.name);
+      deleteTag(workingDirectory, body.name as string);
 
       if (body.deleteFromRemote) {
-        deleteRemoteTag(workingDirectory, body.name, body.deleteFromRemote);
+        deleteRemoteTag(workingDirectory, body.name as string, body.deleteFromRemote as string);
       }
     } catch (gitError) {
       const errorMessage =
@@ -47,14 +35,6 @@ export default defineEventHandler(async (event) => {
 
     return { success: true };
   } catch (error) {
-    if (error && typeof error === "object" && "statusCode" in error) {
-      throw error;
-    }
-
-    logger.api.error("Error deleting git tag", { error });
-    throw createError({
-      statusCode: 500,
-      statusMessage: "Failed to delete tag",
-    });
+    handleGitApiError(error, "deleting git tag", "Failed to delete tag");
   }
 });

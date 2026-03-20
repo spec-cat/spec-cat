@@ -1,7 +1,6 @@
 import type { GitLogResponse, Branch, GitTag } from "~/types/git";
 import { GRAPH_CONSTANTS } from "~/types/git";
 import {
-  isGitRepositorySync,
   execGit,
   getBranchesSync,
   getTags,
@@ -10,29 +9,14 @@ import {
   generateBranchColor,
 } from "~/server/utils/git";
 import { logger } from "~/server/utils/logger";
+import { resolveWorkingDirectoryFromQuery, handleGitApiError } from "~/server/utils/gitApiHelpers";
 
 export default defineEventHandler(async (event) => {
   try {
+    const workingDirectory = resolveWorkingDirectoryFromQuery(event);
     const query = getQuery(event);
-    const workingDirectory = query.workingDirectory as string | undefined;
     const offset = parseInt(query.offset as string, 10) || 0;
     const limit = parseInt(query.limit as string, 10) || GRAPH_CONSTANTS.COMMITS_PER_PAGE;
-
-    if (!workingDirectory) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: "workingDirectory query parameter is required",
-      });
-    }
-
-    // Check if directory is a git repository (NFR-003)
-    if (!isGitRepositorySync(workingDirectory)) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: "Not a Git repository",
-        data: { code: "NOT_GIT_REPO" },
-      });
-    }
 
     // Get branches and tags first (needed for decoration parsing)
     const branchNames = getBranchesSync(workingDirectory);
@@ -120,15 +104,7 @@ export default defineEventHandler(async (event) => {
 
     return response;
   } catch (error) {
-    if (error && typeof error === "object" && "statusCode" in error) {
-      throw error;
-    }
-
-    logger.api.error("Error reading git log", { error });
-    throw createError({
-      statusCode: 500,
-      statusMessage: "Failed to read git log",
-    });
+    handleGitApiError(error, "Error reading git log", "Failed to read git log");
   }
 });
 

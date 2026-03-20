@@ -1,11 +1,10 @@
 import type { BranchResponse } from '~/types/git'
 import {
   execGitCommand,
-  isGitRepository,
   generateBranchColor,
   getBranches
 } from '~/server/utils/git'
-import { getProjectDir } from '~/server/utils/projectDir'
+import { resolveWorkingDirectoryFromQuery, handleGitApiError } from '~/server/utils/gitApiHelpers'
 
 function parseBooleanQuery(value: unknown): boolean {
   const raw = Array.isArray(value) ? value[0] : value
@@ -57,15 +56,7 @@ export default defineEventHandler(async (event) => {
   try {
     const includeRemote = parseBooleanQuery(query.includeRemote)
     const excludeSc = parseBooleanQuery(query.excludeSc)
-    const cwd = getProjectDir()
-    
-    // Validate git repository
-    if (!(await isGitRepository(cwd))) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: 'Not a valid git repository'
-      })
-    }
+    const cwd = resolveWorkingDirectoryFromQuery(event)
 
     // Get current branch
     let currentBranch = ''
@@ -158,15 +149,6 @@ export default defineEventHandler(async (event) => {
 
     return response
   } catch (error: any) {
-    if (error.statusCode) {
-      throw error
-    }
-
-    console.error('Git branches API error:', error)
-    throw createError({
-      statusCode: 500,
-      statusMessage: 'Failed to retrieve git branches',
-      data: { error: error.message }
-    })
+    handleGitApiError(error, 'Git branches API error', 'Failed to retrieve git branches')
   }
 })

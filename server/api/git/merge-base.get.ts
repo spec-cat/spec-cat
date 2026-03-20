@@ -1,5 +1,6 @@
-import { isGitRepositorySync, getMergeBase, execGitCommand } from "~/server/utils/git";
+import { getMergeBase, execGitCommand } from "~/server/utils/git";
 import { logger } from "~/server/utils/logger";
+import { resolveWorkingDirectoryFromQuery, handleGitApiError } from "~/server/utils/gitApiHelpers";
 
 /**
  * Find the fork-point (merge-base) for a feature branch against the default branch.
@@ -7,30 +8,15 @@ import { logger } from "~/server/utils/logger";
  */
 export default defineEventHandler(async (event) => {
   try {
+    const workingDirectory = resolveWorkingDirectoryFromQuery(event);
     const query = getQuery(event);
-    const workingDirectory = query.workingDirectory as string | undefined;
     const branch = query.branch as string | undefined;
     const requestedBaseBranch = query.baseBranch as string | undefined;
-
-    if (!workingDirectory) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: "workingDirectory query parameter is required",
-      });
-    }
 
     if (!branch) {
       throw createError({
         statusCode: 400,
         statusMessage: "branch query parameter is required",
-      });
-    }
-
-    if (!isGitRepositorySync(workingDirectory)) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: "Not a Git repository",
-        data: { code: "NOT_GIT_REPO" },
       });
     }
 
@@ -59,15 +45,7 @@ export default defineEventHandler(async (event) => {
     const mergeBase = await getMergeBase(branch, baseBranch, workingDirectory);
     return { mergeBase };
   } catch (error) {
-    if (error && typeof error === "object" && "statusCode" in error) {
-      throw error;
-    }
-
-    logger.api.error("Error getting merge-base", { error });
-    throw createError({
-      statusCode: 500,
-      statusMessage: "Failed to get merge-base",
-    });
+    handleGitApiError(error, "Error getting merge-base", "Failed to get merge-base");
   }
 });
 

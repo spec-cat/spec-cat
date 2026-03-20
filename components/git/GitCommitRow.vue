@@ -171,10 +171,13 @@ function formatRelativeDate(timestamp: number): string {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-// Get first line of commit message (FR-004: truncated at 72 chars)
+const COMMIT_MESSAGE_MAX_LENGTH = 72;
+
 function getMessageFirstLine(message: string): string {
   const firstLine = message.split("\n")[0];
-  return firstLine.length > 72 ? firstLine.substring(0, 69) + "..." : firstLine;
+  return firstLine.length > COMMIT_MESSAGE_MAX_LENGTH
+    ? firstLine.substring(0, COMMIT_MESSAGE_MAX_LENGTH - 3) + "..."
+    : firstLine;
 }
 </script>
 

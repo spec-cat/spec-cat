@@ -37,27 +37,17 @@ const menuItems: MenuItem[] = [
   { key: 'copyHash', label: 'Copy Stash Hash', icon: HashtagIcon },
 ]
 
-function handleAction(actionKey: string) {
-  switch (actionKey) {
-    case 'apply':
-      emit('apply')
-      break
-    case 'pop':
-      emit('pop')
-      break
-    case 'drop':
-      emit('drop')
-      break
-    case 'createBranch':
-      emit('createBranch')
-      break
-    case 'copyName':
-      emit('copyName')
-      break
-    case 'copyHash':
-      emit('copyHash')
-      break
-  }
+const actionMap: Record<string, () => void> = {
+  apply: () => emit('apply'),
+  pop: () => emit('pop'),
+  drop: () => emit('drop'),
+  createBranch: () => emit('createBranch'),
+  copyName: () => emit('copyName'),
+  copyHash: () => emit('copyHash'),
+}
+
+function handleAction(key: string) {
+  actionMap[key]?.()
 }
 </script>
 

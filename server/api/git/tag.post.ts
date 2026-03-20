@@ -1,48 +1,40 @@
-import { isGitRepositorySync, createTag, pushTag } from "~/server/utils/git";
+import { createTag, pushTag } from "~/server/utils/git";
 import { logger } from "~/server/utils/logger";
-import { getProjectDir } from "~/server/utils/projectDir";
+import { resolveWorkingDirectoryFromBody, handleGitApiError } from "~/server/utils/gitApiHelpers";
 
 export default defineEventHandler(async (event) => {
   try {
-    const body = await readBody<{
-      workingDirectory?: string;
+    const { workingDirectory, body } = await resolveWorkingDirectoryFromBody(event);
+    const typedBody = body as {
       name: string;
       hash: string;
       annotated?: boolean;
       message?: string;
       pushToRemote?: string;
-    }>(event);
-    const workingDirectory = body.workingDirectory || getProjectDir();
+    };
 
-    if (!body.name) {
+    if (!typedBody.name) {
       throw createError({
         statusCode: 400,
         statusMessage: "Tag name is required",
       });
     }
 
-    if (!body.hash) {
+    if (!typedBody.hash) {
       throw createError({
         statusCode: 400,
         statusMessage: "Commit hash is required",
       });
     }
 
-    if (!isGitRepositorySync(workingDirectory)) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: "Not a Git repository",
-      });
-    }
-
     try {
-      createTag(workingDirectory, body.name, body.hash, {
-        annotated: body.annotated,
-        message: body.message,
+      createTag(workingDirectory, typedBody.name, typedBody.hash, {
+        annotated: typedBody.annotated,
+        message: typedBody.message,
       });
 
-      if (body.pushToRemote) {
-        pushTag(workingDirectory, body.name, body.pushToRemote);
+      if (typedBody.pushToRemote) {
+        pushTag(workingDirectory, typedBody.name, typedBody.pushToRemote);
       }
     } catch (gitError) {
       const errorMessage =
@@ -54,22 +46,14 @@ export default defineEventHandler(async (event) => {
     }
 
     logger.api.info("Git tag created", {
-      name: body.name,
-      hash: body.hash,
-      annotated: body.annotated,
-      pushed: !!body.pushToRemote,
+      name: typedBody.name,
+      hash: typedBody.hash,
+      annotated: typedBody.annotated,
+      pushed: !!typedBody.pushToRemote,
     });
 
     return { success: true };
   } catch (error) {
-    if (error && typeof error === "object" && "statusCode" in error) {
-      throw error;
-    }
-
-    logger.api.error("Error creating git tag", { error });
-    throw createError({
-      statusCode: 500,
-      statusMessage: "Failed to create tag",
-    });
+    handleGitApiError(error, "Error creating git tag", "Failed to create tag");
   }
 });

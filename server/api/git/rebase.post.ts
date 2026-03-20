@@ -1,31 +1,21 @@
-import { isGitRepository, rebaseBranch } from "~/server/utils/git";
+import { rebaseBranch } from "~/server/utils/git";
 import { logger } from "~/server/utils/logger";
-import { getProjectDir } from "~/server/utils/projectDir";
+import { resolveWorkingDirectoryFromBody, handleGitApiError } from "~/server/utils/gitApiHelpers";
 
 export default defineEventHandler(async (event) => {
   try {
-    const body = await readBody<{
-      workingDirectory?: string;
-      onto: string;
-    }>(event);
-    const workingDirectory = body.workingDirectory || getProjectDir();
+    const { workingDirectory, body } = await resolveWorkingDirectoryFromBody(event);
+    const typedBody = body as { onto: string };
 
-    if (!body.onto) {
+    if (!typedBody.onto) {
       throw createError({
         statusCode: 400,
         statusMessage: "onto is required",
       });
     }
 
-    if (!isGitRepository(workingDirectory)) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: "Not a Git repository",
-      });
-    }
-
     try {
-      rebaseBranch(workingDirectory, body.onto);
+      rebaseBranch(workingDirectory, typedBody.onto);
     } catch (gitError) {
       const errorMessage =
         gitError instanceof Error ? gitError.message : "Unknown error";
@@ -44,7 +34,7 @@ export default defineEventHandler(async (event) => {
       if (errorMessage.includes("does not point to a valid commit")) {
         throw createError({
           statusCode: 404,
-          statusMessage: `Target '${body.onto}' not found`,
+          statusMessage: `Target '${typedBody.onto}' not found`,
         });
       }
 
@@ -54,18 +44,10 @@ export default defineEventHandler(async (event) => {
       });
     }
 
-    logger.api.info("Git rebase successful", { onto: body.onto });
+    logger.api.info("Git rebase successful", { onto: typedBody.onto });
 
     return { success: true };
   } catch (error) {
-    if (error && typeof error === "object" && "statusCode" in error) {
-      throw error;
-    }
-
-    logger.api.error("Error during git rebase", { error });
-    throw createError({
-      statusCode: 500,
-      statusMessage: "Failed to rebase branch",
-    });
+    handleGitApiError(error, "Error during git rebase", "Failed to rebase branch");
   }
 });

@@ -287,54 +287,6 @@ export interface BranchUpdatedEvent {
 }
 
 // =============================================================================
-// API Client Types
-// =============================================================================
-
-export interface GitApiClient {
-  getGraph(params?: GraphQueryParams): Promise<GraphResponse>
-  getCommitDetail(hash: string): Promise<CommitDetail>
-  getBranches(includeRemote?: boolean): Promise<BranchResponse>
-  checkoutBranch(name: string, options?: CheckoutRequest): Promise<CheckoutResponse>
-  getRepositoryStatus(): Promise<RepositoryStatus>
-  watchChanges(): EventSource // Server-sent events
-}
-
-// =============================================================================
-// Composable Return Types (Vue 3 Composition API)
-// =============================================================================
-
-export interface UseGitGraphReturn {
-  // State
-  commits: Ref<Map<string, Commit>>
-  branches: Ref<Map<string, Branch>>
-  repositoryStatus: Ref<RepositoryStatus | null>
-  loading: Ref<boolean>
-  error: Ref<string | null>
-  
-  // Computed
-  layout: ComputedRef<GraphLayout | null>
-  visibleCommits: ComputedRef<Commit[]>
-  currentBranch: ComputedRef<Branch | null>
-  
-  // Actions
-  loadGraph: (params?: GraphQueryParams) => Promise<void>
-  refreshStatus: () => Promise<void>
-  selectCommit: (hash: string | null) => void
-  searchCommits: (query: string) => void
-}
-
-export interface UseGitCommandsReturn {
-  // State
-  executing: Ref<boolean>
-  lastResult: Ref<string | null>
-
-  // Actions
-  checkoutBranch: (name: string, force?: boolean) => Promise<CheckoutResponse>
-  getCommitDetail: (hash: string) => Promise<CommitDetail>
-  refreshRepository: () => Promise<void>
-}
-
-// =============================================================================
 // Constants
 // =============================================================================
 

@@ -1,25 +1,16 @@
-import type { GitCommitRequest, GitCommitResponse } from "~/types/git";
-import { isGitRepository, execGitArgs } from "~/server/utils/git";
+import type { GitCommitResponse } from "~/types/git";
+import { execGitArgs } from "~/server/utils/git";
 import { logger } from "~/server/utils/logger";
-import { getProjectDir } from "~/server/utils/projectDir";
+import { resolveWorkingDirectoryFromBody, handleGitApiError } from "~/server/utils/gitApiHelpers";
 
 export default defineEventHandler(async (event): Promise<GitCommitResponse> => {
   try {
-    const body = await readBody<GitCommitRequest>(event);
-    const workingDirectory = body.workingDirectory || getProjectDir();
+    const { workingDirectory, body } = await resolveWorkingDirectoryFromBody(event);
 
-    if (!body.message || !body.message.trim()) {
+    if (!body.message || !(body.message as string).trim()) {
       throw createError({
         statusCode: 400,
         statusMessage: "Commit message is required",
-      });
-    }
-
-    if (!isGitRepository(workingDirectory)) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: "Not a Git repository",
-        data: { code: "NOT_GIT_REPO" },
       });
     }
 
@@ -40,7 +31,7 @@ export default defineEventHandler(async (event): Promise<GitCommitResponse> => {
 
     // Use execFileSync via execGitArgs to prevent shell injection
     try {
-      execGitArgs(workingDirectory, ["commit", "-m", body.message.trim()]);
+      execGitArgs(workingDirectory, ["commit", "-m", (body.message as string).trim()]);
     } catch (gitError) {
       const errorMessage = gitError instanceof Error ? gitError.message : "Unknown error";
 
@@ -64,19 +55,11 @@ export default defineEventHandler(async (event): Promise<GitCommitResponse> => {
     logger.api.info("Git commit successful", {
       hash,
       shortHash,
-      message: body.message.trim(),
+      message: (body.message as string).trim(),
     });
 
     return { success: true, hash, shortHash };
   } catch (error) {
-    if (error && typeof error === "object" && "statusCode" in error) {
-      throw error;
-    }
-
-    logger.api.error("Error creating git commit", { error });
-    throw createError({
-      statusCode: 500,
-      statusMessage: "Failed to create commit",
-    });
+    handleGitApiError(error, "Error creating git commit", "Failed to create commit");
   }
 });

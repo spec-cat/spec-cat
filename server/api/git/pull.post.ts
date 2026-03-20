@@ -1,31 +1,23 @@
-import { isGitRepository, pullBranch } from "~/server/utils/git";
+import { pullBranch } from "~/server/utils/git";
 import { logger } from "~/server/utils/logger";
-import { getProjectDir } from "~/server/utils/projectDir";
+import { resolveWorkingDirectoryFromBody, handleGitApiError } from "~/server/utils/gitApiHelpers";
 
 export default defineEventHandler(async (event) => {
   try {
-    const body = await readBody<{
-      workingDirectory?: string;
+    const { workingDirectory, body } = await resolveWorkingDirectoryFromBody(event);
+    const typedBody = body as {
       branch?: string;
       remote?: string;
       noFastForward?: boolean;
       squash?: boolean;
-    }>(event);
-    const workingDirectory = body.workingDirectory || getProjectDir();
-
-    if (!isGitRepository(workingDirectory)) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: "Not a Git repository",
-      });
-    }
+    };
 
     try {
       pullBranch(workingDirectory, {
-        branch: body.branch,
-        remote: body.remote,
-        noFastForward: body.noFastForward,
-        squash: body.squash,
+        branch: typedBody.branch,
+        remote: typedBody.remote,
+        noFastForward: typedBody.noFastForward,
+        squash: typedBody.squash,
       });
     } catch (gitError) {
       const errorMessage =
@@ -56,22 +48,14 @@ export default defineEventHandler(async (event) => {
     }
 
     logger.api.info("Git pull successful", {
-      branch: body.branch,
-      remote: body.remote,
-      noFastForward: body.noFastForward,
-      squash: body.squash,
+      branch: typedBody.branch,
+      remote: typedBody.remote,
+      noFastForward: typedBody.noFastForward,
+      squash: typedBody.squash,
     });
 
     return { success: true };
   } catch (error) {
-    if (error && typeof error === "object" && "statusCode" in error) {
-      throw error;
-    }
-
-    logger.api.error("Error during git pull", { error });
-    throw createError({
-      statusCode: 500,
-      statusMessage: "Failed to pull branch",
-    });
+    handleGitApiError(error, "Error during git pull", "Failed to pull branch");
   }
 });

@@ -26,18 +26,14 @@ const menuItems: MenuItem[] = [
   { key: 'clean', label: 'Clean Untracked Files', icon: TrashIcon, danger: true },
 ]
 
-function handleAction(actionKey: string) {
-  switch (actionKey) {
-    case 'stash':
-      emit('stash')
-      break
-    case 'reset':
-      emit('reset')
-      break
-    case 'clean':
-      emit('clean')
-      break
-  }
+const actionMap: Record<string, () => void> = {
+  stash: () => emit('stash'),
+  reset: () => emit('reset'),
+  clean: () => emit('clean'),
+}
+
+function handleAction(key: string) {
+  actionMap[key]?.()
 }
 </script>
 

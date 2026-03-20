@@ -1,16 +1,10 @@
-import { isGitRepository, cherryPick } from "~/server/utils/git";
+import { cherryPick } from "~/server/utils/git";
 import { logger } from "~/server/utils/logger";
-import { getProjectDir } from "~/server/utils/projectDir";
+import { resolveWorkingDirectoryFromBody, handleGitApiError } from "~/server/utils/gitApiHelpers";
 
 export default defineEventHandler(async (event) => {
   try {
-    const body = await readBody<{
-      workingDirectory?: string;
-      hash: string;
-      recordOrigin?: boolean;
-      noCommit?: boolean;
-    }>(event);
-    const workingDirectory = body.workingDirectory || getProjectDir();
+    const { workingDirectory, body } = await resolveWorkingDirectoryFromBody(event);
 
     if (!body.hash) {
       throw createError({
@@ -19,17 +13,10 @@ export default defineEventHandler(async (event) => {
       });
     }
 
-    if (!(await isGitRepository(workingDirectory))) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: "Not a Git repository",
-      });
-    }
-
     try {
-      cherryPick(workingDirectory, body.hash, {
-        recordOrigin: body.recordOrigin,
-        noCommit: body.noCommit,
+      cherryPick(workingDirectory, body.hash as string, {
+        recordOrigin: body.recordOrigin as boolean | undefined,
+        noCommit: body.noCommit as boolean | undefined,
       });
     } catch (gitError) {
       const errorMessage = gitError instanceof Error ? gitError.message : "Unknown error";
@@ -47,18 +34,10 @@ export default defineEventHandler(async (event) => {
       });
     }
 
-    logger.api.info("Git cherry-pick successful", { hash: body.hash });
+    logger.api.info("Git cherry-pick successful", { hash: body.hash as string });
 
     return { success: true };
   } catch (error) {
-    if (error && typeof error === "object" && "statusCode" in error) {
-      throw error;
-    }
-
-    logger.api.error("Error during git cherry-pick", { error });
-    throw createError({
-      statusCode: 500,
-      statusMessage: "Failed to cherry-pick commit",
-    });
+    handleGitApiError(error, "Error during git cherry-pick", "Failed to cherry-pick commit");
   }
 });
