@@ -13,12 +13,12 @@
 ## Phase 2: Unified Permission Policy
 
 - [x] T004 Create `server/utils/providerApprovalPolicy.ts` for centralized canonical permission interception and stderr inference helpers. [FR-004, FR-005, FR-006]
-- [x] T005 Migrate WS permission interception flow to `providerApprovalPolicy` in `server/routes/_ws.ts`. [FR-002, FR-004, FR-005, FR-006]
+- [x] T005 Migrate WS permission interception flow to `providerApprovalPolicy` in `server/utils/jobQueue.ts`. [FR-002, FR-004, FR-005, FR-006]
 
 ## Phase 3: WS Canonical Pipeline Refactor
 
-- [x] T006 Remove provider-ID transform branching from WS runtime and consume provider-owned canonical adapter output. [FR-002, FR-003, FR-009]
-- [x] T007 Preserve retry/session reset semantics in WS flow during refactor. [FR-010]
+- [x] T006 Remove provider-ID transform branching from JobQueue runtime and consume provider-owned canonical adapter output. [FR-002, FR-003, FR-009]
+- [x] T007 Preserve retry/session reset semantics in JobQueue flow during refactor. [FR-010]
 - [x] T012 Harden Codex session ID discovery/propagation for envelope variants to preserve multi-turn context resume in `server/utils/codexProvider.ts` and `server/utils/codexStreamParser.ts`. [FR-008, FR-010]
 
 ## Phase 4: Client Canonical Rendering Cleanup
@@ -29,7 +29,7 @@
 ## Phase 5: Validation
 
 - [x] T010 Run `pnpm typecheck` and targeted provider-related tests; resolve regressions. [FR-008, FR-010]
-- [x] T013 Normalize terminal provider failures into canonical `turn_result(error)` + `error` events across Codex/Gemini/Claude adapters and WS completion fallback in `server/utils/codexStreamParser.ts`, `server/utils/geminiProvider.ts`, `server/utils/uiAdapter.ts`, `server/routes/_ws.ts`, and `composables/useChatStream.ts`. [FR-003, FR-008, FR-010]
+- [x] T013 Normalize terminal provider failures into canonical `turn_result(error)` + `error` events across Codex/Gemini/Claude adapters and JobQueue completion fallback in `server/utils/codexStreamParser.ts`, `server/utils/geminiProvider.ts`, `server/utils/uiAdapter.ts`, `server/utils/jobQueue.ts`, and `composables/useChatStream.ts`. [FR-003, FR-008, FR-010]
 - [x] T014 Add regression tests for canonical provider error mapping in `tests/server/codexStreamParser.test.ts`, `tests/server/geminiProvider.test.ts`, and `tests/server/uiAdapter.test.ts`. [FR-008, FR-010]
 - [ ] T011 Manual validation for Claude/Codex in ask/plan/auto modes (permission interception + rendering checks). [FR-002, FR-004, FR-006, FR-008]
 

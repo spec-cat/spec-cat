@@ -12,7 +12,7 @@ Provide four permission modes (`plan`, `ask`, `auto`, `bypass`) for chat tool ex
 ## Technical Context
 
 **Language/Version**: TypeScript 5.6+, Nuxt 3.16+, Vue 3.5+  
-**Primary Dependencies**: Pinia store, websocket route (`server/routes/_ws.ts`)  
+**Primary Dependencies**: Pinia store, websocket route (`server/routes/_ws.ts`), job queue (`server/utils/jobQueue.ts`)  
 **Storage**: Persisted settings (via settings store/API); default fallback `ask`  
 **Testing**: Manual flow verification + typecheck  
 **Target Platform**: Browser UI + Nitro server websocket  
@@ -35,14 +35,16 @@ stores/chat.ts                        # permissionMode state, pending requests/a
 stores/settings.ts                    # persisted permissionMode setting
 components/chat/ChatInput.vue         # selector UI + permission / plan approval blocks
 composables/useChatStream.ts          # stream handlers for pending permission/plan approval
-server/routes/_ws.ts                  # websocket permission mode forwarding
+server/routes/_ws.ts                  # websocket transport, delegates permission responses to JobQueue
+server/utils/jobQueue.ts              # permission mode forwarding to provider process
+server/utils/providerApprovalPolicy.ts # centralized permission interception policy
 ```
 
 ## FR Coverage Matrix
 
 | FR | Description | Implemented Files |
 |----|-------------|-------------------|
-| FR-001 | 4 permission modes | `types/chat.ts`, `stores/chat.ts`, `components/chat/ChatInput.vue`, `server/routes/_ws.ts` |
+| FR-001 | 4 permission modes | `types/chat.ts`, `stores/chat.ts`, `components/chat/ChatInput.vue`, `server/utils/jobQueue.ts` |
 | FR-002 | Selector dropdown with visual affordance | `components/chat/ChatInput.vue` |
 | FR-003 | Ask-mode permission request UI (Allow/Deny) | `components/chat/ChatInput.vue`, `stores/chat.ts`, `composables/useChatStream.ts` |
 | FR-004 | Plan-mode approval UI (Approve/Reject) | `components/chat/ChatInput.vue`, `stores/chat.ts`, `composables/useChatStream.ts` |
@@ -55,7 +57,9 @@ server/routes/_ws.ts                  # websocket permission mode forwarding
 - **`composables/useChatStream.ts`**: Permission handling (setPendingPermission, setPendingPlanApproval, ExitPlanMode intercept)
 - **`stores/chat.ts`**: permissionMode state, localStorage persistence
 - **`types/chat.ts`**: PermissionMode union type
-- **`/_ws`**: Permission mode sent with connection, permission responses sent back to CLI
+- **`/_ws`**: Thin transport layer; delegates permission responses to `jobQueue.respondToPermission()`
+- **`server/utils/jobQueue.ts`**: Permission mode forwarded to provider process; permission responses applied to active job
+- **`server/utils/providerApprovalPolicy.ts`**: Centralized permission interception and tool approval logic
 
 ### CLI Integration
 - Claude Code CLI supports permission modes via `--allowedTools` and `--permissionMode` flags

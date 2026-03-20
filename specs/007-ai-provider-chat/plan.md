@@ -89,10 +89,12 @@ types/
 server/api/chat.post.ts              # POST: Send message (SSE streaming alternative)
 
 # WebSocket
-server/routes/_ws.ts                 # WebSocket endpoint - Claude CLI streaming with PTY, session handling
+server/routes/_ws.ts                 # WebSocket endpoint - thin transport layer, delegates to JobQueue and forwards EventBus events
 
 # Server Utilities
 server/utils/
+├── jobQueue.ts                      # Job queue for AI provider chat execution, process lifecycle, event buffering
+├── eventBus.ts                      # Conversation-level event pub/sub singleton, decouples execution from transport
 ├── aiProvider.ts                    # AIProvider interface and streamChatWithProvider()
 ├── aiProviderRegistry.ts            # Provider registration and management
 ├── aiProviderSelection.ts           # Provider/model selection logic
@@ -111,21 +113,21 @@ server/utils/
 | FR-002 | Toggle button | `components/chat/ChatPanelToggle.vue`, `composables/useChatPanel.ts` | Done |
 | FR-003 | Send text messages | `components/chat/ChatInput.vue`, `composables/useChatStream.ts` (sendMessage) | Done |
 | FR-004 | Conversational format | `components/chat/ChatMessage.vue` (role-based styling) | Done |
-| FR-005 | Real-time streaming | `server/routes/_ws.ts` (node-pty), `composables/useChatStream.ts` (processSDKMessage) | Done |
+| FR-005 | Real-time streaming | `server/utils/jobQueue.ts` (provider process lifecycle), `composables/useChatStream.ts` (processSDKMessage) | Done |
 | FR-006 | Loading indicator | `components/chat/ChatMessages.vue` (bounce animation during streaming) | Done |
 | FR-007 | Conversation history | `stores/chat.ts` (messages per conversation) | Done |
 | FR-008 | Auto-scroll | `composables/useAutoScroll.ts` (50px threshold) | Done |
 | FR-008a | Maintain scroll on input resize | `components/chat/ChatMessages.vue` (ResizeObserver) | Done |
-| FR-009 | Working directory context | `server/routes/_ws.ts` (cwd passed to pty.spawn), `stores/chat.ts` (conv.cwd) | Done |
+| FR-009 | Working directory context | `server/utils/jobQueue.ts` (cwd passed to provider spawn), `stores/chat.ts` (conv.cwd) | Done |
 | FR-010 | CWD display | `components/chat/ChatPanel.vue` (abbreviated path in header) | Done |
 | FR-011 | Stop button | `components/chat/ChatInput.vue`, `composables/useChatStream.ts` (abort) | Done |
 | FR-012 | New conversation | `stores/chat.ts` (createConversation), `components/chat/ChatPanel.vue` | Done |
 | FR-013 | Error handling | `composables/useChatStream.ts` (error types), `stores/chat.ts` (lastError) | Done |
-| FR-013a | Detailed error messages | `server/routes/_ws.ts` (CLI exit codes, spawn failures, non-JSON diagnostics) | Done |
+| FR-013a | Detailed error messages | `server/utils/jobQueue.ts` (CLI exit codes, spawn failures, non-JSON diagnostics) | Done |
 | FR-013b | Console logging | `composables/useChatStream.ts` (console.error on parse/connection failures) | Done |
 | FR-013c | Dismissible errors | `stores/chat.ts` (clearError) | Done |
 | FR-013d | WebSocket errors | `composables/useChatStream.ts` (ws.onerror, ws.onclose with close-code meaning fallback when reason is empty, wasClean flag, and last server-error context) | Done |
-| FR-013e | CLI process failures | `server/routes/_ws.ts` (exit code check, signal info, non-JSON output) | Done |
+| FR-013e | CLI process failures | `server/utils/jobQueue.ts` (exit code check, signal info, non-JSON output) | Done |
 | FR-013f | JSON parse errors | `composables/useChatStream.ts` (try/catch with descriptive error) | Done |
 | FR-014 | Prevent double-send | `components/chat/ChatInput.vue` (disabled during streaming) | Done |
 | FR-015 | Markdown rendering | `components/chat/ChatMessage.vue` (marked + dompurify) | Done |
@@ -146,6 +148,6 @@ server/utils/
 
 | Violation | Why Needed | Simpler Alternative Rejected Because |
 |-----------|------------|-------------------------------------|
-| WebSocket + node-pty instead of SDK query() | Full CLI features including PTY interaction, --resume | SDK query() doesn't support interactive permission handling or session resume |
-| Per-conversation connection pool | Multiple conversations can stream concurrently | Single global WebSocket would serialize all conversations |
+| JobQueue + EventBus instead of monolithic WS handler | Decouples provider execution from transport; enables multi-tab and scheduler observation | Monolithic _ws.ts mixed concerns (validation, process lifecycle, event routing) |
+| Per-conversation job queue with event pub/sub | Multiple conversations can stream concurrently via EventBus subscribers | Single global WebSocket would serialize all conversations |
 

@@ -45,7 +45,9 @@ server/utils/claudeProvider.ts             # Provider-owned canonical mapping
 server/utils/codexProvider.ts              # Provider-owned canonical mapping
 server/utils/codexStreamParser.ts          # Codex envelope/session normalization
 server/utils/providerApprovalPolicy.ts     # Centralized permission interception policy
-server/routes/_ws.ts                       # Provider-agnostic canonical stream pipeline
+server/utils/jobQueue.ts                   # Provider-agnostic canonical stream pipeline (extracted from _ws.ts)
+server/utils/eventBus.ts                   # Conversation-level event pub/sub, decouples execution from transport
+server/routes/_ws.ts                       # Thin WebSocket transport layer, delegates to JobQueue
 composables/useChatStream.ts               # Remove codex-only synthetic session block injection
 server/utils/uiAdapter.ts                  # Shared canonical mapping helpers reused by providers/policy
 ```
@@ -64,15 +66,15 @@ server/utils/uiAdapter.ts                  # Shared canonical mapping helpers re
 | Requirement | Planned Files |
 |-------------|---------------|
 | FR-001 | `server/utils/aiProvider.ts`, `server/utils/claudeProvider.ts`, `server/utils/codexProvider.ts` |
-| FR-002 | `server/routes/_ws.ts`, `server/utils/aiProvider.ts` |
+| FR-002 | `server/utils/jobQueue.ts`, `server/utils/aiProvider.ts` |
 | FR-003 | `server/utils/claudeProvider.ts`, `server/utils/codexProvider.ts`, `server/utils/uiAdapter.ts` |
-| FR-004 | `server/utils/providerApprovalPolicy.ts`, `server/routes/_ws.ts` |
-| FR-005 | `server/utils/providerApprovalPolicy.ts`, `server/routes/_ws.ts`, `server/utils/uiAdapter.ts` |
-| FR-006 | `server/routes/_ws.ts`, `server/utils/providerApprovalPolicy.ts` |
+| FR-004 | `server/utils/providerApprovalPolicy.ts`, `server/utils/jobQueue.ts` |
+| FR-005 | `server/utils/providerApprovalPolicy.ts`, `server/utils/jobQueue.ts`, `server/utils/uiAdapter.ts` |
+| FR-006 | `server/utils/jobQueue.ts`, `server/utils/providerApprovalPolicy.ts` |
 | FR-007 | `composables/useChatStream.ts` |
-| FR-008 | `server/routes/_ws.ts`, `composables/useChatStream.ts`, provider files |
-| FR-009 | `server/utils/aiProviderRegistry.ts`, `server/utils/aiProvider.ts`, `server/routes/_ws.ts` |
-| FR-010 | `server/routes/_ws.ts`, `server/api/chat.post.ts` (no behavior change expected) |
+| FR-008 | `server/utils/jobQueue.ts`, `composables/useChatStream.ts`, provider files |
+| FR-009 | `server/utils/aiProviderRegistry.ts`, `server/utils/aiProvider.ts`, `server/utils/jobQueue.ts` |
+| FR-010 | `server/utils/jobQueue.ts`, `server/api/chat.post.ts` (no behavior change expected) |
 
 ## Risks & Mitigations
 
