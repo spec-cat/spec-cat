@@ -63,14 +63,6 @@ const isReadTool = computed(() => ['read', 'read_file', 'readfile'].includes(too
 const isWriteTool = computed(() => ['write', 'write_file', 'writefile', 'create_file'].includes(toolNameLower.value))
 const isEditTool = computed(() => ['edit', 'multiedit', 'replace', 'edit_file', 'editfile'].includes(toolNameLower.value))
 const isCommandTool = computed(() => ['bash', 'exec', 'execcommand', 'runcommand', 'shell', 'run_shell_command'].includes(toolNameLower.value))
-const shouldAutoExpand = computed(() => (
-  props.block.status === 'running'
-  || props.block.status === 'error'
-  || isWriteTool.value
-  || isEditTool.value
-  || isRequestUserInputTool.value
-))
-
 interface ClarificationOption {
   label?: string
   description?: string
@@ -277,17 +269,10 @@ function resultLineClass(line: string): string {
 watch(
   () => props.block.id,
   () => {
-    expanded.value = shouldAutoExpand.value
+    expanded.value = false
     resultExpanded.value = false
   },
   { immediate: true }
-)
-
-watch(
-  () => props.block.status,
-  (status) => {
-    if (status === 'running' || status === 'error') expanded.value = true
-  }
 )
 </script>
 
@@ -331,8 +316,8 @@ watch(
       />
     </button>
 
-    <!-- Expanded: CLI-like details + raw JSON -->
     <div v-if="expanded" class="px-3 pb-2 border-t border-retro-border/20">
+      <!-- Expanded: CLI-like details + raw JSON -->
       <div v-if="compactArgs.length > 0" class="mt-2">
         <div class="text-[11px] font-mono text-retro-cyan mb-1">Args</div>
         <pre class="text-xs font-mono text-retro-muted bg-retro-panel p-2 rounded overflow-x-auto max-h-36 overflow-y-auto scrollbar-custom whitespace-pre-wrap">{{ compactArgs.join('\n') }}</pre>
@@ -387,63 +372,63 @@ watch(
           </div>
         </div>
       </div>
-    </div>
 
-    <!-- Tool result (CLI output style) -->
-    <div v-if="hasVisibleResult" class="px-3 pb-2 border-t border-retro-border/20">
-      <div
-        class="text-xs font-mono rounded p-2 mt-1 overflow-y-auto scrollbar-custom border"
-        :class="resultIsError ? 'text-retro-red bg-retro-red/5 border-retro-red/40' : 'text-retro-muted bg-retro-panel/60 border-retro-border/30'"
-        :style="resultExpanded ? 'max-height: 20rem' : ''"
-      >
-        <template v-if="resultLooksLikeDiff">
-          <div class="mb-1 text-[10px] text-retro-muted">
-            Diff · <span class="text-retro-green">+{{ diffStats.added }}</span> / <span class="text-retro-red">-{{ diffStats.removed }}</span>
-          </div>
-          <div class="space-y-0.5">
-            <div
-              v-for="(line, index) in visibleResultLines"
-              :key="`diff-${index}`"
-              class="px-1 rounded whitespace-pre-wrap break-all"
-              :class="resultLineClass(line)"
-            >
-              {{ line || ' ' }}
+      <!-- Tool result (CLI output style) -->
+      <div v-if="hasVisibleResult" class="mt-3 border-t border-retro-border/20 pt-2">
+        <div
+          class="text-xs font-mono rounded p-2 mt-1 overflow-y-auto scrollbar-custom border"
+          :class="resultIsError ? 'text-retro-red bg-retro-red/5 border-retro-red/40' : 'text-retro-muted bg-retro-panel/60 border-retro-border/30'"
+          :style="resultExpanded ? 'max-height: 20rem' : ''"
+        >
+          <template v-if="resultLooksLikeDiff">
+            <div class="mb-1 text-[10px] text-retro-muted">
+              Diff · <span class="text-retro-green">+{{ diffStats.added }}</span> / <span class="text-retro-red">-{{ diffStats.removed }}</span>
             </div>
-          </div>
-          <button
-            v-if="!resultExpanded && isLongResult"
-            class="text-retro-cyan hover:underline mt-1 text-[10px]"
-            @click.stop="resultExpanded = true"
-          >
-            Show full diff ({{ resultLength }} chars)
-          </button>
-          <button
-            v-else-if="isLongResult"
-            class="text-retro-cyan hover:underline mt-1 text-[10px]"
-            @click.stop="resultExpanded = false"
-          >
-            Collapse diff
-          </button>
-        </template>
-        <template v-else-if="!resultExpanded && isLongResult">
-          <pre class="whitespace-pre-wrap">{{ resultPreview }}</pre>
-          <button
-            class="text-retro-cyan hover:underline mt-1 text-[10px]"
-            @click.stop="resultExpanded = true"
-          >
-            Show full ({{ resultLength }} chars)
-          </button>
-        </template>
-        <template v-else>
-          <pre class="whitespace-pre-wrap">{{ resultContent }}</pre>
-          <button
-            v-if="isLongResult"
-            class="text-retro-cyan hover:underline mt-1 text-[10px]"
-            @click.stop="resultExpanded = false"
-          >
-            Collapse
-          </button>
-        </template>
+            <div class="space-y-0.5">
+              <div
+                v-for="(line, index) in visibleResultLines"
+                :key="`diff-${index}`"
+                class="px-1 rounded whitespace-pre-wrap break-all"
+                :class="resultLineClass(line)"
+              >
+                {{ line || ' ' }}
+              </div>
+            </div>
+            <button
+              v-if="!resultExpanded && isLongResult"
+              class="text-retro-cyan hover:underline mt-1 text-[10px]"
+              @click.stop="resultExpanded = true"
+            >
+              Show full diff ({{ resultLength }} chars)
+            </button>
+            <button
+              v-else-if="isLongResult"
+              class="text-retro-cyan hover:underline mt-1 text-[10px]"
+              @click.stop="resultExpanded = false"
+            >
+              Collapse diff
+            </button>
+          </template>
+          <template v-else-if="!resultExpanded && isLongResult">
+            <pre class="whitespace-pre-wrap">{{ resultPreview }}</pre>
+            <button
+              class="text-retro-cyan hover:underline mt-1 text-[10px]"
+              @click.stop="resultExpanded = true"
+            >
+              Show full ({{ resultLength }} chars)
+            </button>
+          </template>
+          <template v-else>
+            <pre class="whitespace-pre-wrap">{{ resultContent }}</pre>
+            <button
+              v-if="isLongResult"
+              class="text-retro-cyan hover:underline mt-1 text-[10px]"
+              @click.stop="resultExpanded = false"
+            >
+              Collapse
+            </button>
+          </template>
+        </div>
       </div>
     </div>
   </div>

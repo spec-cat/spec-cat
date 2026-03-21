@@ -6,6 +6,7 @@ import type {
   TextBlock,
   ThinkingBlock,
   ToolResultBlock,
+  ToolUseBlock,
 } from '~/types/chat'
 import { hasContentBlocks } from '~/types/chat'
 import { UserIcon, CpuChipIcon } from '@heroicons/vue/24/outline'
@@ -17,6 +18,42 @@ interface Props {
 
 const props = defineProps<Props>()
 const { renderMarkdown } = useMarkdown()
+
+interface ToolGroupSummaryBlock {
+  id: string
+  type: 'tool_group_summary'
+  tools: ToolUseBlock[]
+}
+
+type RenderableBlock = ContentBlock | ToolGroupSummaryBlock
+
+const LOW_SIGNAL_TOOL_NAMES = new Set([
+  'read',
+  'readfile',
+  'view',
+  'glob',
+  'rg',
+  'grep',
+  'ls',
+  'list',
+  'listdir',
+  'listdirectory',
+  'listfiles',
+  'findfiles',
+  'searchfiles',
+  'searchcode',
+  'readbash',
+  'listbash',
+])
+
+function normalizeToolName(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+function shouldAggregateToolBlock(block: ToolUseBlock, result?: ToolResultBlock): boolean {
+  if (block.status === 'error' || result?.isError) return false
+  return LOW_SIGNAL_TOOL_NAMES.has(normalizeToolName(block.name))
+}
 
 const isUser = computed(() => props.message.role === 'user')
 const isStreaming = computed(() => props.message.status === 'streaming')
@@ -37,7 +74,7 @@ const toolResultsByUseId = computed(() => {
 })
 
 /** Blocks to render (skip tool_result — rendered inside ChatToolBlock) */
-const renderableBlocks = computed(() => {
+const renderableBlocks = computed<RenderableBlock[]>(() => {
   if (!props.message.contentBlocks) return []
 
   const filtered = props.message.contentBlocks.filter(b => b.type !== 'tool_result')
@@ -60,7 +97,34 @@ const renderableBlocks = computed(() => {
     merged.push({ ...block })
   }
 
-  return merged
+  const renderable: RenderableBlock[] = []
+  let pendingToolGroup: ToolUseBlock[] = []
+
+  const flushToolGroup = () => {
+    if (pendingToolGroup.length === 0) return
+    renderable.push({
+      id: `tool-group-${pendingToolGroup[0].id}`,
+      type: 'tool_group_summary',
+      tools: [...pendingToolGroup],
+    })
+    pendingToolGroup = []
+  }
+
+  for (const block of merged) {
+    if (block.type === 'tool_use') {
+      const result = toolResultsByUseId.value.get(block.toolUseId)
+      if (shouldAggregateToolBlock(block, result)) {
+        pendingToolGroup.push(block)
+        continue
+      }
+    }
+
+    flushToolGroup()
+    renderable.push(block)
+  }
+
+  flushToolGroup()
+  return renderable
 })
 
 const hasRenderableBlocks = computed(() => useBlocks.value && renderableBlocks.value.length > 0)
@@ -120,12 +184,17 @@ const formattedContent = computed(() => {
     <div class="flex-1 min-w-0 w-full">
       <!-- Structured content blocks (rich UI with tool boxes) -->
       <template v-if="hasRenderableBlocks">
-        <ChatContentBlock
-          v-for="block in renderableBlocks"
-          :key="block.id"
-          :block="block"
-          :tool-results-by-use-id="toolResultsByUseId"
-        />
+        <template v-for="block in renderableBlocks" :key="block.id">
+          <ChatToolGroupSummary
+            v-if="block.type === 'tool_group_summary'"
+            :tools="block.tools"
+          />
+          <ChatContentBlock
+            v-else
+            :block="block"
+            :tool-results-by-use-id="toolResultsByUseId"
+          />
+        </template>
       </template>
 
       <div

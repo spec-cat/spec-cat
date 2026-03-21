@@ -97,10 +97,30 @@ describe('ChatToolBlock', () => {
     }
 
     const wrapper = await mountSuspended(ChatToolBlock, { props: { block, result } })
+    expect(wrapper.text()).not.toContain('a\nb\nc')
+    expect(wrapper.text()).not.toContain('Show full')
+
+    await wrapper.find('button').trigger('click')
     expect(wrapper.text()).toContain('Show full')
 
     await wrapper.find('button.text-retro-cyan').trigger('click')
     expect(wrapper.text()).toContain('Collapse')
+  })
+
+  it('stays collapsed by default even for running tool blocks', async () => {
+    const block = makeToolBlock({
+      name: 'Write',
+      status: 'running',
+      input: {
+        file_path: 'notes.md',
+        content: 'hello world',
+      },
+    })
+
+    const wrapper = await mountSuspended(ChatToolBlock, { props: { block } })
+    expect(wrapper.text()).toContain('Write notes.md')
+    expect(wrapper.text()).not.toContain('New Content')
+    expect(wrapper.text()).not.toContain('hello world')
   })
 
   it('shows request_user_input question text with options', async () => {
@@ -176,6 +196,9 @@ describe('ChatToolBlock', () => {
     }
 
     const wrapper = await mountSuspended(ChatToolBlock, { props: { block, result } })
+    expect(wrapper.text()).not.toContain('Diff')
+
+    await wrapper.find('button').trigger('click')
     expect(wrapper.text()).toContain('Diff')
     expect(wrapper.text()).toContain('+1')
     expect(wrapper.text()).toContain('-1')
