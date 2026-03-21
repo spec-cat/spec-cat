@@ -93,7 +93,7 @@ async function runJob(job: 'startup-reconcile' | 'poll-scan' | 'manual-reindex',
         runtimeState.lastIndexedAt = now
       }
 
-      log.info('Spec search job completed', {
+      log.debug('Spec search job completed', {
         job,
         success: result.success,
         status: result.status,

@@ -181,7 +181,7 @@ export class SpecSearchDatabase {
       this.sqliteReady = true
       this.initError = null
 
-      this.log.info('Spec search SQLite initialized', {
+      this.log.debug('Spec search SQLite initialized', {
         dbPath: this.dbPath,
         dbExistsAfterOpen: existsSync(this.dbPath),
         vectorEnabled: this.vectorEnabled,
