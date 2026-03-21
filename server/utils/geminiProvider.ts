@@ -15,12 +15,22 @@ import type {
 
 function killProc(proc: ChildProcess) {
   try {
+    const pid = proc.pid
+    console.log('[GeminiProvider] killProc: sending SIGTERM to pid', pid)
     proc.kill('SIGTERM')
     const forceKillTimer = setTimeout(() => {
-      try { proc.kill('SIGKILL') } catch {}
+      try {
+        console.log('[GeminiProvider] killProc: SIGTERM timeout, sending SIGKILL to pid', pid)
+        proc.kill('SIGKILL')
+      } catch {}
     }, 3000)
-    proc.once('exit', () => clearTimeout(forceKillTimer))
-  } catch {}
+    proc.once('exit', (code, signal) => {
+      console.log('[GeminiProvider] killProc: process exited, pid', pid, 'code', code, 'signal', signal)
+      clearTimeout(forceKillTimer)
+    })
+  } catch (err) {
+    console.error('[GeminiProvider] killProc error:', err)
+  }
 }
 
 const metadata = {

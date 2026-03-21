@@ -1656,6 +1656,12 @@ export function useChatStream() {
 
       if (!lastAssistantMsg) return false
 
+      // Server persisted this message as stopped/complete/error — no resume needed.
+      // Only resume if the message is still in 'streaming' state (interrupted mid-flight).
+      if (lastAssistantMsg.status !== 'streaming') {
+        return false
+      }
+
       console.log('[useChatStream] Resuming streaming for', conversationId, 'job:', resumableJob.id, 'status:', resumableJob.status, 'events:', resumableJob.eventCount)
 
       // Reset the partial message atomically for clean replay (Bug fix: use store

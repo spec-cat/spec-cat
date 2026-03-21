@@ -235,10 +235,13 @@ function handlePermissionResponse(peer: any, msg: PermissionResponse) {
 function handleAbort(peer: any) {
   const conn = getPeerConnection(peer.id)
 
-  console.log('[WS] Abort requested for peer:', peer.id)
+  console.log('[WS] Abort requested for peer:', peer.id, 'conversationId:', conn.conversationId)
 
   if (conn.conversationId) {
     jobQueue.abort(conn.conversationId)
+    console.log('[WS] jobQueue.abort() called for conversation:', conn.conversationId)
+  } else {
+    console.warn('[WS] Abort skipped — no conversationId bound to this peer!')
   }
   peer.send(JSON.stringify({ type: 'aborted' }))
 

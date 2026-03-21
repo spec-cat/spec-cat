@@ -115,7 +115,8 @@ function handleEvent(acc: JobAccumulator, event: JobEvent): void {
     }
 
     if (event.type === 'done') {
-      if (event.denied) {
+      if (event.denied || event.aborted) {
+        markRemainingToolBlocks(acc, 'error')
         acc.status = 'stopped'
       } else {
         markRemainingToolBlocks(acc, 'complete')
@@ -366,12 +367,13 @@ async function flush(acc: JobAccumulator): Promise<void> {
       }
     }
 
-    // Try to find the existing streaming assistant message (client-initiated).
+    // Try to find the existing assistant message (client-initiated).
     // Search from the end since it's always the last assistant message.
+    // Match 'streaming' (normal) or 'stopped' (client clicked stop before server flushed).
     let updated = false
     for (let i = conversation.messages.length - 1; i >= 0; i--) {
       const m = conversation.messages[i]
-      if (m.role === 'assistant' && m.status === 'streaming') {
+      if (m.role === 'assistant' && (m.status === 'streaming' || m.status === 'stopped')) {
         conversation.messages[i] = {
           ...m,
           content: acc.flatText,

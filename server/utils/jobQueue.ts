@@ -321,21 +321,31 @@ class ChatJobQueue {
    */
   abort(conversationId: string): void {
     const convState = this.conversationStates.get(conversationId)
-    if (!convState?.activeJobId) return
+    if (!convState?.activeJobId) {
+      console.warn('[JobQueue] Abort: no active job for conversation', conversationId)
+      return
+    }
 
     const job = this.jobs.get(convState.activeJobId)
     const procState = this.jobProcessStates.get(convState.activeJobId)
-    if (!job || !procState) return
+    if (!job || !procState) {
+      console.warn('[JobQueue] Abort: job or procState not found for', convState.activeJobId)
+      return
+    }
 
-    console.log('[JobQueue] Abort:', job.id)
+    console.log('[JobQueue] Abort:', job.id, 'status:', job.status, 'hasProc:', !!procState.proc)
 
     if (procState.proc) {
       procState.procGeneration++
       killProc(procState.proc)
       procState.proc = null
+      console.log('[JobQueue] Abort: process killed for', job.id)
     }
     procState.pendingTools = []
+    // Emit aborted event so persister can flush the message as 'stopped'
+    this.emitAndBuffer(job, { type: 'done', requestId: 'aborted', aborted: true })
     this.setJobStatus(job, 'done')
+    console.log('[JobQueue] Abort: job status set to done for', job.id)
   }
 
   /**
