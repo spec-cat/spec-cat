@@ -7,6 +7,7 @@ import ChatPanel from '~/components/chat/ChatPanel.vue'
 import GitFileDiffViewer from '~/components/git/GitFileDiffViewer.vue'
 import SettingsModal from '~/components/settings/SettingsModal.vue'
 import ToastContainer from '~/components/common/ToastContainer.vue'
+import SplashScreen from '~/components/common/SplashScreen.vue'
 import { useLayoutStore } from '~/stores/layout'
 import { useSettingsStore } from '~/stores/settings'
 import { useChatStore } from '~/stores/chat'
@@ -163,6 +164,9 @@ onUnmounted(() => {
 
     <!-- Toast notifications -->
     <ToastContainer />
+
+    <!-- Splash screen -->
+    <SplashScreen />
 
     <!-- Nuxt page outlet for route content -->
     <slot />

@@ -10,6 +10,21 @@ const __dirname = dirname(__filename)
 const packageRoot = resolve(__dirname, '..')
 const serverEntry = resolve(packageRoot, '.output/server/index.mjs')
 
+const CYAN = '\x1b[36m'
+const DIM = '\x1b[2m'
+const RESET = '\x1b[0m'
+
+console.log(`${CYAN}
+  ____                    ____      _
+ / ___| _ __   ___  ___  / ___|__ _| |_
+ \\___ \\| '_ \\ / _ \\/ __|| |   / _\` | __|
+  ___) | |_) |  __/ (__ | |__| (_| | |_
+ |____/| .__/ \\___|\\___| \\____\\__,_|\\__|
+       |_|
+${RESET}`)
+console.log(`${DIM}  initializing...${RESET}`)
+console.log()
+
 if (!existsSync(serverEntry)) {
   console.error('[spec-cat] Missing build output: .output/server/index.mjs')
   console.error('[spec-cat] Reinstall the package, or if developing locally run: pnpm build')
