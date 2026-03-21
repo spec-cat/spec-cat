@@ -47,7 +47,7 @@ async function runJob(job: 'startup-reconcile' | 'poll-scan' | 'manual-reindex',
     runtimeState.currentJob = job
 
     const start = Date.now()
-    log.info('Spec search job started', {
+    log.debug('Spec search job started', {
       job,
       forceFull,
       projectDir: getProjectDir(),

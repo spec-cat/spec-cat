@@ -224,7 +224,7 @@ const formattedContent = computed(() => {
       <!-- Fallback: flat content (legacy messages or non-renderable block sets) -->
       <div
         v-if="!hasRenderableBlocks && hasFlatContent && isUser"
-        class="text-sm font-mono text-retro-text break-words whitespace-pre-wrap"
+        class="text-sm font-mono text-retro-text break-words whitespace-pre-wrap pl-[3px] pt-[5px]"
       >{{ message.content }}</div>
       <div
         v-if="!hasRenderableBlocks && hasFlatContent && !isUser"

@@ -11,7 +11,7 @@ const html = computed(() => renderMarkdown(props.block.text))
 <template>
   <div
     v-if="block.text.trim()"
-    class="text-sm font-mono text-retro-text break-words chat-markdown"
+    class="text-sm font-mono text-retro-text break-words chat-markdown pl-[3px]"
     v-html="html"
   />
 </template>
