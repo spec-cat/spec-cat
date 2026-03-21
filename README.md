@@ -1,105 +1,112 @@
 # Spec Cat
-Spec Cat is a local development workbench designed to make spec-driven development safer, faster, and a bit more delightful.
 
-It brings spec writing/editing, Git graph inspection, interactive AI coding, worktree isolation, and cascade automation into a single screen.
-
-<img width="3127" height="1503" alt="image" src="https://github.com/user-attachments/assets/81f6a813-d769-4765-804a-ac3159d7eadb" />
-
-## Project Overview
-In large codebases, a "one-line prompt" might be fast, but it does not guarantee maintainable results.
-
-Spec Cat is built to make this workflow a daily default:
-
-`spec -> plan -> tasks -> implement -> review`
-
-This workflow follows GitHub Spec-Kit conventions and tracks planning/implementation around documents in `specs/`.
-Spec Cat is not only convention-compatible: it is a wrapper/orchestration project around Spec-Kit workflows (`/speckit.*`), adding UI, conversation state, worktree safety, and review/finalize controls on top.
-
-The core idea is simple.
-- Specs are the source of truth.
-- Changes are isolated by worktree.
-- AI helps quickly, but outcomes remain reviewable by humans.
-
-## Motivation
-- Direct code changes from prompts alone can quickly make projects chaotic.
-- The more repetitive spec pipeline work is automated, the smaller team quality variance becomes.
-- Even when AI makes mistakes, teams should be able to recover safely through a worktree/preview/finalize flow.
-
-## Features
-Below are the major features in the current repository (implemented + some in progress).
-
-### 1) Four-column development workbench UI
-- Use Git / Features / Conversations / Chat panels on a single screen
-- Prioritizes context continuity over route switching
-
-### 2) Git graph + Git tooling
-- Git operation APIs and UI for branches, commits, tags, stashes, and more
-- Commit graph visualization with detailed diff inspection
-
-### 3) Features panel + spec viewer
-- Automatic discovery of the `specs/` directory
-- Status checks for `spec.md`, `plan.md`, and `tasks.md` from feature cards
-- Markdown viewing/editing for spec files in a modal
-
-### 4) AI chat (provider abstraction)
-- Streaming responses, session resume, and permission modes (`plan`, `ask`, `auto`, `bypass`)
-- Provider Registry supports Claude and Codex selection
-- Incompatible provider/model combinations are safely normalized on the server
-
-### 5) Worktree-isolated workflow
-- Worktree isolation per conversation
-- `Preview` (apply to main workspace) -> `Finalize` (clean up after review) flow
-- Stop/recovery paths when conflicts occur
-
-### 6) Cascade / auto mode
-- Chained pipeline command execution by feature unit
-- Sequential/parallel processing of multiple spec units in auto mode
-- Results are reviewed in the same conversation/worktree flow
-
-### 7) Spec search
-- Keeps `specs/*` as the source of truth
-- Keyword search + embedding-based semantic search (SQLite cache)
-
-### 8) Conversation archive
-- Archive-first management instead of hard deletion
-- Preserve historical context for re-open/restart workflows
-
-## Tech Stack
-- Nuxt 3, Vue 3, TypeScript
-- Pinia, Tailwind CSS
-- Nitro server routes + Node.js child process/fs utilities
-- SQLite (`better-sqlite3`, `sqlite-vec`) for spec search caching
-
-## Provider Capability Policy
-- Codex can appear in provider metadata even when runtime support is unavailable.
-- If Codex is missing required capabilities (`streaming`, `permissions`, `resume`), selection is disabled in Settings with a clear reason.
-- Backend AI endpoints return actionable guard errors that include `providerId` and `missingCapability`.
-- If persisted provider/model settings are invalid, Claude is used as a safe default fallback.
-
-## Model API Tool Registration Policy
-- Tool schemas are request-scoped: each model API call includes the tool schema payload.
-- App startup loads only the internal tool registry (definitions + executors).
-- Provider adapters map that registry per provider format at request time.
-
-## Getting Started
-### 1) Requirements
-- Node.js (LTS recommended)
-- `pnpm`
-- (Optional) AI CLI
-  - For Claude: authenticated `claude` CLI
-  - For Codex: `codex` CLI or `CODEX_CLI_PATH` configuration
-
-### 2) Install
-```bash
-pnpm install
+```
+  ____                    ____      _
+ / ___| _ __   ___  ___  / ___|__ _| |_
+ \___ \| '_ \ / _ \/ __|| |   / _` | __|
+  ___) | |_) |  __/ (__ | |__| (_| | |_
+ |____/| .__/ \___|\___| \____\__,_|\__|
+       |_|
 ```
 
-### 3) Run in development
+A local development workbench for spec-driven development.
+Write specs, visualize git history, chat with AI, isolate work in worktrees — all in one screen.
+
+## What It Does
+
+Spec Cat orchestrates the spec-driven workflow:
+
+```
+spec -> (clarify) -> plan -> tasks -> implement -> review
+```
+
+Every change starts from a spec, gets planned, broken into tasks, implemented in an isolated worktree, and reviewed before merging. AI assists at each step, but humans stay in control.
+
+## Screen Layout
+
+Four-column workbench on a single page:
+
+| Git Graph | Features | Conversations | Chat |
+|-----------|----------|---------------|------|
+| Branch/commit visualization, diffs, 50+ git operations | Spec status cards, markdown viewer, traceability | Session list, archive, search | AI streaming, permission modes, worktree controls |
+
+## Features
+
+### Git Graph & Operations
+- Interactive commit graph with branch/tag/stash visualization
+- Context menus for merge, rebase, cherry-pick, reset, revert, stash, tag, push/pull
+- Inline diff viewer for any commit or uncommitted changes
+- Find widget for searching commits by subject or hash
+- Remote management (add, edit, fetch, push, pull)
+
+### Spec Management
+- Auto-discovers `specs/` directory with per-feature status (`spec.md`, `plan.md`, `tasks.md`)
+- Markdown viewer/editor modal with syntax highlighting (CodeMirror)
+- FR traceability analysis — verifies every requirement maps through plan to tasks
+- Keyword + embedding-based semantic search across all specs (SQLite + sqlite-vec)
+
+### AI Chat
+- Streaming responses with thinking blocks, tool use, and result summaries
+- **Permission modes**: `ask` (confirm each action), `plan` (upfront approval), `auto` (no prompts), `bypass` (admin)
+- **Providers**: Claude, Gemini, Codex — with capability-based selection and safe fallbacks
+- Session resume on page reload, per-conversation stream isolation
+- Commit message generation from diffs
+
+### Worktree Isolation
+- Each conversation gets its own git worktree
+- **Preview**: apply worktree changes to main workspace for review
+- **Finalize**: clean up worktree after merge
+- **Sync**: keep worktree alive for continued iteration
+- Rebase conflict resolution with AI-assisted suggestions
+
+### Conversations
+- Archive-first management (soft delete, not hard delete)
+- Linked to features and worktree branches
+- Persistent across sessions via filesystem-backed storage
+
+### Cascade / Auto Mode
+- Chain spec pipeline commands per feature (`specify -> plan -> tasks -> implement`)
+- Sequential or parallel processing of multiple features
+- Results reviewed in the same conversation/worktree flow
+
+### Skills & Tools
+- Registered tool schemas sent per AI request (request-scoped, not global)
+- Skill prompt system for spec-kit operations
+- Provider adapters map tools to each provider's format
+
+### Theme
+- Dark / light mode with retro-style color palette
+- Persisted via cookie
+
+## Tech Stack
+
+| Layer | Tech |
+|-------|------|
+| Framework | Nuxt 3, Vue 3, TypeScript |
+| State | Pinia |
+| Styling | Tailwind CSS |
+| Server | Nitro with WebSocket support |
+| Editor | CodeMirror 6 |
+| Search | SQLite (better-sqlite3) + sqlite-vec for embeddings |
+| Markdown | marked + shiki + DOMPurify |
+| AI | Claude CLI, Gemini API, Codex CLI |
+
+## Getting Started
+
+### Requirements
+- Node.js >= 20
+- `pnpm`
+- For AI features: authenticated `claude` CLI, `codex` CLI, or Gemini API credentials
+
+### Install & Run
+
 ```bash
+pnpm install
 pnpm dev
 ```
 
-### 4) Run via npx (after npm publish)
+### Run via npx
+
 ```bash
 npx spec-cat
 npx spec-cat --port 4310 --host 0.0.0.0
@@ -107,32 +114,37 @@ npx spec-cat --project /path/to/your/project
 SPEC_CAT_PROJECT_DIR=/path/to/your/project npx spec-cat
 ```
 
-### 5) Key scripts
+### Scripts
+
 ```bash
-pnpm typecheck
-pnpm test
-pnpm test:coverage
-pnpm build
-pnpm preview
+pnpm dev            # Development server
+pnpm build          # Production build
+pnpm preview        # Preview production build
+pnpm typecheck      # Type checking
+pnpm test           # Run tests
+pnpm test:coverage  # Tests with coverage
 ```
 
-## Settings Storage Path
-Per-project settings are stored at:
+## Directory Structure
 
-`~/.spec-cat/projects/{project-hash}/settings.json`
-
-Even when opening the same repository multiple times, settings remain isolated per project hash.
-
-## Directory Sketch
-```text
-components/     UI components
-stores/         Pinia state management
-server/api/     Nitro API endpoints
-server/utils/   provider/worktree/spec/git utilities
-specs/          Feature spec docs (source of truth)
-tests/          Vitest tests
+```
+components/     70+ Vue components (chat, git, features, worktree, settings)
+composables/    Reusable composition functions (stream, graph, dialogs, theme)
+stores/         Pinia stores (chat, gitGraph, layout, settings, worktree)
+server/api/     90+ Nitro API endpoints
+server/utils/   AI providers, git ops, spec search, job queue, event bus
+pages/          Main workbench, settings, worktrees, design guide
+types/          TypeScript type definitions
+utils/          Client-side utilities
+specs/          Feature spec documents (source of truth)
+lib/speckit/    Spec-kit templates and prompts
 ```
 
-## Direction
-Spec Cat aims to be more than an "AI codes for you" app.
-It is a workbench where structure does not collapse, even when AI and humans build together.
+## Settings
+
+Per-project settings stored at `~/.spec-cat/projects/{project-hash}/settings.json`.
+Same repo opened from different paths gets separate settings.
+
+## License
+
+MIT
