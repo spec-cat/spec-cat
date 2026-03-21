@@ -101,6 +101,7 @@ const formattedDate = computed(() => {
             : 'border-retro-border hover:border-retro-cyan/40',
       isStreaming && isPreviewing && isActive ? 'streaming-preview-active-border'
         : isStreaming && isPreviewing ? 'streaming-preview-border'
+        : isStreaming && isActive ? 'streaming-active-border'
         : isStreaming ? 'streaming-border' : '',
       conversation.finalized ? 'opacity-50' : ''
     ]"
@@ -224,6 +225,23 @@ const formattedDate = computed(() => {
   background-size: 300% 100% !important;
   background-color: transparent !important;
   animation: streaming-bg-sweep 3s ease-in-out infinite;
+}
+
+.streaming-active-border {
+  position: relative;
+  overflow: hidden;
+  border-color: rgb(var(--color-retro-cyan) / 0.8) !important;
+  box-shadow: 0 0 8px rgb(var(--color-retro-cyan) / 0.3), 0 0 0 1px rgb(var(--color-retro-cyan) / 0.4);
+  background-image: linear-gradient(
+    270deg,
+    rgb(var(--color-retro-cyan) / 0.08),
+    rgb(var(--color-retro-cyan) / 0.2),
+    rgb(var(--color-retro-cyan) / 0.08),
+    rgb(var(--color-retro-cyan) / 0.2)
+  ) !important;
+  background-size: 300% 100% !important;
+  background-color: transparent !important;
+  animation: streaming-bg-sweep 2s ease-in-out infinite;
 }
 
 .streaming-preview-border {
