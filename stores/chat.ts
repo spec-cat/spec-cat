@@ -1074,8 +1074,10 @@ export const useChatStore = defineStore('chat', () => {
   async function refreshServerConversations() {
     const loaded = await loadFromStorage()
     const existingMap = new Map(conversations.value.map(c => [c.id, c]))
+    const serverIds = new Set(loaded.conversations.map(c => c.id))
     let added = 0
     let updated = 0
+    let removed = 0
 
     for (const conv of loaded.conversations) {
       const existing = existingMap.get(conv.id)
@@ -1101,11 +1103,29 @@ export const useChatStore = defineStore('chat', () => {
       }
     }
 
-    if (added > 0 || updated > 0) {
+    // Remove conversations that no longer exist on the server (e.g. archived from another browser)
+    for (let i = conversations.value.length - 1; i >= 0; i--) {
+      const conv = conversations.value[i]
+      if (!serverIds.has(conv.id) && !streamingConversations.value.has(conv.id)) {
+        console.log(`[chat] refresh: removed conversation ${conv.id} (no longer on server)`)
+        if (activeConversationId.value === conv.id) {
+          activeConversationId.value = null
+        }
+        conversations.value.splice(i, 1)
+        removed++
+      }
+    }
+
+    // Sync archived conversations
+    if (loaded.archivedConversations) {
+      archivedConversations.value = loaded.archivedConversations
+    }
+
+    if (added > 0 || updated > 0 || removed > 0) {
       sortConversations()
     }
-    console.log(`[chat] refreshServerConversations: loaded=${loaded.conversations.length}, added=${added}, updated=${updated}`)
-    return added + updated
+    console.log(`[chat] refreshServerConversations: loaded=${loaded.conversations.length}, added=${added}, updated=${updated}, removed=${removed}`)
+    return added + updated + removed
   }
 
   /**

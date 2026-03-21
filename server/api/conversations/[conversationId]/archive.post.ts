@@ -5,6 +5,7 @@ import { rm } from 'node:fs/promises'
 import { promisify } from 'node:util'
 import { generateArchivedConversationId } from '~/types/chat'
 import { logger } from '~/server/utils/logger'
+import { eventBus, GLOBAL_CHANNEL } from '~/server/utils/eventBus'
 import { getProjectDir } from '~/server/utils/projectDir'
 import { readConversationStorageState, writeConversationStorageState } from '../../../utils/conversationStore'
 const execAsync = promisify(exec)
@@ -100,6 +101,13 @@ export default defineEventHandler(async (event) => {
     version: data.version,
     conversations,
     archivedConversations,
+  })
+
+  // Notify all connected clients so other browsers sync the archive
+  eventBus.emit(GLOBAL_CHANNEL, {
+    type: 'notification',
+    notificationEvent: 'conversation_archived',
+    conversationId,
   })
 
   return {

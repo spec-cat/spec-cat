@@ -71,6 +71,9 @@ export function useGlobalNotifications() {
   function setupServerJobStreaming(conversationId: string, message: string) {
     if (!ws || ws.readyState !== WebSocket.OPEN) return
 
+    // Skip if this browser is already streaming this conversation (e.g. we initiated the job)
+    if (chatStore.isConversationStreaming(conversationId)) return
+
     const conv = chatStore.conversations.find((c: { id: string }) => c.id === conversationId)
     if (!conv) {
       console.warn('[GlobalNotifications] Conversation not found for streaming:', conversationId)
@@ -147,7 +150,9 @@ export function useGlobalNotifications() {
   function handleNotification(msg: any) {
     console.log('[GlobalNotifications] Received:', msg.notificationEvent, msg.conversationId)
 
-    if (msg.notificationEvent === 'job_created' && msg.source !== 'user') {
+    if (msg.notificationEvent === 'job_created') {
+      // Set up streaming after refresh for jobs initiated elsewhere
+      // (both server-initiated and user-initiated from another browser)
       pendingJobs.set(msg.conversationId, msg.message || '')
       debouncedRefresh()
       return
@@ -166,6 +171,11 @@ export function useGlobalNotifications() {
 
     if (msg.notificationEvent === 'job_completed') {
       // job_completed fires before flush; streaming continues until job_persisted
+      return
+    }
+
+    if (msg.notificationEvent === 'conversation_archived') {
+      debouncedRefresh()
       return
     }
   }
