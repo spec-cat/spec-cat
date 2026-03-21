@@ -40,11 +40,11 @@ watch(
       <span class="text-retro-yellow">Thinking</span>
       <span
         v-if="!expanded && preview"
-        class="text-retro-muted/80 truncate min-w-0"
+        class="text-retro-muted/80 truncate min-w-0 flex-1"
       >
         {{ preview }}
       </span>
-      <span class="ml-auto text-retro-muted/60 text-[10px]">
+      <span class="ml-auto flex-shrink-0 text-retro-muted/60 text-[10px]">
         {{ lineCount }} lines · {{ block.thinking.length }} chars
       </span>
     </button>

@@ -84,28 +84,24 @@ const formattedContent = computed(() => {
 
 <template>
   <div
-    class="flex gap-3 p-3"
+    class="flex flex-col p-3"
     :class="[
       isUser ? 'bg-retro-dark/50' : 'bg-transparent',
       isError ? 'border-l-2 border-retro-red' : '',
     ]"
   >
-    <!-- Avatar -->
-    <div
-      class="flex-shrink-0 w-6 h-6 rounded flex items-center justify-center"
-      :class="isUser ? 'bg-retro-cyan/20' : 'bg-retro-green/20'"
-    >
-      <UserIcon v-if="isUser" class="w-4 h-4 text-retro-cyan" />
-      <CpuChipIcon v-else class="w-4 h-4 text-retro-green" />
-    </div>
-
-    <!-- Content -->
-    <div class="flex-1 min-w-0">
-      <!-- Header -->
-      <div class="flex items-center gap-2 mb-1">
-        <span class="text-xs font-mono" :class="isUser ? 'text-retro-cyan' : 'text-retro-green'">
-          {{ isUser ? 'You' : 'Assistant' }}
-        </span>
+    <!-- Header: Avatar + Role -->
+    <div class="flex items-center gap-2 mb-1">
+      <div
+        class="flex-shrink-0 w-6 h-6 rounded flex items-center justify-center"
+        :class="isUser ? 'bg-retro-cyan/20' : 'bg-retro-green/20'"
+      >
+        <UserIcon v-if="isUser" class="w-4 h-4 text-retro-cyan" />
+        <CpuChipIcon v-else class="w-4 h-4 text-retro-green" />
+      </div>
+      <span class="text-xs font-mono" :class="isUser ? 'text-retro-cyan' : 'text-retro-green'">
+        {{ isUser ? 'You' : 'Assistant' }}
+      </span>
         <span class="text-xs font-mono text-retro-muted">
           {{ formatTime(message.timestamp) }}
         </span>
@@ -118,8 +114,10 @@ const formattedContent = computed(() => {
         <span v-if="isError" class="text-xs font-mono text-retro-red">
           (error)
         </span>
-      </div>
+    </div>
 
+    <!-- Content -->
+    <div class="flex-1 min-w-0 w-full">
       <!-- Structured content blocks (rich UI with tool boxes) -->
       <template v-if="hasRenderableBlocks">
         <ChatContentBlock
