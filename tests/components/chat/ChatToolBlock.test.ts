@@ -55,7 +55,7 @@ describe('ChatToolBlock', () => {
     expect(wrapper.text()).toContain('Truncated preview')
   })
 
-  it('renders edit before/after previews', async () => {
+  it('renders edit summary without before/after previews', async () => {
     const block = makeToolBlock({
       name: 'Edit',
       input: {
@@ -68,11 +68,10 @@ describe('ChatToolBlock', () => {
     const wrapper = await mountSuspended(ChatToolBlock, { props: { block } })
     expect(wrapper.text()).toContain('Edit server/api.ts')
 
-    await ensureExpanded(wrapper, 'Before')
-    expect(wrapper.text()).toContain('Before')
-    expect(wrapper.text()).toContain('const a = 1')
-    expect(wrapper.text()).toContain('After')
-    expect(wrapper.text()).toContain('const a = 2')
+    // Before/After previews removed — only diff viewer in result section
+    await wrapper.find('button').trigger('click')
+    expect(wrapper.text()).not.toContain('Before')
+    expect(wrapper.text()).not.toContain('After')
   })
 
   it('keeps fallback summary for non-target tools', async () => {

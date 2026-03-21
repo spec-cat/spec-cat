@@ -927,8 +927,16 @@ export function useChatStream() {
           }, conversationId, { syncContent: false })
         }
 
-        if (event.partialJson && event.index !== undefined) {
-          const tool = conn.activeTools.get(event.index)
+        if (event.partialJson) {
+          let tool: { blockId: string; toolUseId: string; name: string; inputJson: string } | undefined
+          if (event.index !== undefined) {
+            tool = conn.activeTools.get(event.index)
+          }
+          if (!tool && event.blockId) {
+            for (const [, t] of conn.activeTools) {
+              if (t.blockId === event.blockId) { tool = t; break }
+            }
+          }
           if (tool) {
             tool.inputJson += event.partialJson
           }
@@ -937,41 +945,53 @@ export function useChatStream() {
       }
 
       case 'block_end': {
-        if (conn.currentTextBlockId) {
-          conn.currentTextBlockId = null
-        }
-        if (conn.currentThinkingBlockId) {
-          conn.currentThinkingBlockId = null
-        }
+        // Find the tool entry by index or by blockId fallback
+        let tool: { blockId: string; toolUseId: string; name: string; inputJson: string } | undefined
         if (event.index !== undefined) {
-          const tool = conn.activeTools.get(event.index)
-          if (tool) {
-            // Parse tool input
-            let input: Record<string, unknown> = {}
-            try {
-              input = JSON.parse(tool.inputJson)
-            } catch {
-              // ignore parse errors
-            }
-
-            // Intercept ExitPlanMode — show approval UI
-            if (tool.name === 'ExitPlanMode') {
-              const approval: PlanApproval = {
-                allowedPrompts: input.allowedPrompts as PlanApproval['allowedPrompts'],
-              }
-              chatStore.setPendingPlanApproval(approval, conversationId)
-            }
-
-            // Update the ToolUseBlock with parsed input and mark as pending (waiting for result)
-            chatStore.updateBlockWithSave(conn.currentMessageId, tool.blockId, (block) => {
-              if (block.type === 'tool_use') {
-                const tb = block as ToolUseBlock
-                tb.input = input
-                tb.inputSummary = formatToolInputSummary(input)
-                tb.status = 'pending'
-              }
-            }, conversationId)
+          tool = conn.activeTools.get(event.index)
+        }
+        if (!tool && event.blockId) {
+          for (const [, t] of conn.activeTools) {
+            if (t.blockId === event.blockId) { tool = t; break }
           }
+        }
+
+        // Only clear text/thinking block IDs when this block_end is NOT for a tool block
+        if (!tool) {
+          if (conn.currentTextBlockId) {
+            conn.currentTextBlockId = null
+          }
+          if (conn.currentThinkingBlockId) {
+            conn.currentThinkingBlockId = null
+          }
+        }
+
+        if (tool) {
+          // Parse tool input
+          let input: Record<string, unknown> = {}
+          try {
+            input = JSON.parse(tool.inputJson)
+          } catch {
+            // ignore parse errors
+          }
+
+          // Intercept ExitPlanMode — show approval UI
+          if (tool.name === 'ExitPlanMode') {
+            const approval: PlanApproval = {
+              allowedPrompts: input.allowedPrompts as PlanApproval['allowedPrompts'],
+            }
+            chatStore.setPendingPlanApproval(approval, conversationId)
+          }
+
+          // Update the ToolUseBlock with parsed input and mark as pending (waiting for result)
+          chatStore.updateBlockWithSave(conn.currentMessageId, tool.blockId, (block) => {
+            if (block.type === 'tool_use') {
+              const tb = block as ToolUseBlock
+              tb.input = input
+              tb.inputSummary = formatToolInputSummary(input)
+              tb.status = 'pending'
+            }
+          }, conversationId)
         }
         break
       }
@@ -1160,28 +1180,40 @@ export function useChatStream() {
               (block as ThinkingBlock).thinking += event.thinking
             }
           }
-          if (event.partialJson && event.index !== undefined) {
-            const tool = activeTools.get(event.index)
+          if (event.partialJson) {
+            let tool: { blockId: string; toolUseId: string; name: string; inputJson: string } | undefined
+            if (event.index !== undefined) tool = activeTools.get(event.index)
+            if (!tool && event.blockId) {
+              for (const [, t] of activeTools) {
+                if (t.blockId === event.blockId) { tool = t; break }
+              }
+            }
             if (tool) tool.inputJson += event.partialJson
           }
           break
         }
 
         case 'block_end': {
-          if (currentTextBlockId) currentTextBlockId = null
-          if (currentThinkingBlockId) currentThinkingBlockId = null
-          if (event.index !== undefined) {
-            const tool = activeTools.get(event.index)
-            if (tool) {
-              let input: Record<string, unknown> = {}
-              try { input = JSON.parse(tool.inputJson) } catch {}
-              const block = contentBlocks.find(b => b.id === tool.blockId)
-              if (block && block.type === 'tool_use') {
-                const tb = block as ToolUseBlock
-                tb.input = input
-                tb.inputSummary = formatToolInputSummary(input)
-                tb.status = 'pending'
-              }
+          let tool: { blockId: string; toolUseId: string; name: string; inputJson: string } | undefined
+          if (event.index !== undefined) tool = activeTools.get(event.index)
+          if (!tool && event.blockId) {
+            for (const [, t] of activeTools) {
+              if (t.blockId === event.blockId) { tool = t; break }
+            }
+          }
+          if (!tool) {
+            if (currentTextBlockId) currentTextBlockId = null
+            if (currentThinkingBlockId) currentThinkingBlockId = null
+          }
+          if (tool) {
+            let input: Record<string, unknown> = {}
+            try { input = JSON.parse(tool.inputJson) } catch {}
+            const block = contentBlocks.find(b => b.id === tool.blockId)
+            if (block && block.type === 'tool_use') {
+              const tb = block as ToolUseBlock
+              tb.input = input
+              tb.inputSummary = formatToolInputSummary(input)
+              tb.status = 'pending'
             }
           }
           break

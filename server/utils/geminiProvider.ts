@@ -3,12 +3,14 @@ import type { AIProvider, AIProviderStreamCallbacks, AIProviderStreamController,
 import { registerProvider } from '~/server/utils/aiProviderRegistry'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { getGeminiCliPath } from '~/server/utils/gemini'
-import type { 
-  UIStreamEvent, 
-  UIStreamBlockDeltaEvent, 
-  UIStreamBlockStartEvent, 
-  UIStreamSessionInitEvent, 
-  UIStreamTurnResultEvent 
+import type {
+  UIStreamEvent,
+  UIStreamBlockDeltaEvent,
+  UIStreamBlockStartEvent,
+  UIStreamBlockEndEvent,
+  UIStreamSessionInitEvent,
+  UIStreamToolResultEvent,
+  UIStreamTurnResultEvent
 } from '~/types/chat'
 
 function killProc(proc: ChildProcess) {
@@ -40,15 +42,24 @@ const metadata = {
   },
 } satisfies AIProvider['metadata']
 
-// Track which sessions have already sent a block_start to ensure UI handles deltas correctly.
-const startedSessions = new Set<string>()
+// Track per-session state: whether a text block is open, current text block id, and the next block index.
+const sessionState = new Map<string, { textOpen: boolean; textBlockId: string; nextIndex: number }>()
+
+// Remember the real session ID from the init event so subsequent events (which lack session_id) can reuse it.
+let lastKnownSessionId: string | null = null
 
 const geminiProvider: AIProvider = {
   metadata,
   toCanonicalEvents(data) {
     const event = data as Record<string, unknown>
     const events: UIStreamEvent[] = []
-    const sessionId = (event.session_id as string) || 'default-session'
+
+    // Use session_id from the event if present, otherwise fall back to the last known one.
+    const rawSessionId = event.session_id as string | undefined
+    if (rawSessionId) {
+      lastKnownSessionId = rawSessionId
+    }
+    const sessionId = lastKnownSessionId || ''
     const getErrorText = (): string => {
       const direct = event.error
       if (typeof direct === 'string' && direct.trim()) {
@@ -88,40 +99,116 @@ const geminiProvider: AIProvider = {
       return ''
     }
 
+    // Helper: get or create per-session state
+    if (!sessionState.has(sessionId)) {
+      sessionState.set(sessionId, { textOpen: false, textBlockId: '', nextIndex: 0 })
+    }
+    const state = sessionState.get(sessionId)!
+
+    // Helper: close an open text block
+    const closeTextBlock = () => {
+      if (!state.textOpen) return
+      state.textOpen = false
+      events.push({
+        type: 'block_end',
+        sessionId,
+        blockId: state.textBlockId,
+      } as UIStreamBlockEndEvent)
+    }
+
+    // Helper: ensure a text block is open (create a new one after tool use)
+    const ensureTextBlock = () => {
+      if (state.textOpen) return
+      state.textOpen = true
+      const idx = state.nextIndex++
+      state.textBlockId = `gemini-text-${sessionId}-${idx}`
+      events.push({
+        type: 'block_start',
+        sessionId,
+        blockId: state.textBlockId,
+        blockType: 'text',
+        index: idx,
+        text: '',
+      } as UIStreamBlockStartEvent)
+    }
+
     if (event.type === 'message' && event.role === 'assistant') {
-      const blockId = 'gemini-text-block'
-      
-      // Ensure block_start is sent before any deltas for the UI to register the block.
-      if (!startedSessions.has(sessionId)) {
-        startedSessions.add(sessionId)
+      ensureTextBlock()
+
+      const text = event.content as string
+      if (text) {
         events.push({
-          type: 'block_start',
+          type: 'block_delta',
           sessionId,
-          blockId,
-          blockType: 'text',
-          index: 0,
-          text: '',
-        } as UIStreamBlockStartEvent)
+          blockId: state.textBlockId,
+          text,
+        } as UIStreamBlockDeltaEvent)
+      }
+    }
+
+    // Gemini tool invocation: { type: "tool_use", tool_name, tool_id, parameters }
+    if (event.type === 'tool_use') {
+      const toolId = (event.tool_id as string) || `gemini-tool-${Date.now()}`
+      const toolName = (event.tool_name as string) || 'unknown'
+      const params = (event.parameters && typeof event.parameters === 'object')
+        ? event.parameters as Record<string, unknown>
+        : {}
+
+      // Close any open text block before tool block
+      closeTextBlock()
+
+      const toolIndex = state.nextIndex++
+      events.push({
+        type: 'block_start',
+        sessionId,
+        blockId: toolId,
+        blockType: 'tool_use',
+        name: toolName,
+        toolUseId: toolId,
+        index: toolIndex,
+      } as UIStreamBlockStartEvent)
+
+      // Send the full input as a single partial_json delta so the UI can parse it
+      if (Object.keys(params).length > 0) {
+        events.push({
+          type: 'block_delta',
+          sessionId,
+          blockId: toolId,
+          index: toolIndex,
+          partialJson: JSON.stringify(params),
+        } as UIStreamBlockDeltaEvent)
       }
 
-      if (event.delta === true) {
-        events.push({
-          type: 'block_delta',
-          sessionId,
-          blockId,
-          index: 0,
-          text: event.content as string,
-        } as UIStreamBlockDeltaEvent)
-      } else if (event.content) {
-        // If it's a full message (unlikely in streaming but for safety), append as delta.
-        events.push({
-          type: 'block_delta',
-          sessionId,
-          blockId,
-          index: 0,
-          text: event.content as string,
-        } as UIStreamBlockDeltaEvent)
+      events.push({
+        type: 'block_end',
+        sessionId,
+        blockId: toolId,
+        index: toolIndex,
+      } as UIStreamBlockEndEvent)
+    }
+
+    // Gemini tool result: { type: "tool_result", tool_id, status, output?, error? }
+    if (event.type === 'tool_result') {
+      const toolId = (event.tool_id as string) || ''
+      const isError = (event.status as string) !== 'success'
+      let content = ''
+      if (typeof event.output === 'string') {
+        content = event.output
       }
+      if (isError && event.error && typeof event.error === 'object') {
+        const errMsg = (event.error as Record<string, unknown>).message
+        if (typeof errMsg === 'string') {
+          content = content ? `${content}\n${errMsg}` : errMsg
+        }
+      }
+
+      events.push({
+        type: 'tool_result',
+        sessionId,
+        toolUseId: toolId,
+        content,
+        isError,
+      } as UIStreamToolResultEvent)
     }
 
     if (event.type === 'init' || event.subtype === 'init') {
@@ -140,8 +227,9 @@ const geminiProvider: AIProvider = {
     }
 
     if (event.type === 'result') {
-      // Clean up session state on completion
-      startedSessions.delete(sessionId)
+      // Close any open text block and clean up session state
+      closeTextBlock()
+      sessionState.delete(sessionId)
       
       const status = (event.status as string) || ''
       const isError = status !== 'success'

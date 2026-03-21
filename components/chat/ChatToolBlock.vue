@@ -59,10 +59,10 @@ const isRequestUserInputTool = computed(() => (
   toolNameCompact.value === 'requestuserinput'
   || toolNameCompact.value === 'askuserquestion'
 ))
-const isReadTool = computed(() => toolNameLower.value === 'read')
-const isWriteTool = computed(() => toolNameLower.value === 'write')
-const isEditTool = computed(() => toolNameLower.value === 'edit' || toolNameLower.value === 'multiedit')
-const isCommandTool = computed(() => ['bash', 'exec', 'execcommand', 'runcommand'].includes(toolNameLower.value))
+const isReadTool = computed(() => ['read', 'read_file', 'readfile'].includes(toolNameLower.value))
+const isWriteTool = computed(() => ['write', 'write_file', 'writefile', 'create_file'].includes(toolNameLower.value))
+const isEditTool = computed(() => ['edit', 'multiedit', 'replace', 'edit_file', 'editfile'].includes(toolNameLower.value))
+const isCommandTool = computed(() => ['bash', 'exec', 'execcommand', 'runcommand', 'shell', 'run_shell_command'].includes(toolNameLower.value))
 const shouldAutoExpand = computed(() => (
   props.block.status === 'running'
   || props.block.status === 'error'
@@ -357,18 +357,6 @@ watch(
         <div class="text-[11px] font-mono text-retro-cyan mb-1">New Content</div>
         <pre class="text-xs font-mono text-retro-muted bg-retro-panel p-2 rounded overflow-x-auto max-h-52 overflow-y-auto scrollbar-custom whitespace-pre-wrap">{{ writePreview.text }}</pre>
         <div v-if="writePreview.truncated" class="text-[10px] text-retro-muted mt-1">Truncated preview</div>
-      </div>
-
-      <div v-if="isEditTool && editOldPreview.text" class="mt-2">
-        <div class="text-[11px] font-mono text-retro-yellow mb-1">Before</div>
-        <pre class="text-xs font-mono text-retro-muted bg-retro-panel p-2 rounded overflow-x-auto max-h-40 overflow-y-auto scrollbar-custom whitespace-pre-wrap">{{ editOldPreview.text }}</pre>
-        <div v-if="editOldPreview.truncated" class="text-[10px] text-retro-muted mt-1">Truncated preview</div>
-      </div>
-
-      <div v-if="isEditTool && editNewPreview.text" class="mt-2">
-        <div class="text-[11px] font-mono text-retro-green mb-1">After</div>
-        <pre class="text-xs font-mono text-retro-muted bg-retro-panel p-2 rounded overflow-x-auto max-h-40 overflow-y-auto scrollbar-custom whitespace-pre-wrap">{{ editNewPreview.text }}</pre>
-        <div v-if="editNewPreview.truncated" class="text-[10px] text-retro-muted mt-1">Truncated preview</div>
       </div>
 
       <details class="mt-2">
