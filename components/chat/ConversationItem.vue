@@ -224,7 +224,7 @@ const formattedDate = computed(() => {
   ) !important;
   background-size: 300% 100% !important;
   background-color: transparent !important;
-  animation: streaming-bg-sweep 3s ease-in-out infinite;
+  animation: streaming-bg-sweep 2s cubic-bezier(0.76, 0, 0.24, 1) infinite;
 }
 
 .streaming-active-border {
@@ -241,7 +241,7 @@ const formattedDate = computed(() => {
   ) !important;
   background-size: 300% 100% !important;
   background-color: transparent !important;
-  animation: streaming-bg-sweep 2s ease-in-out infinite;
+  animation: streaming-bg-sweep 2s cubic-bezier(0.76, 0, 0.24, 1) infinite;
 }
 
 .streaming-preview-border {
@@ -257,7 +257,7 @@ const formattedDate = computed(() => {
   ) !important;
   background-size: 300% 100% !important;
   background-color: transparent !important;
-  animation: streaming-bg-sweep 3s ease-in-out infinite;
+  animation: streaming-bg-sweep 2s cubic-bezier(0.76, 0, 0.24, 1) infinite;
 }
 
 .streaming-preview-active-border {
@@ -274,15 +274,15 @@ const formattedDate = computed(() => {
   ) !important;
   background-size: 300% 100% !important;
   background-color: transparent !important;
-  animation: streaming-bg-sweep 3s ease-in-out infinite;
+  animation: streaming-bg-sweep 2s cubic-bezier(0.76, 0, 0.24, 1) infinite;
 }
 
 @keyframes streaming-bg-sweep {
   0% {
-    background-position: 0% 50%;
-  }
-  50% {
     background-position: 100% 50%;
+  }
+  75% {
+    background-position: 0% 50%;
   }
   100% {
     background-position: 0% 50%;
