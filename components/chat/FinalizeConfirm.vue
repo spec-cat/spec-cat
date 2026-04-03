@@ -24,6 +24,7 @@ const targetBranch = ref(props.baseBranch)
 const branches = ref<string[]>([])
 const branchesLoading = ref(false)
 const worktreeStore = useWorktreeStore()
+const textareaRef = ref<HTMLTextAreaElement | null>(null)
 
 async function generateMessage() {
   generating.value = true
@@ -84,6 +85,7 @@ onMounted(async () => {
   })()
 
   await Promise.all([commitCountPromise, branchesPromise])
+  nextTick(() => textareaRef.value?.focus())
 })
 
 function handleConfirm() {
@@ -142,6 +144,7 @@ function handleConfirm() {
     <!-- Commit message -->
     <div class="relative">
       <textarea
+        ref="textareaRef"
         v-model="commitMessage"
         placeholder="Squash commit message..."
         rows="2"

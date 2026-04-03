@@ -113,6 +113,16 @@ watch(
   { immediate: true }
 )
 
+// Reset conversation-specific UI when switching conversations
+watch(
+  () => chatStore.activeConversationId,
+  () => {
+    showFinalizeConfirm.value = false
+    showRebaseConfirm.value = false
+    finalizeStatus.value = null
+  },
+)
+
 const isSameAsBase = computed(() =>
   baseCompare.value ? baseCompare.value.ahead === 0 && baseCompare.value.behind === 0 : false
 )
