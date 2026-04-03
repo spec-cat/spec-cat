@@ -2,7 +2,7 @@
 
 **Feature Branch**: `008-spec-search`
 **Created**: 2026-02-06
-**Updated**: 2026-02-16
+**Updated**: 2026-03-21
 **Status**: In Progress (implementation largely complete; manual validation pending)
 **Input**: User description: "Enable vector search by embedding specs into SQLite. `specs/*` files are the source of truth and SQLite acts only as a cache."
 
@@ -133,9 +133,10 @@ As a developer, I want status and reindex APIs so I can diagnose index health qu
 - **FR-007**: System MUST track source file content hashes (SHA-256) to detect changes.
 - **FR-007a**: System MUST skip re-indexing files whose content hash has not changed.
 - **FR-008**: System MUST run startup reconciliation on server boot by comparing current `specs/*` hashes with persisted index hashes.
-- **FR-008a**: Startup reconciliation MUST detect new, changed, and deleted spec files and apply incremental indexing before scheduler enters steady-state polling.
+- **FR-008a**: Startup reconciliation MUST detect new, changed, and deleted spec files and apply incremental indexing. Reconciliation runs asynchronously after a configurable delay (`SPEC_SEARCH_STARTUP_RECONCILE_DELAY_MS`, default 5000ms) to avoid blocking server startup. Can be disabled via `SPEC_SEARCH_DISABLE_STARTUP_RECONCILE=true`.
 - **FR-008b**: System MUST run periodic hash scans every 30 seconds while server is running and apply incremental indexing for detected deltas.
 - **FR-008c**: Indexing jobs MUST run sequentially and MUST NOT overlap; concurrent requests should return an `already indexing` state.
+- **FR-008d**: System MUST gracefully close SQLite database during Nitro shutdown, waiting up to `SPEC_SEARCH_SHUTDOWN_WAIT_MS` (default 1500ms) for in-progress operations to complete.
 - **FR-009**: System MUST support filtering search results by feature ID and file type.
 - **FR-010**: System MUST return chunk metadata (feature ID, file type, section headings, line numbers, FR tags) with search results.
 - **FR-011**: System MUST treat `specs/*` files as source of truth; SQLite DB is a rebuildable cache.
@@ -171,6 +172,15 @@ As a developer, I want status and reindex APIs so I can diagnose index health qu
 - **SC-008**: `/implement` receives relevant context automatically when available.
 - **SC-009**: After app restart, offline file changes are reconciled at startup with hash-based incremental indexing.
 - **SC-010**: UI shows indexing state within 1 second of index start and clears within 1 second of completion.
+
+## Operational Configuration
+
+| Environment Variable | Default | Description |
+|---------------------|---------|-------------|
+| `LOG_LEVEL` | `info` | Server log verbosity (`debug`, `info`, `warn`, `error`). Controls output from `server/utils/logger.ts`. Spec search init/job messages are logged at `debug` level. |
+| `SPEC_SEARCH_STARTUP_RECONCILE_DELAY_MS` | `5000` | Delay before startup reconciliation runs (ms) |
+| `SPEC_SEARCH_DISABLE_STARTUP_RECONCILE` | `false` | Set to `true` to skip startup reconciliation entirely |
+| `SPEC_SEARCH_SHUTDOWN_WAIT_MS` | `1500` | Max wait time for graceful SQLite close during shutdown (ms) |
 
 ## Assumptions
 

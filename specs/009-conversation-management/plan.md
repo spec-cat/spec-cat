@@ -7,19 +7,19 @@
 
 ## Summary
 
-Implement conversation list management with CRUD operations, localStorage persistence (hard limit 100), search/filter, inline rename, delete confirmation, streaming status badges, and auto-generated titles. The feature extends the existing Pinia chat store and localStorage patterns from 007-ai-provider-chat. No server-side APIs are required — all operations are client-side with localStorage as the persistence layer.
+Implement conversation list management with CRUD operations, server-side filesystem persistence (hard limit 100), search/filter, inline rename, delete confirmation, streaming status badges, auto-generated titles, archive system with worktree cleanup, and cross-browser synchronization. The feature extends the existing Pinia chat store with server-side REST APIs backed by per-conversation JSON file storage.
 
 ## Technical Context
 
 **Language/Version**: TypeScript 5.6+ with Nuxt 3 (v3.16+), Vue 3 (v3.5+)
 **Primary Dependencies**: Pinia (v2.2+), @heroicons/vue (icons), Tailwind CSS (styling)
-**Storage**: localStorage (`spec-cat-conversations` key), hard limit 100 conversations
+**Storage**: Server-side filesystem (`~/.spec-cat/data/conversations/{id}.json`), hard limit 100 conversations
 **Testing**: Manual testing, TypeScript type checking
-**Target Platform**: Browser (Nuxt SSR/SPA)
-**Project Type**: Web application (Nuxt 3 full-stack) — client-side only for this feature
-**Performance Goals**: Search/filter responds within 400ms debounce; auto-save debounced at 400ms
-**Constraints**: Max 100 conversations in localStorage; SSR-safe (no `window` access on server)
-**Scale/Scope**: Single-user, up to 100 conversations with full message history
+**Target Platform**: Browser (Nuxt SSR/SPA) with Nitro server backend
+**Project Type**: Web application (Nuxt 3 full-stack) — client-side UI + server-side REST APIs for persistence
+**Performance Goals**: Search/filter responds within 400ms debounce; auto-save debounced at 400ms; per-conversation atomic saves
+**Constraints**: Max 100 active conversations; SSR-safe client code; server filesystem access required
+**Scale/Scope**: Single-user, up to 100 conversations with full message history, multi-browser sync via WebSocket
 
 ## Constitution Check
 
@@ -27,9 +27,9 @@ Implement conversation list management with CRUD operations, localStorage persis
 
 | Gate | Status | Notes |
 |------|--------|-------|
-| User Control First | PASS | Delete requires confirmation modal; rename is explicit user action; no auto-deletion |
-| Streaming-Native | PASS | FR-011 streaming badge shows real-time status on conversations with active streams |
-| Simplicity Over Complexity | PASS | localStorage for persistence (no server DB); flat conversation array (no normalization); direct store operations |
+| User Control First | PASS | Delete requires confirmation modal; archive cleans up worktree/branch before removing; rename is explicit user action |
+| Streaming-Native | PASS | FR-011 streaming status with active/idle distinction; cross-browser sync via EventBus |
+| Simplicity Over Complexity | PASS | Per-file JSON storage (no database); flat conversation array; direct store operations; REST API thin layer |
 | Type Safety | PASS | `isValidConversation()` type guard; `StoredConversations` schema with version; all types in `types/chat.ts` |
 | Keyboard-Driven | PASS | Enter/Escape for inline rename; standard form input patterns |
 
@@ -37,9 +37,9 @@ Implement conversation list management with CRUD operations, localStorage persis
 
 | Gate | Status | Notes |
 |------|--------|-------|
-| User Control First | PASS | Hard limit at 100 blocks creation with user-facing message (not silent auto-delete) |
-| Simplicity Over Complexity | PASS | No composable abstraction; store actions directly in `stores/chat.ts`; `conversationStorage.ts` is thin utility |
-| Type Safety | PASS | Corrupted data handling: `filter(isValidConversation)` discards invalid entries safely |
+| User Control First | PASS | Hard limit at 100 blocks creation with user-facing message; archive requires worktree cleanup to succeed |
+| Simplicity Over Complexity | PASS | No composable abstraction; store actions directly in `stores/chat.ts`; `conversationStorage.ts` is thin async utility wrapping REST API calls |
+| Type Safety | PASS | Corrupted data handling: `filter(isValidConversation)` discards invalid entries safely; server skips corrupted JSON files |
 
 ## Project Structure
 
@@ -54,24 +54,35 @@ specs/009-conversation-management/
 └── tasks.md             # Phase 2 output (/speckit.tasks command)
 ```
 
-**Note**: No `contracts/` directory — this feature has no server-side APIs. All operations are client-side localStorage + Pinia store.
-
 ### Source Code (repository root)
 
 ```text
 # Types
-types/chat.ts                              # Conversation, StoredConversations, type guards, ID/title generators
+types/chat.ts                              # Conversation, ArchivedConversation, StoredConversations, type guards, ID generators
 
-# Storage Utility
-utils/conversationStorage.ts               # localStorage load/save/clear/size
+# Client Storage Utility
+utils/conversationStorage.ts               # Async REST API wrapper (load/save/saveOne/clear)
+
+# Server Storage
+server/utils/conversationStore.ts          # Filesystem persistence (per-file read/write/upsert/remove, legacy migration)
+server/api/conversations.get.ts            # GET /api/conversations
+server/api/conversations.post.ts           # POST /api/conversations (bulk write)
+server/api/conversations/update.post.ts    # POST /api/conversations/update (single upsert)
+server/api/conversations/[conversationId]/archive.post.ts  # Archive with worktree cleanup
+server/api/conversations/archives.get.ts   # GET /api/conversations/archives
+server/api/conversations/archives/[archiveId].delete.ts    # Delete archive
+server/api/conversations/archives/[archiveId]/restore.post.ts  # Restore archive
 
 # Store (shared with 007)
 stores/chat.ts                             # Conversation CRUD, activeConversationId, search, sorting, limits
 
+# Cross-Browser Sync
+composables/useGlobalNotifications.ts      # WebSocket global channel for conversation_archived, job_created events
+
 # Components
 components/chat/
 ├── ConversationList.vue                   # Search, filter, create, manage conversations
-├── ConversationItem.vue                   # Single row: title, preview, timestamp, badges, inline edit
+├── ConversationItem.vue                   # Single row: title, preview, timestamp, badges, streaming animation
 └── DeleteConfirmModal.vue                 # Confirmation dialog for deletion
 
 # Alternative layout (panel version)
@@ -79,25 +90,35 @@ components/conversations/
 └── ConversationsPanel.vue                 # Panel layout variant of conversation list
 ```
 
-**Structure Decision**: Nuxt 3 web application structure. All 009 code is client-side (types, utils, store, components). The store file (`stores/chat.ts`) is shared with 007 and other features but 009-owned actions are clearly delineated.
+**Structure Decision**: Nuxt 3 full-stack. Client communicates with server via REST API. Server persists conversations as individual JSON files for atomic writes. Cross-browser sync via EventBus → WebSocket notifications.
 
 ## FR Coverage Matrix
 
 | FR | Description | Implementation Files | Status |
 |----|-------------|---------------------|--------|
 | FR-001 | Display conversation list sorted by newest created first | `ConversationList.vue`, `stores/chat.ts` (sortConversations) | Done |
-| FR-002 | Persist to localStorage (hard limit 100) | `conversationStorage.ts`, `stores/chat.ts` (checkStorageLimits) | Done |
+| FR-002 | Persist to server-side filesystem (hard limit 100) | `conversationStorage.ts`, `conversationStore.ts`, `stores/chat.ts` | Done |
 | FR-003 | Select conversation to load in chat panel | `stores/chat.ts` (selectConversation) | Done |
-| FR-004 | Auto-generate title from first user message (50 char) | `types/chat.ts` (generateConversationTitle), `stores/chat.ts` (updateConversationTitleIfNeeded) | Done |
+| FR-004 | Auto-generate title from first user message (50 char) | `types/chat.ts` (generateConversationTitle), `stores/chat.ts` | Done |
 | FR-005 | Inline rename (Enter/Escape/blur) | `ConversationItem.vue` (isEditing, saveEdit, cancelEdit) | Done |
-| FR-006 | Delete with confirmation modal | `DeleteConfirmModal.vue`, `ConversationList.vue` (handleDeleteRequest/Confirm) | Done |
+| FR-006 | Delete with confirmation modal | `DeleteConfirmModal.vue`, `ConversationList.vue` | Done |
 | FR-007 | Display metadata (title, preview, timestamp) | `ConversationItem.vue` (lastMessagePreview, formattedTimestamp) | Done |
 | FR-008 | Sort by `createdAt` descending (newest created first) | `stores/chat.ts` (sortConversations, sortedConversations computed) | Done |
-| FR-009 | Auto-save messages (400ms debounce) | `stores/chat.ts` (saveConversation with debounce timer) | Done |
+| FR-009 | Auto-save messages (400ms debounce, per-conversation) | `stores/chat.ts`, `POST /api/conversations/update` | Done |
 | FR-010 | Search/filter (400ms debounce, title + content) | `ConversationList.vue` (searchQuery, debouncedQuery, filteredConversations) | Done |
-| FR-011 | Streaming status badge (animated dot) | `ConversationItem.vue` (isStreaming prop, animated pulse dot) | Done |
+| FR-011 | Streaming status with active/idle distinction | `ConversationItem.vue` (streaming-border, streaming-active-border) | Done |
+| FR-012 | REST API endpoints for conversation CRUD | `conversations.get.ts`, `conversations.post.ts`, `update.post.ts` | Done |
+| FR-013 | Per-conversation JSON file storage | `conversationStore.ts` (read/write/upsert per file) | Done |
+| FR-014 | Legacy migration from single-file to per-file | `conversationStore.ts` (migrateLegacyStoreIfNeeded) | Done |
+| FR-015 | Archive with worktree cleanup | `archive.post.ts`, `eventBus.ts` | Done |
+| FR-016 | List archives with search | `archives.get.ts` | Done |
+| FR-017 | Restore archived conversation | `restore.post.ts` | Done |
+| FR-018 | Delete archived conversation | `[archiveId].delete.ts` | Done |
+| FR-019 | Cross-browser sync via EventBus/WebSocket | `useGlobalNotifications.ts`, `eventBus.ts` | Done |
+| FR-020 | Sync archive state across browsers | `useGlobalNotifications.ts` (conversation_archived handler) | Done |
+| FR-021 | Sync job_created events across browsers | `useGlobalNotifications.ts` (job_created handler) | Done |
 
 ## Complexity Tracking
 
-No constitution violations. All implementations follow the simplicity principle with direct store operations and thin utilities.
+No constitution violations. Server-side persistence uses per-file JSON storage (no database). REST API layer is thin. Cross-browser sync leverages existing EventBus/WebSocket infrastructure.
 

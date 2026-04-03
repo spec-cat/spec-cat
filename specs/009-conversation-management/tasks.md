@@ -95,6 +95,42 @@
 
 ---
 
+## Phase 5: Server-Side Persistence Migration
+
+**Purpose**: Migrate from localStorage to server-side filesystem persistence via REST API
+
+- [x] T026 [US1] Create `server/utils/conversationStore.ts` with per-file read/write/upsert/remove functions and legacy migration from single `conversations.json` [FR-002, FR-013, FR-014]
+- [x] T027 [US1] Create `GET /api/conversations` endpoint to read all conversations + archives from filesystem [FR-012]
+- [x] T028 [US1] Create `POST /api/conversations` endpoint for bulk write with orphan file cleanup [FR-012]
+- [x] T029 [US1] Create `POST /api/conversations/update` endpoint for single-conversation upsert [FR-012, FR-013]
+- [x] T030 [US1] Migrate `utils/conversationStorage.ts` from localStorage to async REST API wrapper (`$fetch`) [FR-002, FR-009]
+- [x] T031 [US1] Update `stores/chat.ts` to use async `loadConversations()` and per-conversation `saveConversation()` [FR-002, FR-009]
+
+---
+
+## Phase 6: Archive System
+
+**Purpose**: Enable conversation archiving with worktree cleanup and restore
+
+- [x] T032 [US2] Define `ArchivedConversation` interface and `isValidArchivedConversation` type guard in `types/chat.ts` [FR-015]
+- [x] T033 [US2] Create `POST /api/conversations/{conversationId}/archive` with worktree removal, branch cleanup, and EventBus notification [FR-015]
+- [x] T034 [US2] Create `GET /api/conversations/archives` with search/filter support [FR-016]
+- [x] T035 [US2] Create `POST /api/conversations/archives/{archiveId}/restore` [FR-017]
+- [x] T036 [US2] Create `DELETE /api/conversations/archives/{archiveId}` [FR-018]
+
+---
+
+## Phase 7: Cross-Browser Synchronization
+
+**Purpose**: Sync conversation state across multiple browsers/tabs via EventBus/WebSocket
+
+- [x] T037 [US3] Handle `conversation_archived` events in `useGlobalNotifications` with debounced refresh, preserving locally streaming conversations [FR-019, FR-020]
+- [x] T038 [US3] Handle `job_created` events from other browsers to set up streaming subscription [FR-019, FR-021]
+- [x] T039 [US3] Add `isConversationStreaming()` guard to prevent duplicate streaming subscriptions [FR-020]
+- [x] T040 [US3] Implement `mergeServerConversations()` to refresh from server while preserving active streaming state [FR-019, FR-020]
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -181,26 +217,35 @@ Since this feature has one user story, work sequentially through phases:
 | FR | Tasks | Description |
 |----|-------|-------------|
 | FR-001 | T004, T007, T008, T016, T018 | Display conversation list sorted by newest created first |
-| FR-002 | T001, T003, T004, T005, T006, T009, T015, T022, T023, T024 | Persist to localStorage (hard limit 100) |
+| FR-002 | T001, T003, T004, T005, T006, T009, T015, T022, T023, T024, T026, T030, T031 | Persist to server-side filesystem (hard limit 100) |
 | FR-003 | T010, T018 | Select conversation to load in chat panel |
 | FR-004 | T001, T002, T009, T014 | Auto-generate title from first user message (50 char) |
 | FR-005 | T012, T019 | Inline rename (Enter/Escape/blur) |
 | FR-006 | T011, T017, T018 | Delete with confirmation modal |
 | FR-007 | T001, T016 | Display metadata (title, preview, timestamp) |
 | FR-008 | T007, T015 | Sort by `createdAt` descending (newest created first) |
-| FR-009 | T005, T013 | Auto-save messages (400ms debounce) |
+| FR-009 | T005, T013, T029, T030, T031 | Auto-save messages (400ms debounce, per-conversation API) |
 | FR-010 | T020 | Search/filter (400ms debounce, title + content) |
-| FR-011 | T021 | Streaming status badge (animated dot) |
+| FR-011 | T021 | Streaming status with active/idle distinction |
+| FR-012 | T027, T028, T029 | REST API endpoints for conversation CRUD |
+| FR-013 | T026, T029 | Per-conversation JSON file storage |
+| FR-014 | T026 | Legacy migration from single-file to per-file |
+| FR-015 | T032, T033 | Archive with worktree cleanup |
+| FR-016 | T034 | List archives with search |
+| FR-017 | T035 | Restore archived conversation |
+| FR-018 | T036 | Delete archived conversation |
+| FR-019 | T037, T038, T039, T040 | Cross-browser sync via EventBus/WebSocket |
+| FR-020 | T037, T039, T040 | Sync archive state across browsers |
+| FR-021 | T038 | Sync job_created events across browsers |
 
 ---
 
 ## Notes
 
 - [P] tasks = different files, no dependencies on incomplete tasks
-- [US1] label = maps to User Story 1 (Conversation List & Persistence)
-- This feature has a single user story, so all story-phase tasks are [US1]
+- [US1] = Conversation List & Persistence, [US2] = Archive, [US3] = Cross-Browser Sync
 - No automated tests — spec requires manual testing only
-- Feature is client-side only (no server APIs, no contracts/)
 - Store file `stores/chat.ts` is shared with 007; 009-owned actions are clearly scoped
 - Worktree fields (worktreePath, worktreeBranch, etc.) are persisted by 009 but managed by 011
+- Server storage uses per-file JSON under `~/.spec-cat/data/conversations/`
 

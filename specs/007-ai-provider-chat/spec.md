@@ -2,6 +2,7 @@
 
 **Feature Branch**: `007-ai-provider-chat`
 **Created**: 2026-02-02
+**Updated**: 2026-03-21
 **Status**: Implemented
 **Input**: User description: "Implement multi-provider AI chat supporting Claude, Codex, and future providers"
 
@@ -72,8 +73,12 @@ As a developer, I want to select between different AI providers and their models
 - **FR-001**: System MUST provide a chat panel on the right side of the application
 - **FR-002**: System MUST provide a toggle button to open/close the chat panel
 - **FR-003**: System MUST allow users to type and send text messages to the selected AI provider
-- **FR-004**: System MUST display AI responses in a conversational format (role-based styling)
+- **FR-004**: System MUST display AI responses in a conversational format (role-based styling). User messages MUST be rendered as plain text (`whitespace-pre-wrap`); only assistant messages use markdown rendering.
 - **FR-005**: System MUST stream AI responses in real-time (text appears incrementally with animated cursor) for providers that support streaming
+- **FR-005a**: System MUST support streaming resume after page reload via `tryResumeStreaming()` — checks for an active server job, resets partial message state, and subscribes to buffered WebSocket replay events (`replay_start` / `replay_end`)
+- **FR-005b**: System MUST batch-process replay events via `processReplayBuffer()` without triggering per-event Vue reactivity
+- **FR-005c**: System MUST use ref-counted WebSocket lifecycle to prevent premature disconnects when multiple composable instances are mounted
+- **FR-005d**: System MUST guard against resuming already-stopped messages (skip resume if last assistant message status is not `streaming`)
 - **FR-006**: System MUST show a bounce loading indicator while AI is generating
 - **FR-007**: System MUST maintain conversation history within the current session
 - **FR-008**: System MUST automatically scroll to show new messages (with 50px threshold detection)
@@ -81,7 +86,7 @@ As a developer, I want to select between different AI providers and their models
 - **FR-009**: System MUST pass the current working directory context to the AI provider
 - **FR-010**: System MUST display the current working directory (abbreviated) in the chat panel header
 - **FR-011**: System MUST provide a stop button to abort in-progress response generation
-- **FR-012**: System MUST provide a way to start a new conversation
+- **FR-012**: System MUST provide a way to start a new conversation. Slash commands `/new` and `/clear` are aliases for `/reset` that trigger `handleResetContext()`
 - **FR-017**: System MUST allow resizing the chat panel width (300px-600px, default 400px, persisted to localStorage)
 
 #### Error Handling
@@ -92,10 +97,12 @@ As a developer, I want to select between different AI providers and their models
 - **FR-013d**: System MUST handle WebSocket connection errors with descriptive messages, including close code meaning fallback when `reason` is empty, `wasClean` state, and the last server error context when available
 - **FR-013e**: System MUST handle provider process failures (non-zero exit codes, spawn failures)
 - **FR-013f**: System MUST handle JSON parsing errors from server responses
+- **FR-013g**: System MUST surface structured provider errors as `UIStreamErrorEvent` across all providers (Claude, Codex, Gemini), extracting error detail from provider-specific formats
+- **FR-013h**: System MUST ignore stale WebSocket events after socket replacement (check `conn.ws !== ws` and return early)
 
 #### Input & Keyboard
 - **FR-014**: System MUST prevent sending messages while Claude is currently responding
-- **FR-015**: System MUST preserve message formatting (code blocks, inline code, bold, line breaks) via simple markdown rendering
+- **FR-015**: System MUST preserve assistant message formatting (code blocks, inline code, bold, line breaks) via markdown rendering. User messages MUST be rendered as plain text with `whitespace-pre-wrap`.
 - **FR-016**: System MUST support Enter to send, Shift+Enter for newline
 - **FR-016a**: System MUST provide a retry button when the last message errored
 - **FR-016b**: System MUST grow the input area container height as the textarea expands with multi-line content (up to 200px max)
@@ -104,11 +111,26 @@ As a developer, I want to select between different AI providers and their models
 
 #### Provider Selection
 - **FR-020**: System MUST support multiple AI providers (Claude, Codex, Gemini, and future providers)
-- **FR-021**: System MUST allow users to select provider and model from available options
+- **FR-021**: System MUST allow users to select provider and model via inline grouped model selector above the chat input. Providers are grouped in a dropdown, with deferred selection (pending until a new conversation is created via `applyPendingConversationSelectionIfNeeded`). Provider list is fetched from `/api/ai/providers`.
 - **FR-022**: System MUST display provider capabilities (streaming, permissions, resume, etc.)
 - **FR-023**: System MUST disable providers that don't support required capabilities with clear reasoning
 - **FR-024**: System MUST persist provider/model selection to settings
 - **FR-025**: System MUST use AIProvider interface for all provider interactions
+
+#### Server-Initiated Conversations
+- **FR-026**: System MUST support server-initiated conversation creation via `POST /api/jobs` (accepts `{ message, permissionMode }` without conversationId, bootstraps conversation server-side)
+- **FR-027**: System MUST propagate `job_created` events via `useGlobalNotifications` composable so all connected browsers set up streaming for server-initiated jobs
+
+#### Canonical Event Protocol
+- **FR-028**: System MUST translate all provider-specific raw events into a unified `UIStreamEvent` discriminated union via `uiAdapter.ts`, including event types: `session_init`, `block_start`, `block_delta`, `block_end`, `turn_result`, `error`, `tool_result`
+- **FR-029**: The WebSocket handler MUST only emit `type: 'ui_event'` payloads (legacy `provider_json` path is deprecated)
+
+#### Message Rendering
+- **FR-030**: Thinking blocks with 240 characters or fewer and 6 lines or fewer MUST auto-expand on render (`shouldStartExpanded`). Collapsed thinking blocks show a content preview in the header.
+- **FR-031**: Consecutive low-signal tool calls (read, glob, grep, list, search) MUST be grouped into a `ChatToolGroupSummary` component showing elapsed time and compact inline summary
+
+#### Job Persistence
+- **FR-032**: Server MUST persist job events to conversation storage via `jobPersister.ts` even when no browser is connected, handling `aborted` events by marking remaining tool blocks as `error` and setting status `stopped`
 
 ### Key Entities
 

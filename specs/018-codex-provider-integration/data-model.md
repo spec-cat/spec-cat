@@ -2,6 +2,7 @@
 
 **Feature**: 018-codex-provider-integration
 **Date**: 2026-02-14
+**Updated**: 2026-03-21
 
 ## Entities
 
@@ -65,6 +66,20 @@ Provider-agnostic container for runtime continuity.
 Validation rules:
 - Session token is provider-specific and never parsed by shared UI/store code.
 - Resume only attempted when capability `resume=true`.
+
+#### Codex Session Discovery
+
+The Codex provider uses a multi-field heuristic to extract the session ID from events, trying the following field names in order: `thread_id`, `threadId`, `session_id`, `sessionId`, `conversation_id`, `conversationId`. The `emitSessionInit` event is fired as soon as a session token is discovered mid-stream (not only at process exit), giving the client an earlier opportunity to persist the ID for future resume.
+
+#### Codex Credential Seeding (`seedCodexAuth`)
+
+On resume turns, the provider copies the real `~/.codex` (or `$CODEX_HOME`) credentials directory into the ephemeral `CODEX_HOME` temp dir, enabling re-authentication without prompting.
+
+#### Codex Resume Constraints
+
+- `--sandbox workspace-write` is **only set on new turns**, not on resume turns (`codex exec resume` does not accept it).
+- Default model: `gpt-5.4`.
+- Stream timeout: 180 seconds.
 
 ### RequestToolPayload
 

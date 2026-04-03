@@ -82,6 +82,7 @@ As a developer, I want to see which conversation (worktree) is currently being p
 - **FR-028**: `POST /api/chat/worktree` MUST emit per-step timing logs and total duration for key git steps in the creation path.
 - **FR-029**: Fullscreen chat mode MUST unmount hidden right-side panels (features/conversations) so hidden panel reactive logic does not continue running.
 - **FR-030**: Repository MUST provide a repeatable lightweight benchmark/check for branch API latency envelopes across `10/30/50` chat-branch scenarios.
+- **FR-031**: `GET /api/git/merge-base` MUST accept an optional `baseBranch` query parameter. When provided, it is used instead of the auto-detected default branch for computing the merge-base commit. This enables per-conversation merge-base calculation when conversations use non-default base branches.
 - **FR-003**: System MUST auto-commit changes in worktree after each streaming turn (using `git add -A` to capture all changes including new files, respecting `.gitignore`)
 - **FR-004**: System MUST provide Preview mode — checkout worktree HEAD in main worktree for testing. Preview toggle is available via the Eye/EyeSlash icon in the chat panel header. In the conversation list, previewing conversations are indicated by a red-tinted background (no separate eye icon button).
 - **FR-005**: System MUST auto-sync preview branch to latest worktree HEAD on each turn (`git update-ref`)

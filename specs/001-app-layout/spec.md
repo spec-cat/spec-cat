@@ -62,6 +62,7 @@ Settings are provided as a modal overlay.
 - **FR-006a**: Gear icon in header area opens modal
 - **FR-006b**: ESC key or backdrop click closes modal
 - **FR-006c**: Includes AI provider/model selection UI
+- **FR-006d**: Displays application version (from `package.json` via `runtimeConfig.public.appVersion`)
 
 ### FR-007: Header Display
 Application header is embedded in the Git Tree panel header (not a global top bar).

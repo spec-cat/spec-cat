@@ -2,6 +2,7 @@
 
 **Feature**: 009-conversation-management
 **Date**: 2026-02-08
+**Updated**: 2026-03-21
 **Dependency**: Extends `specs/007-ai-provider-chat/data-model.md`
 
 ## Entity Overview
@@ -11,33 +12,45 @@
 │                    009 Conversation Management                    │
 │                                                                   │
 │  ┌────────────────────┐   ┌───────────────────────────────┐     │
-│  │ Conversation[]      │   │ ConversationStorage            │     │
-│  │ (persisted)         │   │ (localStorage utility)         │     │
+│  │ Conversation[]      │   │ ConversationStorage (client)   │     │
+│  │ (persisted)         │   │ (async REST API wrapper)       │     │
 │  │                     │   │                                │     │
 │  │ - id               │   │ - loadConversations()          │     │
 │  │ - title            │   │ - saveConversations()          │     │
-│  │ - messages[]       │   │ - clearConversations()         │     │
-│  │ - createdAt        │   │ - getStorageSize()             │     │
+│  │ - messages[]       │   │ - saveConversation()           │     │
+│  │ - createdAt        │   │ - clearConversations()         │     │
 │  │ - updatedAt        │   └───────────────────────────────┘     │
 │  │ - cwd             │                                          │
-│  └────────────────────┘                                          │
+│  └────────────────────┘   ┌───────────────────────────────┐     │
+│         │                  │ ConversationStore (server)      │     │
+│         │                  │ (filesystem persistence)        │     │
+│         │                  │                                │     │
+│         │                  │ - readConversationStorageState()│     │
+│         │                  │ - writeConversationStorageState()│    │
+│         │                  │ - upsertConversationInStorage() │     │
+│         │                  │ - removeConversationFromStorage()│    │
+│         │                  └───────────────────────────────┘     │
 │         │                                                        │
 │         └───> activeConversationId (links to current)           │
 │                                                                   │
 │  ┌────────────────────┐   ┌────────────────────────┐            │
-│  │ Search/Filter       │   │ Storage Limits          │            │
+│  │ ArchivedConversation│   │ Storage Limits          │            │
 │  │                     │   │                          │            │
-│  │ - searchQuery      │   │ - MAX_CONVERSATIONS=100 │            │
-│  │ - filteredConvs    │   │ - WARN_THRESHOLD=80     │            │
-│  │ - debounce 400ms   │   │ - checkStorageLimits()  │            │
+│  │ - id               │   │ - MAX_CONVERSATIONS=100 │            │
+│  │ - sourceConvId     │   │ - WARN_THRESHOLD=80     │            │
+│  │ - archivedAt       │   │ - checkStorageLimits()  │            │
 │  └────────────────────┘   └────────────────────────┘            │
 └──────────────────────────────────────────────────────────────────┘
 
-localStorage
-┌─────────────────────────────────────┐
-│ spec-cat-conversations                  │
-│ { version: 1, conversations: [...] } │
-└─────────────────────────────────────┘
+Server Filesystem
+┌─────────────────────────────────────────────────┐
+│ ~/.spec-cat/data/                                │
+│ ├── conversations/                               │
+│ │   ├── conv-8f3k2m9p0a.json                    │
+│ │   ├── conv-x7j4n1q8b2.json                    │
+│ │   └── ...                                      │
+│ └── archived-conversations.json                  │
+└─────────────────────────────────────────────────┘
 ```
 
 ---
@@ -60,26 +73,17 @@ interface Conversation {
   cwd: string                   // Working directory context
 
   // Fields below are defined by 011-chat-worktree-integration
-  // 009 persists them to localStorage but does not manage their values
+  // 009 persists them but does not manage their values
   worktreePath?: string
   worktreeBranch?: string
   hasWorktree?: boolean
   baseBranch?: string
   providerSessionId?: string
+  providerId?: string
+  providerModelKey?: string
   featureId?: string
   finalized?: boolean
-  autoMode?: boolean
   previewBranch?: string
-}
-
-// Example
-const conversation: Conversation = {
-  id: 'conv-8f3k2m9p0a',
-  title: 'Help me refactor the authentication module',
-  messages: [/* ChatMessage[] */],
-  createdAt: '2026-02-02T10:00:00.000Z',
-  updatedAt: '2026-02-02T10:30:00.000Z',
-  cwd: '/home/khan/src/spec-cat'
 }
 ```
 
@@ -110,33 +114,57 @@ function generateConversationTitle(firstUserMessage: string): string {
 
 ---
 
-### 2. StoredConversations
+### 2. ArchivedConversation
 
-The localStorage schema for persisting conversations.
+Represents a conversation snapshot moved to archive storage.
 
 ```typescript
 // types/chat.ts
 
+interface ArchivedConversation {
+  id: string                        // Unique archive ID (generated)
+  sourceConversationId: string      // Original conversation ID
+  title: string                     // Title at time of archive
+  messages: ChatMessage[]           // Message snapshot
+  createdAt: string                 // Original creation timestamp
+  updatedAt: string                 // Last update timestamp
+  archivedAt: string                // ISO 8601 archive timestamp
+  cwd: string                       // Working directory context
+  providerId?: string               // Provider used
+  providerModelKey?: string         // Model used
+  featureId?: string                // Linked feature
+  baseBranch?: string               // Base branch at archive time
+}
+```
+
+---
+
+### 3. StoredConversations (Server State)
+
+The server-side storage state returned by `GET /api/conversations`.
+
+```typescript
 interface StoredConversations {
-  version: number           // Schema version for migrations
-  conversations: Conversation[]
+  version: number                   // Schema version for migrations
+  conversations: Conversation[]     // Active conversations
+  archivedConversations: ArchivedConversation[]  // Archived snapshots
 }
 
 // Constants
-const STORAGE_KEY_CONVERSATIONS = 'spec-cat-conversations'
 const STORAGE_VERSION = 1
 const MAX_CONVERSATIONS = 100
 const WARN_CONVERSATIONS_THRESHOLD = 80
 ```
 
 **Storage Invariants**:
-- `version` must be 1 (current; future migrations handled in `loadConversations`)
-- `conversations.length` must not exceed `MAX_CONVERSATIONS` (100)
+- `version` must be 1 (current; future migrations handled in server)
+- Active `conversations.length` must not exceed `MAX_CONVERSATIONS` (100)
 - Each conversation must pass `isValidConversation()` type guard on load
+- Each archive must pass `isValidArchivedConversation()` type guard on load
 
 ---
 
-### 3. ChatMessage (Inherited from 007)
+### 4. ChatMessage (Inherited from 007)
 
 See `specs/007-ai-provider-chat/data-model.md` for full definition. 009 uses but does not define this type.
 
@@ -144,7 +172,7 @@ See `specs/007-ai-provider-chat/data-model.md` for full definition. 009 uses but
 interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
-  content: string
+  content: string | ContentBlock[]
   timestamp: string
   status?: 'streaming' | 'complete' | 'stopped' | 'error'
 }
@@ -181,102 +209,102 @@ const sortedConversations = computed(() =>
 
 interface ConversationManagementActions {
   // CRUD
-  loadConversations(): void              // FR-001, FR-002: Load from localStorage
-  saveAllConversations(): void           // FR-002: Persist all to localStorage
-  createConversation(options?: {         // FR-002: Create new conversation
+  loadConversations(): Promise<void>       // FR-001, FR-002: Load from server
+  saveAllConversations(): Promise<void>    // FR-002: Persist all to server (bulk)
+  createConversation(options?: {           // FR-002: Create new conversation
     featureId?: string
   }): string
-  selectConversation(id: string): void   // FR-003: Load and activate
-  deleteConversation(id: string): void   // FR-006: Remove with cleanup
-  renameConversation(id: string,         // FR-005: Rename title
+  selectConversation(id: string): void     // FR-003: Load and activate
+  deleteConversation(id: string): void     // FR-006: Remove with cleanup
+  renameConversation(id: string,           // FR-005: Rename title
     title: string): void
 
   // Persistence
-  saveConversation(id: string,           // FR-009: Debounced save (400ms)
+  saveConversation(id: string,             // FR-009: Debounced save (400ms) via POST /api/conversations/update
     immediate?: boolean): void
-  updateConversationTitleIfNeeded(): void // FR-004: Auto-generate title
-  sortConversations(): void              // FR-008: Sort by createdAt desc
+  updateConversationTitleIfNeeded(): void   // FR-004: Auto-generate title
+  sortConversations(): void                // FR-008: Sort by createdAt desc
 
   // Limits
-  checkStorageLimits(): {                // FR-002: Enforce 100 limit
+  checkStorageLimits(): {                  // FR-002: Enforce 100 limit
     atLimit: boolean
     nearLimit: boolean
     count: number
   }
+
+  // Cross-browser sync
+  mergeServerConversations(): Promise<void>  // FR-019: Refresh from server, preserve streaming
+  isConversationStreaming(id: string): boolean  // FR-020: Guard for duplicate stream prevention
 }
 ```
 
 ---
 
-## localStorage Schema
+## Server-Side Storage
+
+### Filesystem Layout
+
+```
+~/.spec-cat/data/
+├── conversations/                    # Per-conversation JSON files
+│   ├── conv-8f3k2m9p0a.json         # Individual conversation
+│   └── ...
+├── archived-conversations.json       # All archived conversations
+└── conversations.json                # Legacy single-file (auto-migrated)
+```
+
+### Server Utilities (`server/utils/conversationStore.ts`)
 
 ```typescript
-// Key: 'spec-cat-conversations'
+// Read all conversations from per-file storage + archives
+async function readConversationStorageState(): Promise<StoredConversations>
 
-// Example stored data
-const storedData: StoredConversations = {
-  version: 1,
-  conversations: [
-    {
-      id: 'conv-8f3k2m9p0a',
-      title: 'Refactor authentication module',
-      messages: [
-        { id: 'msg-1', role: 'user', content: 'Help me refactor...', timestamp: '...' },
-        { id: 'msg-2', role: 'assistant', content: '...', timestamp: '...', status: 'complete' }
-      ],
-      createdAt: '2026-02-02T10:00:00.000Z',
-      updatedAt: '2026-02-02T10:30:00.000Z',
-      cwd: '/home/khan/src/spec-cat'
-    }
-  ]
-}
+// Write all conversations (bulk) — removes orphan files
+async function writeConversationStorageState(state: StoredConversations): Promise<void>
+
+// Upsert a single conversation file (atomic per-conversation write)
+async function upsertConversationInStorage(conversation: unknown, version?: number): Promise<void>
+
+// Remove a single conversation file
+async function removeConversationFromStorage(conversationId: string): Promise<void>
+
+// Auto-migrate from legacy conversations.json to per-file (runs on read)
+async function migrateLegacyStoreIfNeeded(...): Promise<{...}>
 ```
+
+### REST API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/conversations` | Read all conversations + archives |
+| POST | `/api/conversations` | Bulk write all conversations |
+| POST | `/api/conversations/update` | Upsert single conversation |
+| POST | `/api/conversations/{id}/archive` | Archive with worktree/branch cleanup |
+| GET | `/api/conversations/archives` | List archives (optional `?q=` search) |
+| POST | `/api/conversations/archives/{id}/restore` | Restore from archive |
+| DELETE | `/api/conversations/archives/{id}` | Delete archive entry |
 
 ---
 
-## Storage Utilities
+## Client Storage Utility (`utils/conversationStorage.ts`)
+
+Async wrapper over REST API calls. SSR-safe with `typeof window` guards.
 
 ```typescript
-// utils/conversationStorage.ts
+// Load all conversations and archives from server
+async function loadConversations(): Promise<LoadedConversationState>
 
-export function loadConversations(): Conversation[] {
-  if (typeof window === 'undefined') return []
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY_CONVERSATIONS)
-    if (!raw) return []
-    const data = JSON.parse(raw) as StoredConversations
-    // Validate each conversation, discard corrupted entries
-    return data.conversations.filter(isValidConversation)
-  } catch {
-    console.error('Failed to load conversations from localStorage')
-    return []
-  }
-}
+// Bulk save all conversations to server
+async function saveConversations(
+  conversations: Conversation[],
+  archivedConversations?: ArchivedConversation[]
+): Promise<boolean>
 
-export function saveConversations(conversations: Conversation[]): void {
-  if (typeof window === 'undefined') return
-  try {
-    const data: StoredConversations = {
-      version: STORAGE_VERSION,
-      conversations
-    }
-    localStorage.setItem(STORAGE_KEY_CONVERSATIONS, JSON.stringify(data))
-  } catch (e) {
-    // Handle QuotaExceededError
-    console.error('Failed to save conversations:', e)
-  }
-}
+// Save a single conversation (per-conversation atomic write)
+async function saveConversation(conversation: Conversation): Promise<boolean>
 
-export function clearConversations(): void {
-  if (typeof window === 'undefined') return
-  localStorage.removeItem(STORAGE_KEY_CONVERSATIONS)
-}
-
-export function getStorageSize(): number {
-  if (typeof window === 'undefined') return 0
-  const raw = localStorage.getItem(STORAGE_KEY_CONVERSATIONS)
-  return raw ? new Blob([raw]).size : 0
-}
+// Clear all conversations
+async function clearConversations(): Promise<boolean>
 ```
 
 ---
@@ -298,6 +326,18 @@ function isValidConversation(obj: unknown): obj is Conversation {
     typeof conv.cwd === 'string'
   )
 }
+
+function isValidArchivedConversation(obj: unknown): obj is ArchivedConversation {
+  if (!obj || typeof obj !== 'object') return false
+  const conv = obj as Record<string, unknown>
+  return (
+    typeof conv.id === 'string' &&
+    typeof conv.sourceConversationId === 'string' &&
+    typeof conv.title === 'string' &&
+    Array.isArray(conv.messages) &&
+    typeof conv.archivedAt === 'string'
+  )
+}
 ```
 
 ---
@@ -305,34 +345,39 @@ function isValidConversation(obj: unknown): obj is Conversation {
 ## Relationships
 
 ```
-                    localStorage
+                    Server Filesystem
                          │
-                         │ persists via conversationStorage.ts
+                         │ REST API (GET/POST /api/conversations)
                          ▼
 ┌──────────────────────────────────────────────────────────────┐
 │                     ChatStore (009 scope)                      │
 │                                                                │
 │  Conversation[] ◄─── activeConversationId                     │
 │       │                                                        │
-│       │ CRUD operations                                        │
+│       │ CRUD operations (async)                                │
 │       │                                                        │
-│       ├──► loadConversations() ─── from localStorage          │
-│       ├──► saveConversation() ──── to localStorage (debounced)│
+│       ├──► loadConversations() ─── from server via REST API   │
+│       ├──► saveConversation() ──── to server (debounced, per-conv) │
 │       ├──► createConversation() ── new + save                 │
 │       ├──► deleteConversation() ── remove + save              │
 │       ├──► renameConversation() ── update title + save        │
-│       └──► selectConversation() ── set active + load messages │
+│       ├──► selectConversation() ── set active + load messages │
+│       └──► mergeServerConversations() ── refresh from server  │
 │                                                                │
 │  streamingConversations (Set) ── for FR-011 badge             │
+│                                                                │
+│  ◄──── useGlobalNotifications ──── EventBus/WebSocket         │
+│         - conversation_archived → mergeServerConversations()  │
+│         - job_created → setup streaming for new conversation  │
 └──────────────────────────────────────────────────────────────┘
 
 UI Components:
   ConversationList.vue ──► displays ──► sorted Conversation[]
                        ──► search/filter (debounced 400ms)
-                       ──► create/delete actions
+                       ──► create/archive/delete actions
   ConversationItem.vue ──► displays ──► single Conversation
                        ──► inline rename (FR-005)
-                       ──► streaming badge (FR-011)
+                       ──► streaming animation (FR-011, active/idle)
                        ──► metadata: title, preview, timestamp
   DeleteConfirmModal.vue ── confirmation dialog (FR-006)
 ```
@@ -347,10 +392,16 @@ UI Components:
 (create) ──► Active (messages flowing)
                │
                ├──(rename)──► title updated, updatedAt refreshed
-               ├──(message added)──► updatedAt refreshed, auto-save (debounced)
+               ├──(message added)──► updatedAt refreshed, auto-save (debounced via API)
                ├──(search)──► filtered in/out of list view
+               ├──(archive)──► worktree cleaned up → snapshot created → removed from active
                │
-               └──(delete)──► Confirmation modal ──► Removed from store + localStorage
+               └──(delete)──► Confirmation modal ──► Removed from store + server
+
+(archived) ──► Archive List
+               │
+               ├──(restore)──► Moved back to active list
+               └──(delete)──► Permanently removed
 ```
 
 ### Storage Limit States
@@ -359,4 +410,23 @@ UI Components:
 0-79 conversations ──► Normal operation
 80-99 conversations ──► Warning displayed (WARN_THRESHOLD)
 100 conversations ──► Creation blocked, message shown
+```
+
+### Cross-Browser Sync Flow
+
+```
+Browser A: archive conversation
+    │
+    ├──► POST /api/conversations/{id}/archive
+    │       ├── cleanup worktree + branch
+    │       ├── create ArchivedConversation snapshot
+    │       └── emit 'conversation_archived' via EventBus
+    │
+    └──► EventBus ──► GLOBAL_CHANNEL ──► WebSocket
+                                            │
+                                            ▼
+                                     Browser B: useGlobalNotifications
+                                            │
+                                            ├── check isConversationStreaming() → skip if streaming
+                                            └── mergeServerConversations() → remove archived from list
 ```

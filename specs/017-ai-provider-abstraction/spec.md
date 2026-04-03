@@ -2,7 +2,8 @@
 
 **Feature Branch**: `017-ai-provider-abstraction`
 **Created**: 2026-02-10
-**Status**: Draft
+**Updated**: 2026-03-21
+**Status**: Implemented
 **Input**: "Our chat stack currently hard-codes a single provider. We need a provider abstraction so any future AI engine (Copilot, Claude-2, etc.) can hook into the same UI and session flow without a full rewrite."
 
 ## Notes
@@ -96,7 +97,8 @@ Before wiring Copilot itself, the abstraction is documented so future implementa
 - **FR-008**: Providers MUST declare whether they support permission/plan approvals, streaming partial responses, and auto-commit features so the UI and backend can guard features that point to those capabilities.
 - **FR-009**: Document how new providers register themselves (module exports, initialization hooks, capability declarations) so future integrations can follow a consistent pattern.
 - **FR-010**: Provide a migration path for existing settings: when Claude is the only provider, the persisted `claudeModel` value must map to the new provider/model format on first run.
-- **FR-011**: Until provider-specific streaming adapters are implemented, the chat streaming layer MUST enforce a transitional Claude-only constraint and reject other providers with an explicit unsupported-provider error.
+- **FR-011**: ~~Until provider-specific streaming adapters are implemented, the chat streaming layer MUST enforce a transitional Claude-only constraint and reject other providers with an explicit unsupported-provider error.~~ (Resolved: Claude, Codex, and Gemini providers all implement streaming via the `AIProvider` interface.)
+- **FR-012**: All providers MUST surface structured execution errors as `UIStreamErrorEvent` through the canonical event protocol. Each provider extracts error detail from its specific format (Claude: `subtype === 'error'`, Codex: `turn.failed`/`error`, Gemini: `status !== 'success'`) and emits a unified error event.
 
 ### Key Entities
 
