@@ -1,14 +1,258 @@
 /**
  * POST /api/rebase/ai-resolve
- * Use the AI provider (Claude fallback) to intelligently resolve a merge conflict.
- * Sends the conflicted file content and returns AI-merged result. [FR-018, FR-020]
+ * Use the settings-configured AI provider to resolve a merge conflict.
+ *
+ * Optimization: Instead of sending the entire file, extracts only the conflict
+ * blocks with surrounding context (~5 lines), sends those to AI, then stitches
+ * the resolved blocks back into the original file. This dramatically reduces
+ * token usage for large files (e.g., 2000 lines → ~50 lines).
+ * [FR-004, FR-007]
  */
 
 import { validateWorktreePath, validateFilePath } from '~/server/utils/validateWorktree'
-import { sendMessage } from '~/server/utils/claudeService'
 import { getServerProviderSelection } from '~/server/utils/aiProviderSelection'
-import { DEFAULT_MODEL_KEY } from '~/types/aiProvider'
+import { getClaudeCliPath } from '~/server/utils/claude'
+import { getClaudeModelId } from '~/server/utils/claudeModel'
+import { logger } from '~/server/utils/logger'
+import { spawn } from 'node:child_process'
 import type { AiResolveRequest, AiResolveResponse } from '~/types/chat'
+
+const CONTEXT_LINES = 5
+
+interface ConflictBlock {
+  /** Index of the <<<<<<< line in the original lines array */
+  startLine: number
+  /** Index of the >>>>>>> line in the original lines array */
+  endLine: number
+  /** The full conflict block including markers and surrounding context */
+  contextSnippet: string
+  /** The ours side content */
+  ours: string
+  /** The theirs side content */
+  theirs: string
+}
+
+/**
+ * Parse a file's content and extract individual conflict blocks with context.
+ */
+function extractConflictBlocks(content: string): { lines: string[]; blocks: ConflictBlock[] } {
+  const lines = content.split('\n')
+  const blocks: ConflictBlock[] = []
+
+  let i = 0
+  while (i < lines.length) {
+    if (/^<{7}\s/.test(lines[i])) {
+      const startLine = i
+      let separatorLine = -1
+      let endLine = -1
+
+      // Find ======= and >>>>>>>
+      for (let j = i + 1; j < lines.length; j++) {
+        if (/^={7}$/.test(lines[j]) && separatorLine === -1) {
+          separatorLine = j
+        } else if (/^>{7}\s/.test(lines[j])) {
+          endLine = j
+          break
+        }
+      }
+
+      if (separatorLine !== -1 && endLine !== -1) {
+        const ctxStart = Math.max(0, startLine - CONTEXT_LINES)
+        const ctxEnd = Math.min(lines.length - 1, endLine + CONTEXT_LINES)
+        const contextLines = lines.slice(ctxStart, ctxEnd + 1)
+        const ours = lines.slice(startLine + 1, separatorLine).join('\n')
+        const theirs = lines.slice(separatorLine + 1, endLine).join('\n')
+
+        blocks.push({
+          startLine,
+          endLine,
+          contextSnippet: contextLines.join('\n'),
+          ours,
+          theirs,
+        })
+        i = endLine + 1
+        continue
+      }
+    }
+    i++
+  }
+
+  return { lines, blocks }
+}
+
+/**
+ * Run Claude CLI in a constrained single-turn mode for conflict resolution.
+ */
+async function resolveWithCli(
+  prompt: string,
+  cwd: string,
+  modelKey?: string,
+): Promise<{ success: boolean; text?: string; error?: string }> {
+  const cliPath = getClaudeCliPath()
+  const modelId = getClaudeModelId(modelKey)
+
+  const args: string[] = [
+    '-p', prompt,
+    '--output-format', 'stream-json',
+    '--verbose',
+    '--model', modelId,
+    '--max-turns', '1',
+    '--dangerously-skip-permissions',
+  ]
+
+  const proc = spawn(cliPath, args, {
+    cwd,
+    env: { ...process.env, NODE_NO_WARNINGS: '1' },
+    stdio: ['pipe', 'pipe', 'pipe'],
+  })
+  proc.stdin.end()
+
+  let lineBuffer = ''
+  let resultText = ''
+
+  const parseLine = (line: string) => {
+    if (!line.trim()) return
+    try {
+      const msg = JSON.parse(line) as Record<string, unknown>
+      if (msg.type === 'assistant' && typeof msg.message === 'object' && msg.message) {
+        const message = msg.message as { content?: Array<{ type: string; text?: string }> }
+        if (Array.isArray(message.content)) {
+          for (const block of message.content) {
+            if (block.type === 'text' && block.text) {
+              resultText += block.text
+            }
+          }
+        }
+      }
+    } catch {
+      // ignore malformed lines
+    }
+  }
+
+  proc.stdout.on('data', (chunk: Buffer) => {
+    lineBuffer += chunk.toString()
+    const lines = lineBuffer.split('\n')
+    lineBuffer = lines.pop() || ''
+    for (const line of lines) parseLine(line)
+  })
+
+  const errorChunks: string[] = []
+  proc.stderr.on('data', (chunk: Buffer) => {
+    errorChunks.push(chunk.toString())
+  })
+
+  return await new Promise((resolve) => {
+    proc.on('close', (code) => {
+      if (lineBuffer.trim()) parseLine(lineBuffer)
+      if (code === 0) {
+        resolve({ success: true, text: resultText })
+      } else {
+        const stderr = errorChunks.join('').trim()
+        resolve({ success: false, error: `CLI exited with code ${code}: ${stderr}`, text: resultText })
+      }
+    })
+  })
+}
+
+/**
+ * Extract resolved content from AI response.
+ * Tries marker extraction, then code block, then raw content validation.
+ */
+function extractResolved(raw: string, marker: string): string | null {
+  const startTag = `===BLOCK_${marker}_START===`
+  const endTag = `===BLOCK_${marker}_END===`
+
+  // 1. Marker-based extraction
+  const startIdx = raw.indexOf(startTag)
+  const endIdx = raw.indexOf(endTag)
+  if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+    return raw.slice(startIdx + startTag.length, endIdx).replace(/^\n/, '').replace(/\n$/, '')
+  }
+
+  // 2. Code block extraction
+  const codeBlockMatch = raw.match(/```[\w]*\n([\s\S]*?)\n```/)
+  if (codeBlockMatch) {
+    return codeBlockMatch[1]
+  }
+
+  // 3. Reject if conflict markers remain
+  if (/^<{7}\s/m.test(raw)) {
+    return null
+  }
+
+  // 4. Reject obvious commentary
+  const trimmed = raw.trim()
+  if (/^(Now |Here |Let me |I'll |I can |I've |The |This |Looking |Analyzing |Resolved |Conflict )/i.test(trimmed)) {
+    return null
+  }
+  if (/^\*\*/.test(trimmed) || /^#+\s/.test(trimmed)) {
+    return null
+  }
+
+  return trimmed || null
+}
+
+/**
+ * Build a prompt that resolves one or more conflict blocks at once.
+ * Each block is labeled BLOCK_1, BLOCK_2, etc. and must be output with corresponding markers.
+ */
+function buildBlockPrompt(
+  filePath: string,
+  blocks: ConflictBlock[],
+  userGuidance?: string,
+): string {
+  const guidanceLine = userGuidance ? `\nUser guidance: ${userGuidance}` : ''
+
+  if (blocks.length === 1) {
+    const b = blocks[0]
+    return `Resolve this Git merge conflict. Output ONLY the resolved code between the markers.
+
+RULES:
+- Remove ALL conflict markers (<<<<<<< ======= >>>>>>>)
+- Merge both sides, preserving the intent of both changes
+- Output only the replacement for the conflict block, not the surrounding context
+${guidanceLine}
+
+OUTPUT FORMAT (strict):
+===BLOCK_1_START===
+<resolved code replacing the conflict>
+===BLOCK_1_END===
+
+No text before ===BLOCK_1_START=== or after ===BLOCK_1_END===.
+
+File: ${filePath}
+Conflict with context:
+${b.contextSnippet}`
+  }
+
+  // Multiple blocks
+  const blockSections = blocks.map((b, i) => {
+    return `--- CONFLICT ${i + 1} ---
+${b.contextSnippet}`
+  }).join('\n\n')
+
+  const outputFormat = blocks.map((_, i) => {
+    return `===BLOCK_${i + 1}_START===
+<resolved code for conflict ${i + 1}>
+===BLOCK_${i + 1}_END===`
+  }).join('\n')
+
+  return `Resolve ${blocks.length} Git merge conflicts in file "${filePath}". Output ONLY the resolved code for each block between its markers.
+
+RULES:
+- Remove ALL conflict markers (<<<<<<< ======= >>>>>>>)
+- Merge both sides, preserving the intent of both changes
+- Output only the replacement for each conflict block, not surrounding context
+- Maintain output order matching the conflict order
+${guidanceLine}
+
+OUTPUT FORMAT (strict — one section per conflict):
+${outputFormat}
+
+No text before the first marker or after the last marker. No explanations.
+
+${blockSections}`
+}
 
 export default defineEventHandler(async (event): Promise<AiResolveResponse> => {
   const body = await readBody<AiResolveRequest>(event)
@@ -21,42 +265,49 @@ export default defineEventHandler(async (event): Promise<AiResolveResponse> => {
   validateFilePath(body.filePath)
 
   const selection = await getServerProviderSelection()
-  const modelKey = selection.providerId === 'claude' ? selection.modelKey : DEFAULT_MODEL_KEY
+  const { lines, blocks } = extractConflictBlocks(body.conflictContent)
 
-  const prompt = `You are a merge conflict resolution expert. Resolve the following Git merge conflict in the file "${body.filePath}".
+  // No conflicts found — return content as-is
+  if (blocks.length === 0) {
+    return { success: true, resolvedContent: body.conflictContent }
+  }
 
-The file contains Git conflict markers:
-- \`<<<<<<< HEAD\` marks the start of "ours" (current branch) changes
-- \`=======\` separates the two versions
-- \`>>>>>>> ...\` marks the end of "theirs" (incoming branch) changes
-
-Your task:
-1. Analyze both sides of each conflict
-2. Produce the best merged result that preserves the intent of both changes
-3. If both sides add different things, include both in a logical order
-4. If both sides modify the same thing differently, choose the most complete/correct version or combine them
-5. Remove ALL conflict markers (<<<<<<, =======, >>>>>>>)
-
-IMPORTANT: Output ONLY the complete resolved file content. No explanations, no markdown code blocks, no comments about the resolution. Just the raw file content.
-
-File content with conflicts:
-${body.conflictContent}`
+  const prompt = buildBlockPrompt(body.filePath, blocks, body.userGuidance)
 
   try {
-    const result = await sendMessage(prompt, body.worktreePath, modelKey)
+    const result = await resolveWithCli(prompt, body.worktreePath, selection.modelKey)
 
-    if (result.success && result.text) {
-      // Strip any markdown code block wrappers the AI might add
-      let resolved = result.text
-      const codeBlockMatch = resolved.match(/^```[\w]*\n([\s\S]*?)\n```$/m)
-      if (codeBlockMatch) {
-        resolved = codeBlockMatch[1]
-      }
-
-      return { success: true, resolvedContent: resolved }
+    if (!result.success || !result.text) {
+      return { success: false, error: result.error || 'AI resolution failed' }
     }
 
-    return { success: false, error: result.error || 'AI resolution failed' }
+    // Extract resolved content for each block
+    const resolvedBlocks: string[] = []
+    for (let i = 0; i < blocks.length; i++) {
+      const resolved = extractResolved(result.text, String(i + 1))
+      if (resolved === null) {
+        logger.chat.error('Failed to extract resolved block from AI response', {
+          filePath: body.filePath,
+          blockIndex: i,
+          responsePreview: result.text.slice(0, 300),
+        })
+        return {
+          success: false,
+          error: `Failed to extract resolved content for conflict block ${i + 1}/${blocks.length}. AI may have output commentary instead of code.`,
+        }
+      }
+      resolvedBlocks.push(resolved)
+    }
+
+    // Stitch resolved blocks back into the original file (replace in reverse to preserve indices)
+    const resultLines = [...lines]
+    for (let i = blocks.length - 1; i >= 0; i--) {
+      const block = blocks[i]
+      const replacementLines = resolvedBlocks[i].split('\n')
+      resultLines.splice(block.startLine, block.endLine - block.startLine + 1, ...replacementLines)
+    }
+
+    return { success: true, resolvedContent: resultLines.join('\n') }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     return { success: false, error: message }

@@ -14,6 +14,7 @@ import type {
   FinalizeResponse,
   ConflictFile,
   ConflictListResponse,
+  ConflictChatMessage,
   RebaseAbortResponse,
   AiResolveResponse,
   ContentBlock,
@@ -94,7 +95,20 @@ export const useChatStore = defineStore('chat', () => {
     error: string | null
     /** 'finalize' = cleanup after rebase; 'sync' = keep worktree */
     mode: 'finalize' | 'sync'
+    /** Retry count for failed resolutions */
+    retryCount: number
+    /** Resolution strategy */
+    strategy: 'auto' | 'manual' | 'hybrid'
+    /** Chat messages for conflict resolution panel [FR-008] */
+    chatMessages: ConflictChatMessage[]
+    /** User guidance for AI resolution [FR-007] */
+    userGuidance: string
+    /** Lifecycle state [FR-010] */
+    lifecycleState: 'detected' | 'resolving' | 'resolved' | 'failed' | 'aborted'
   } | null>(null)
+
+  // AbortController for cancelling in-progress AI conflict resolution
+  let conflictResolveAbort: AbortController | null = null
 
   // ===== Per-conversation stream state helpers =====
 
@@ -1504,6 +1518,9 @@ export const useChatStore = defineStore('chat', () => {
       loading: true,
       error: null,
       mode,
+      chatMessages: [],
+      userGuidance: '',
+      lifecycleState: 'detected',
     }
 
     try {
@@ -1513,6 +1530,7 @@ export const useChatStore = defineStore('chat', () => {
       if (conflictState.value) {
         conflictState.value.files = res.files
         conflictState.value.loading = false
+        addConflictChatMessage('system', `Detected ${res.files.length} conflicted file${res.files.length === 1 ? '' : 's'}. Enter optional guidance below and click "Resolve Conflicts Automatically" to start.`, 'info')
       }
     } catch (err) {
       if (conflictState.value) {
@@ -1520,6 +1538,26 @@ export const useChatStore = defineStore('chat', () => {
         conflictState.value.loading = false
       }
     }
+  }
+
+  /**
+   * Add a message to the conflict chat panel [FR-008]
+   */
+  function addConflictChatMessage(
+    role: ConflictChatMessage['role'],
+    content: string,
+    type: ConflictChatMessage['type'] = 'info',
+    fileRef?: string,
+  ) {
+    if (!conflictState.value) return
+    conflictState.value.chatMessages.push({
+      id: `conflict-msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      role,
+      content,
+      timestamp: Date.now(),
+      type,
+      fileRef,
+    })
   }
 
   /**
@@ -1635,7 +1673,7 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   /**
-  * AI-resolve a single conflict file: send content to the AI provider for intelligent merge [FR-018]
+   * AI-resolve a single conflict file using settings-configured model [FR-004]
    */
   async function aiResolveConflictFile(filePath: string): Promise<boolean> {
     if (!conflictState.value) return false
@@ -1650,34 +1688,131 @@ export const useChatStore = defineStore('chat', () => {
           worktreePath: conflictState.value.worktreePath,
           filePath,
           conflictContent: file.content,
+          userGuidance: conflictState.value.userGuidance || undefined,
         },
       })
 
       if (res.success && res.resolvedContent !== undefined) {
-        // Update the file content in conflictState
         file.content = res.resolvedContent
-        // Auto-resolve: write to disk and mark as resolved
-        return await resolveConflictFile(filePath, res.resolvedContent)
+        const resolved = await resolveConflictFile(filePath, res.resolvedContent)
+        if (resolved) {
+          addConflictChatMessage('assistant', `Resolved: ${filePath}`, 'success', filePath)
+        } else {
+          addConflictChatMessage('assistant', `Failed to write resolved content for ${filePath}`, 'error', filePath)
+        }
+        return resolved
       }
+
+      addConflictChatMessage('assistant', `Failed to resolve ${filePath}: ${res.error || 'Unknown error'}`, 'error', filePath)
       return false
-    } catch {
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      addConflictChatMessage('assistant', `Error resolving ${filePath}: ${msg}`, 'error', filePath)
       return false
     }
   }
 
   /**
-   * AI-resolve all unresolved conflict files sequentially [FR-019]
+   * AI-resolve all unresolved conflict files in parallel batches with chat progress [FR-006, FR-008]
    */
   async function aiResolveAllConflicts(): Promise<void> {
     if (!conflictState.value) return
 
     const unresolved = conflictState.value.files.filter(
-      f => !conflictState.value!.resolvedFiles.has(f.path)
+      f => !conflictState.value!.resolvedFiles.has(f.path),
     )
 
-    for (const file of unresolved) {
-      await aiResolveConflictFile(file.path)
+    if (unresolved.length === 0) {
+      addConflictChatMessage('system', 'All files are already resolved.', 'info')
+      return
     }
+
+    // Set up abort controller for cancellation
+    conflictResolveAbort = new AbortController()
+    const signal = conflictResolveAbort.signal
+
+    conflictState.value.lifecycleState = 'resolving'
+
+    const guidance = conflictState.value.userGuidance
+    if (guidance) {
+      addConflictChatMessage('user', guidance)
+    }
+    addConflictChatMessage('system', `Starting AI resolution for ${unresolved.length} file${unresolved.length === 1 ? '' : 's'} (parallel)...`, 'info')
+
+    let successCount = 0
+    let failCount = 0
+
+    // Process in parallel batches of 3
+    const BATCH_SIZE = 3
+    for (let i = 0; i < unresolved.length; i += BATCH_SIZE) {
+      if (!conflictState.value || signal.aborted) break
+      const batch = unresolved.slice(i, i + BATCH_SIZE)
+
+      for (const file of batch) {
+        addConflictChatMessage('assistant', `Resolving: ${file.path}...`, 'progress', file.path)
+      }
+
+      const results = await Promise.all(
+        batch.map(file => aiResolveConflictFile(file.path)),
+      )
+
+      for (const ok of results) {
+        if (ok) successCount++
+        else failCount++
+      }
+    }
+
+    conflictResolveAbort = null
+
+    if (!conflictState.value) return
+
+    if (signal.aborted) {
+      // Cancelled — don't update lifecycle state (abort handler already did)
+      return
+    }
+
+    if (failCount === 0) {
+      conflictState.value.lifecycleState = 'resolved'
+      addConflictChatMessage('system', `All ${successCount} file${successCount === 1 ? '' : 's'} resolved successfully. Click "Continue Rebase" to proceed.`, 'summary')
+    } else {
+      conflictState.value.lifecycleState = 'failed'
+      addConflictChatMessage('system', `Resolution complete: ${successCount} succeeded, ${failCount} failed. You can retry or abort.`, 'summary')
+    }
+  }
+
+  /**
+   * Cancel in-progress AI conflict resolution and reset to initial detected state.
+   * Aborts running API calls and re-fetches conflict files from git.
+   */
+  async function cancelConflictResolution(): Promise<void> {
+    if (!conflictState.value) return
+
+    // Signal abort to running batch
+    if (conflictResolveAbort) {
+      conflictResolveAbort.abort()
+      conflictResolveAbort = null
+    }
+
+    const { conversationId, worktreePath, baseBranch, commitMessage, mode } = conflictState.value
+
+    addConflictChatMessage('system', 'Resolution cancelled. Resetting conflict state...', 'info')
+
+    // Abort the git rebase to restore working tree, then re-enter conflict resolution
+    try {
+      await $fetch<RebaseAbortResponse>('/api/rebase/abort', {
+        method: 'POST',
+        body: { worktreePath },
+      })
+    } catch {
+      // abort may fail if no rebase in progress — that's ok
+    }
+
+    // Clear current state fully
+    conflictState.value = null
+
+    // If there was an ongoing rebase/finalize operation, the caller (modal) handles
+    // the post-abort state. We just ensure everything is clean.
+    addConflictChatMessage('system', 'Conflict resolution aborted and reset.', 'info')
   }
 
   /**
@@ -1999,6 +2134,8 @@ export const useChatStore = defineStore('chat', () => {
     abortRebase,
     aiResolveConflictFile,
     aiResolveAllConflicts,
+    addConflictChatMessage,
+    cancelConflictResolution,
     previewConversation,
     unpreviewConversation,
     togglePreview,

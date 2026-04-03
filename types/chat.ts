@@ -614,20 +614,33 @@ export interface RebaseAbortResponse {
   error?: string
 }
 
-/** AI conflict resolution request [FR-020] */
+/** AI conflict resolution request [FR-004, FR-007] */
 export interface AiResolveRequest {
   worktreePath: string
   filePath: string
   conflictContent: string
+  priority?: number
+  retryOnFailure?: boolean
+  userGuidance?: string
 }
 
-/** AI conflict resolution response [FR-020] */
+/** AI conflict resolution response [FR-004] */
 export interface AiResolveResponse {
   success: boolean
   resolvedContent?: string
   error?: string
   providerId?: string
   missingCapability?: string
+}
+
+/** Conflict chat panel message [FR-008] */
+export interface ConflictChatMessage {
+  id: string
+  role: 'system' | 'assistant' | 'user'
+  content: string
+  timestamp: number
+  fileRef?: string
+  type?: 'info' | 'progress' | 'success' | 'error' | 'summary'
 }
 
 /**

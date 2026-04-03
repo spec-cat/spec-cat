@@ -1,161 +1,149 @@
-# Feature Specification: Chat Conflict Resolution
+# Feature Specification: Chat Conflict Resolution (AI-First)
 
-**Feature Branch**: `027-chat-conflict-resolution`
-**Created**: 2026-02-16
-**Status**: Draft (Child Spec)
+**Feature Branch**: `027-chat-conflict-resolution`  
+**Created**: 2026-02-16  
+**Updated**: 2026-04-03  
+**Status**: Draft (Child Spec)  
 **Parent**: `011-chat-worktree-integration`
 
 ## In Scope
 
 - Git rebase/merge conflict detection and resolution workflows
-- Conflict resolution UI components and interactions
-- Optional AI-assisted conflict resolution capabilities
-- Conflict state management and persistence
+- AI-first conflict resolution using settings-configured AI model
+- Dedicated conflict chat panel for AI interaction and progress display
+- User guidance input for context-aware AI conflict resolution
+- Conflict file list browsing and read-only viewing
 
 ## Out of Scope
 
+- Manual conflict editing (Accept Ours/Theirs/Both buttons removed)
 - Worktree lifecycle operations
 - Preview/finalize primary flow wiring
 - Git operations outside of conflict resolution
 
 ## User Stories
 
-### User Story 1 - Conflict Detection
-**As a** developer working with git conflicts
-**I want** to see all conflicted files clearly when a rebase/merge has conflicts
-**So that** I can understand what needs resolution before continuing
+### User Story 1 - AI-Driven Conflict Resolution (Priority: P1)
 
-### User Story 2 - Manual Conflict Resolution
-**As a** developer resolving conflicts
-**I want** to edit conflict markers in a dedicated editor with syntax highlighting
-**So that** I can make informed decisions about which changes to keep
+A developer encounters merge/rebase conflicts. Instead of manually resolving each conflict, they provide optional guidance comments and click "Resolve Conflicts Automatically" to delegate all resolution to AI. The AI uses the model configured in settings and resolves all conflicts sequentially, showing progress in a dedicated chat panel on the right side of the conflict modal.
 
-### User Story 3 - AI-Assisted Resolution
-**As a** developer with complex conflicts
-**I want** to optionally use AI to suggest conflict resolutions
-**So that** I can resolve conflicts faster while maintaining control
+**Why this priority**: This is the core value proposition — making conflict resolution effortless by fully delegating to AI.
 
-### User Story 4 - Conflict Workflow Control
-**As a** developer in a conflict resolution flow
-**I want** to continue the operation after resolving or abort if needed
-**So that** I maintain control over my git state
+**Independent Test**: Trigger a rebase with conflicts, optionally enter guidance, click resolve button, verify AI resolves all files and chat panel shows progress.
 
-## Acceptance Scenarios
+**Acceptance Scenarios**:
 
-### Scenario 1: Conflict File Detection
-**Given** a git operation results in conflicts
-**When** the conflict detection API is called
-**Then** all conflicted files are returned with paths and conflict marker locations
+1. **Given** a rebase/merge results in conflicted files, **When** the conflict modal opens, **Then** the user sees a file list on the left, a file viewer in the center, and a chat panel on the right.
+2. **Given** the conflict modal is open, **When** the user enters guidance text and clicks "Resolve Conflicts Automatically", **Then** the AI resolves all conflicts using the settings-configured model, incorporating the user's guidance.
+3. **Given** AI resolution is in progress, **When** the AI processes each file, **Then** the chat panel displays real-time progress messages showing which file is being resolved and its result.
+4. **Given** all conflicts are resolved by AI, **When** the user reviews the results, **Then** they can click "Continue Rebase" to finalize.
 
-### Scenario 2: Single File Resolution
-**Given** a conflicted file is open in the editor
-**When** the user resolves conflicts and saves
-**Then** the file is marked as resolved and can proceed to next conflict
+---
 
-### Scenario 3: AI Resolution Request
-**Given** a conflicted file with standard git markers
-**When** the user requests AI resolution
-**Then** AI provides a suggested resolution that preserves semantic intent from both sides
+### User Story 2 - Conflict File Browsing (Priority: P1)
 
-### Scenario 4: Abort Conflict Flow
-**Given** an active conflict resolution session
-**When** the user chooses to abort
-**Then** the git operation is safely aborted and working tree is restored
+A developer wants to review conflicted files before or after AI resolution. They can browse the file list and view file contents (read-only) to understand the nature of conflicts and verify AI resolutions.
 
-## Functional Requirements
+**Why this priority**: Understanding conflicts is essential even when delegating resolution to AI.
 
-### FR-001: Conflict Detection and Listing
-System MUST detect and list all conflicted files from git operations, including file paths, conflict types (content/modify-delete/rename), and conflict marker line numbers with response time < 500ms for repos up to 10,000 files.
+**Independent Test**: Open conflict modal, click through files in the list, verify content is displayed with syntax highlighting and conflict markers are visually distinguished.
 
-### FR-002: Per-File Resolution Flow
-System MUST provide individual file resolution with mark-as-resolved capability, supporting continue operation after all conflicts resolved or abort operation to restore pre-conflict state, with state persistence across page refreshes.
+**Acceptance Scenarios**:
 
-### FR-003: Conflict Editor Interface
-Conflict editor MUST display git conflict markers with syntax highlighting, show line numbers, support standard text editing operations, clearly distinguish <<<<<<< HEAD, =======, and >>>>>>> markers with visual indicators, and maintain file encoding.
+1. **Given** conflicts are detected, **When** the modal opens, **Then** all conflicted files appear in the left sidebar with status indicators (resolved/unresolved).
+2. **Given** the file list is displayed, **When** the user clicks a file, **Then** the center panel shows the file content with syntax-highlighted conflict markers (read-only).
+3. **Given** AI has resolved a file, **When** the user clicks that file, **Then** the viewer shows the resolved content and the file is marked as resolved in the list.
 
-### FR-004: AI-Assisted Conflict Resolution
-System MUST provide optional AI resolution that analyzes both sides of conflicts, suggests semantically appropriate merges, remains isolated to conflict resolution APIs only, provides explanations for suggestions, and allows user override of any suggestion.
+---
 
-### FR-016: Conflict Editor Syntax Highlighting
-Editor MUST provide language-specific syntax highlighting for code within conflict blocks, maintaining highlighting even with conflict markers present, with support for TypeScript, JavaScript, Vue, CSS, JSON, and Markdown files.
+### User Story 3 - Guided AI Resolution (Priority: P2)
 
-### FR-017: Conflict Editor Line Numbers
-Editor MUST show accurate line numbers that account for conflict markers, update dynamically as conflicts are resolved, and maintain correct line number mapping for error reporting.
+A developer has specific knowledge about how conflicts should be resolved (e.g., "prefer the feature branch changes for the API schema" or "keep both import sets"). They enter this guidance in the comment input before triggering AI resolution, and the AI incorporates this context.
 
-### FR-018: Per-File AI Resolution API
-System MUST implement AI resolution endpoint that accepts single conflicted file content, returns suggested resolution with explanations, handles rate limiting with max 10 requests per minute, and validates file size < 1MB.
+**Why this priority**: Guidance improves AI resolution quality for domain-specific conflicts.
 
-### FR-019: Batch AI Resolution
-System MUST support "AI Resolve All" operation that processes multiple conflicts in sequence, shows progress indicator, allows cancellation mid-operation, and falls back to manual resolution on AI failure.
+**Independent Test**: Enter specific guidance text, trigger resolution, verify AI output reflects the guidance context.
 
-### FR-020: AI Resolution Data Types
-System MUST define AiResolveRequest with fields for fileContent, filePath, and conflictContext, and AiResolveResponse with resolvedContent, explanation, and confidence score (0-1).
+**Acceptance Scenarios**:
 
-### FR-021: Conflict Lifecycle State Management
-System MUST track conflict resolution lifecycle states including: detected, in-progress, resolved, failed, and aborted, with transitions logged for debugging and state recovery.
+1. **Given** the conflict modal is open with unresolved files, **When** the user sees the comment input area, **Then** it shows placeholder text explaining its purpose.
+2. **Given** the user has typed guidance like "keep the new API endpoints from the feature branch", **When** they click resolve, **Then** the AI prompt includes this guidance for all file resolutions.
 
-### FR-006D: Conflict State Persistence
-System MUST persist conflict resolution progress to allow recovery from page refresh, including resolved files list, in-progress edits, and resolution method used (manual/AI).
+---
 
-### FR-006E: Conflict State Cleanup
-System MUST clean up conflict state data after successful continue or abort operations, ensuring no orphaned state remains in storage.
+### User Story 4 - Conflict Workflow Control (Priority: P1)
 
-### FR-006F: Conflict State Validation
-System MUST validate conflict state consistency before continue operations, ensuring all conflicts are actually resolved in git and state matches filesystem.
+A developer wants to continue the rebase after all conflicts are resolved or abort if the resolution is unsatisfactory.
 
-## Key Entities
+**Why this priority**: Essential workflow control for completing or abandoning the operation.
 
-### ConflictFile
-- path: string (relative file path)
-- status: 'unresolved' | 'resolved' | 'error'
-- conflictType: 'content' | 'modify-delete' | 'rename'
-- markers: Array<{start: number, end: number, type: 'ours' | 'separator' | 'theirs'}>
+**Independent Test**: Resolve all conflicts, verify Continue Rebase button activates. Test abort button restores pre-conflict state.
 
-### ConflictSession
-- id: string (unique session identifier)
-- operation: 'rebase' | 'merge' | 'cherry-pick'
-- files: Array<ConflictFile>
-- startedAt: timestamp
-- state: 'active' | 'completed' | 'aborted'
+**Acceptance Scenarios**:
 
-### AiResolveRequest
-- fileContent: string (full file content with markers)
-- filePath: string (for context)
-- conflictContext: string (operation type and branch info)
+1. **Given** all files are resolved, **When** the user clicks "Continue Rebase", **Then** the rebase operation continues and the modal closes on success.
+2. **Given** an active conflict session, **When** the user clicks "Abort", **Then** the git operation is aborted, working tree is restored, and the modal closes.
+3. **Given** continuing rebase reveals more conflicts, **When** new conflicts appear, **Then** the modal refreshes with the new conflict set.
 
-### AiResolveResponse
-- resolvedContent: string (suggested resolution)
-- explanation: string (reasoning for resolution)
-- confidence: number (0-1 confidence score)
+---
+
+### Edge Cases
+
+- Binary file conflicts (show as unresolvable in chat, skip in AI resolution)
+- AI service unavailable or erroring (show error in chat panel, suggest retry)
+- Very large files (> 1MB warning in chat before processing)
+- No AI provider configured in settings (show error prompting user to configure)
+- Conflict markers malformed or nested from previous failed resolutions
+- Network interruption during AI resolution (show error, allow retry)
+
+## Requirements
+
+### Functional Requirements
+
+- **FR-001**: System MUST detect and list all conflicted files from git operations, including file paths, conflict types, and conflict marker locations with response time < 500ms for repos up to 10,000 files.
+
+- **FR-002**: System MUST provide workflow controls: "Continue Rebase" (enabled only when all files resolved) and "Abort" (always available), with state cleanup after either operation.
+
+- **FR-003**: Conflict file viewer MUST display file content read-only with syntax highlighting, show line numbers, clearly distinguish conflict marker sections (ours/separator/theirs) with color coding, and maintain file encoding.
+
+- **FR-004**: System MUST use the AI model configured in the settings store (`providerId` and `providerModelKey`) for all conflict resolution operations. The system MUST NOT fall back to a different provider silently.
+
+- **FR-005**: Conflict modal MUST display a three-panel layout: file list sidebar (left), file content viewer (center), and conflict resolution chat panel (right).
+
+- **FR-006**: System MUST provide a "Resolve Conflicts Automatically" button that triggers AI resolution of all unresolved conflict files sequentially.
+
+- **FR-007**: System MUST provide a text input area (comment/guidance field) where users can enter optional context or instructions before triggering AI resolution. This guidance MUST be included in the AI prompt for every file resolution.
+
+- **FR-008**: The conflict chat panel MUST display real-time progress messages during AI resolution, including: which file is currently being processed, success/failure per file, and a summary when complete.
+
+- **FR-009**: The conflict chat panel MUST display error messages clearly when AI resolution fails for any file, with the option to retry.
+
+- **FR-010**: System MUST track conflict resolution lifecycle states: detected, resolving (AI in progress), resolved, failed, and aborted.
+
+- **FR-011**: When AI resolves a file successfully, the system MUST automatically write the resolved content to disk and mark the file as resolved (git add).
+
+- **FR-012**: System MUST validate conflict state consistency before "Continue Rebase", ensuring all conflicts are resolved in git and state matches filesystem.
+
+### Key Entities
+
+- **ConflictFile**: Represents a file with conflict markers (path, content, git status code)
+- **ConflictChatMessage**: A message in the conflict chat panel (role: system/assistant/user, content, timestamp, optional file reference)
+- **AiResolveRequest**: Request to resolve a conflict file (worktreePath, filePath, conflictContent, userGuidance)
+- **AiResolveResponse**: AI resolution result (success, resolvedContent, error)
 
 ## Success Criteria
 
-### SC-001: Isolated Conflict Workflow
-Conflict resolution workflow operates independently without requiring modifications to worktree lifecycle, preview, or finalize APIs, verified by API call tracing showing no calls to excluded endpoints.
+### Measurable Outcomes
 
-### SC-002: Reproducible Conflict Resolution
-All conflict resolution operations produce identical results when repeated with same inputs, including AI suggestions (given same model), file marking operations, and state transitions, verified by automated replay tests.
-
-### SC-003: Conflict Resolution Performance
-Conflict detection completes in < 500ms for repos with up to 10,000 files, editor loads conflicts in < 200ms, AI resolution responds in < 5 seconds per file, verified by performance benchmarks.
-
-### SC-004: State Recovery Resilience
-Conflict resolution state survives page refreshes, network interruptions, and process restarts, with < 5 second recovery time to restore previous state, verified by chaos testing.
-
-## Edge Cases
-
-- Binary file conflicts (should show as unresolvable)
-- Conflicts in generated files (should warn before resolution)
-- Symbolic link conflicts
-- Permission/mode change conflicts
-- Very large files (> 10MB)
-- Malformed conflict markers
-- Nested conflict markers from previous failed resolutions
+- **SC-001**: User can resolve all merge/rebase conflicts with a single button click (zero manual conflict editing required).
+- **SC-002**: Conflict detection completes in < 500ms, AI resolution processes each file in < 10 seconds.
+- **SC-003**: Chat panel provides clear visibility into resolution progress and results for every file.
+- **SC-004**: System correctly uses the settings-configured AI model for all resolution operations.
 
 ## Assumptions
 
 - Git version 2.34+ is available on the system
 - Conflict markers follow standard git format
 - File system has necessary read/write permissions
-- AI service (if used) has appropriate rate limits configured
+- AI provider configured in settings is available and has sufficient quota
 - Maximum of 1000 conflicted files per session

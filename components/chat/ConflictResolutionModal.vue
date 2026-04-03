@@ -2,11 +2,11 @@
 import { ref, computed } from 'vue'
 import { useChatStore } from '~/stores/chat'
 import ConflictFileEditor from './ConflictFileEditor.vue'
+import ConflictChatPanel from './ConflictChatPanel.vue'
 import {
   ExclamationTriangleIcon,
   CheckCircleIcon,
   ExclamationCircleIcon,
-  SparklesIcon,
 } from '@heroicons/vue/24/outline'
 
 const emit = defineEmits<{
@@ -17,16 +17,12 @@ const chatStore = useChatStore()
 const selectedFilePath = ref<string | null>(null)
 const continueLoading = ref(false)
 const abortLoading = ref(false)
-const aiResolvingFile = ref<string | null>(null)
-const aiResolvingAll = ref(false)
 
 const files = computed(() => chatStore.conflictState?.files ?? [])
 const resolvedFiles = computed(() => chatStore.conflictState?.resolvedFiles ?? new Set<string>())
 const totalCount = computed(() => files.value.length)
 const resolvedCount = computed(() => resolvedFiles.value.size)
 const allResolved = computed(() => totalCount.value > 0 && resolvedCount.value >= totalCount.value)
-
-const unresolvedCount = computed(() => totalCount.value - resolvedCount.value)
 
 const currentFile = computed(() => {
   if (!selectedFilePath.value) return null
@@ -41,22 +37,6 @@ function selectFile(path: string) {
   selectedFilePath.value = path
 }
 
-async function handleResolve(filePath: string, content: string) {
-  await chatStore.resolveConflictFile(filePath, content)
-}
-
-async function handleAiResolve(filePath: string) {
-  aiResolvingFile.value = filePath
-  await chatStore.aiResolveConflictFile(filePath)
-  aiResolvingFile.value = null
-}
-
-async function handleAiResolveAll() {
-  aiResolvingAll.value = true
-  await chatStore.aiResolveAllConflicts()
-  aiResolvingAll.value = false
-}
-
 async function handleContinue() {
   continueLoading.value = true
   const result = await chatStore.continueRebase()
@@ -65,12 +45,12 @@ async function handleContinue() {
   if (result.success) {
     emit('close')
   }
-  // If not success but rebaseInProgress, the store will have refreshed conflictState
 }
 
 async function handleAbort() {
   abortLoading.value = true
-  await chatStore.abortRebase()
+  // Cancel any in-progress AI resolution first
+  await chatStore.cancelConflictResolution()
   abortLoading.value = false
   emit('close')
 }
@@ -90,31 +70,18 @@ async function handleAbort() {
         v-if="chatStore.conflictState"
         class="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
       >
-        <div class="w-full max-w-5xl mx-4 my-8 h-[80vh] bg-retro-dark border border-retro-border rounded-lg shadow-xl flex flex-col overflow-hidden">
+        <div class="w-full max-w-7xl mx-4 my-8 h-[85vh] bg-retro-dark border border-retro-border rounded-lg shadow-xl flex flex-col overflow-hidden">
 
           <!-- Header -->
           <div class="flex-shrink-0 px-4 py-3 border-b border-retro-border flex items-center justify-between">
             <div class="flex items-center gap-3">
               <ExclamationTriangleIcon class="w-5 h-5 text-retro-yellow" />
-              <h3 class="text-sm font-mono text-retro-text font-semibold">Resolve Rebase Conflicts</h3>
+              <h3 class="text-sm font-mono text-retro-text font-semibold">Resolve Conflicts</h3>
               <span class="text-xs font-mono text-retro-muted">
                 {{ resolvedCount }}/{{ totalCount }} resolved
               </span>
             </div>
             <div class="flex items-center gap-2">
-              <!-- AI Resolve All -->
-              <button
-                v-if="unresolvedCount > 0"
-                type="button"
-                :disabled="aiResolvingAll || continueLoading || abortLoading"
-                class="flex items-center gap-1 px-3 py-1.5 text-xs font-mono rounded border transition-colors
-                  bg-retro-orange/10 border-retro-orange/50 text-retro-orange
-                  hover:bg-retro-orange/20 disabled:opacity-40 disabled:cursor-not-allowed"
-                @click="handleAiResolveAll"
-              >
-                <SparklesIcon class="w-3.5 h-3.5" />
-                {{ aiResolvingAll ? 'AI Resolving...' : `AI Resolve All (${unresolvedCount})` }}
-              </button>
               <button
                 type="button"
                 :disabled="!allResolved || continueLoading || abortLoading"
@@ -153,10 +120,10 @@ async function handleAbort() {
             {{ chatStore.conflictState.error }}
           </div>
 
-          <!-- Body: split layout -->
+          <!-- Body: three-panel layout [FR-005] -->
           <div v-else class="flex-1 flex overflow-hidden">
-            <!-- File list sidebar -->
-            <div class="w-64 flex-shrink-0 border-r border-retro-border overflow-y-auto bg-retro-dark">
+            <!-- Left: File list sidebar -->
+            <div class="w-56 flex-shrink-0 border-r border-retro-border overflow-y-auto bg-retro-dark">
               <div class="py-1">
                 <button
                   v-for="file in files"
@@ -180,17 +147,21 @@ async function handleAbort() {
               </div>
             </div>
 
-            <!-- Editor area -->
-            <ConflictFileEditor
-              v-if="currentFile"
-              :file="currentFile"
-              :resolved="isResolved(currentFile.path)"
-              :ai-resolving="aiResolvingFile === currentFile.path || aiResolvingAll"
-              @resolve="handleResolve"
-              @ai-resolve="handleAiResolve"
-            />
-            <div v-else class="flex-1 flex items-center justify-center text-retro-muted text-sm font-mono">
-              Select a file to resolve
+            <!-- Center: File content viewer (read-only) -->
+            <div class="flex-1 flex flex-col overflow-hidden min-w-0">
+              <ConflictFileEditor
+                v-if="currentFile"
+                :file="currentFile"
+                :resolved="isResolved(currentFile.path)"
+              />
+              <div v-else class="flex-1 flex items-center justify-center text-retro-muted text-sm font-mono">
+                Select a file to view
+              </div>
+            </div>
+
+            <!-- Right: Conflict chat panel [FR-008] -->
+            <div class="w-80 flex-shrink-0">
+              <ConflictChatPanel />
             </div>
           </div>
         </div>
