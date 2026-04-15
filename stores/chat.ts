@@ -1241,6 +1241,7 @@ export const useChatStore = defineStore('chat', () => {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       cwd: cwd.value || process.cwd?.() || '',
+      source: options?.featureId ? 'cascade' : 'user',
       featureId: options?.featureId,
       providerId: resolvedProviderSelection.providerId,
       providerModelKey: resolvedProviderSelection.modelKey,

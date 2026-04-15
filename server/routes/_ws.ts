@@ -6,13 +6,38 @@
  * and forwards EventBus events to the connected peer.
  */
 
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import { eventBus, GLOBAL_CHANNEL } from '~/server/utils/eventBus'
 import { jobQueue, normalizeImageAttachments } from '~/server/utils/jobQueue'
 import type { ChatJobMessage } from '~/server/utils/jobQueue'
 import { startPersisting } from '~/server/utils/jobPersister'
 import { setupConversationWorktree } from '~/server/utils/worktreeSetup'
+import { getProjectDir } from '~/server/utils/projectDir'
 
 type PermissionMode = 'plan' | 'ask' | 'auto' | 'bypass'
+
+// Extract featureId from speckit commands (/speckit.plan 001-auth) or bare feature ID patterns
+const SPECKIT_FEATURE_PATTERN = /^\/speckit\.\w+\s+(\S+)/
+const FEATURE_ID_PATTERN = /\b(\d{3}-[a-z0-9][a-z0-9-]*)\b/i
+
+function extractFeatureIdFromMessage(message: string): string | undefined {
+  const trimmed = message.trim()
+
+  // 1. Speckit command: /speckit.plan 001-auth
+  const speckitMatch = trimmed.match(SPECKIT_FEATURE_PATTERN)
+  if (speckitMatch) return speckitMatch[1]
+
+  // 2. Feature ID pattern in message (e.g. "001-auth" mentioned in natural text)
+  const featureMatch = trimmed.match(FEATURE_ID_PATTERN)
+  return featureMatch?.[1]
+}
+
+function isValidFeatureId(featureId: string): boolean {
+  const projectDir = getProjectDir()
+  const specDir = join(projectDir, 'specs', featureId)
+  return existsSync(specDir)
+}
 
 interface ChatMessage {
   type: 'chat'
@@ -204,6 +229,17 @@ async function handleChatMessage(peer: any, msg: ChatMessage) {
     return
   }
 
+  // Auto-detect featureId from message when not explicitly provided.
+  // Matches speckit commands (/speckit.plan 001-auth) and bare feature ID patterns.
+  let resolvedFeatureId = msg.featureId
+  if (!resolvedFeatureId) {
+    const extracted = extractFeatureIdFromMessage(msg.message)
+    if (extracted && isValidFeatureId(extracted)) {
+      resolvedFeatureId = extracted
+      console.log('[WS] Auto-detected featureId from message:', resolvedFeatureId)
+    }
+  }
+
   // Ensure worktree isolation when no worktree cwd is provided.
   // Client UI and POST /api/jobs create worktrees before submitting;
   // external WS clients may not, so we handle it here.
@@ -213,7 +249,7 @@ async function handleChatMessage(peer: any, msg: ChatMessage) {
     const wtResult = await setupConversationWorktree({
       conversationId: msg.conversationId,
       message: msg.message,
-      featureId: msg.featureId,
+      featureId: resolvedFeatureId,
       providerId: msg.providerId,
       providerModelKey: msg.providerModelKey,
     })
@@ -236,7 +272,7 @@ async function handleChatMessage(peer: any, msg: ChatMessage) {
     permissionMode: msg.permissionMode,
     cwd: resolvedCwd,
     worktreeBranch: resolvedWorktreeBranch,
-    featureId: msg.featureId,
+    featureId: resolvedFeatureId,
     providerId: msg.providerId,
     providerModelKey: msg.providerModelKey,
   }

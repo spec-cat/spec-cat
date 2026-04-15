@@ -148,6 +148,7 @@ async function ensureConversationWorktreeInfo(
         createdAt: now,
         updatedAt: now,
         cwd: worktreePath,
+        source: options.featureId ? 'cascade' : 'user',
         worktreePath,
         worktreeBranch: branchName,
         hasWorktree: true,
