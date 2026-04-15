@@ -326,22 +326,11 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     try {
-      const response = await $fetch<{
-        success: boolean
-        archivedConversations?: ArchivedConversation[]
-      }>(`/api/conversations/archives/${archiveId}`, {
+      await $fetch(`/api/conversations/archives/${archiveId}`, {
         method: 'DELETE',
       })
 
-      if (!response.success) {
-        return { success: false, error: 'Failed to delete archived conversation' }
-      }
-
-      if (Array.isArray(response.archivedConversations)) {
-        archivedConversations.value = response.archivedConversations
-      } else {
-        archivedConversations.value.splice(index, 1)
-      }
+      archivedConversations.value.splice(index, 1)
       sortArchivedConversations()
       return { success: true }
     } catch {

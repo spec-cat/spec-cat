@@ -27,8 +27,5 @@ export default defineEventHandler(async (event) => {
     archivedConversations,
   })
 
-  return {
-    success: true,
-    archivedConversations,
-  }
+  return { success: true }
 })
