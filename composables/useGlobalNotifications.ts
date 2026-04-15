@@ -21,6 +21,8 @@ let refreshTimer: ReturnType<typeof setTimeout> | null = null
 
 const RECONNECT_DELAY = 5_000
 const REFRESH_DEBOUNCE = 500
+const RETRY_DELAY = 1_000
+const MAX_RETRIES = 5
 
 /** Lightweight per-job streaming state (one at a time per WebSocket). */
 interface ServerJobState {
@@ -34,6 +36,7 @@ let activeServerJob: ServerJobState | null = null
 
 /** Jobs awaiting setup after the next refresh completes. */
 const pendingJobs = new Map<string, string>() // conversationId → message
+const retryCount = new Map<string, number>() // conversationId → attempt count
 
 function getWsUrl(): string {
   if (typeof window === 'undefined') return ''
@@ -52,9 +55,29 @@ export function useGlobalNotifications() {
     console.log('[GlobalNotifications] Refresh result:', result)
 
     // Set up streaming for any pending server jobs
+    const failedJobs: Array<[string, string]> = []
     for (const [convId, message] of pendingJobs) {
       pendingJobs.delete(convId)
-      setupServerJobStreaming(convId, message)
+      const success = setupServerJobStreaming(convId, message)
+      if (!success) {
+        failedJobs.push([convId, message])
+      }
+    }
+
+    // Retry failed jobs (conversation may not be persisted yet)
+    for (const [convId, message] of failedJobs) {
+      const attempt = (retryCount.get(convId) ?? 0) + 1
+      if (attempt <= MAX_RETRIES) {
+        retryCount.set(convId, attempt)
+        console.log(`[GlobalNotifications] Scheduling retry ${attempt}/${MAX_RETRIES} for ${convId}`)
+        setTimeout(() => {
+          pendingJobs.set(convId, message)
+          debouncedRefresh()
+        }, RETRY_DELAY * attempt)
+      } else {
+        console.warn(`[GlobalNotifications] Gave up streaming setup for ${convId} after ${MAX_RETRIES} retries`)
+        retryCount.delete(convId)
+      }
     }
   }
 
@@ -68,17 +91,27 @@ export function useGlobalNotifications() {
 
   // ─── Server-job streaming setup ────────────────────────
 
-  function setupServerJobStreaming(conversationId: string, message: string) {
-    if (!ws || ws.readyState !== WebSocket.OPEN) return
+  /**
+   * Set up streaming for a server-initiated job.
+   * Returns true if streaming was started (or already active), false if setup failed and should retry.
+   */
+  function setupServerJobStreaming(conversationId: string, message: string): boolean {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return false
 
     // Skip if this browser is already streaming this conversation (e.g. we initiated the job)
-    if (chatStore.isConversationStreaming(conversationId)) return
+    if (chatStore.isConversationStreaming(conversationId)) {
+      retryCount.delete(conversationId)
+      return true
+    }
 
     const conv = chatStore.conversations.find((c: { id: string }) => c.id === conversationId)
     if (!conv) {
       console.warn('[GlobalNotifications] Conversation not found for streaming:', conversationId)
-      return
+      return false
     }
+
+    // Success — clear retry counter
+    retryCount.delete(conversationId)
 
     // Add user message if not yet present (skip if resuming and message unknown)
     if (conv.messages.length === 0 && message) {
@@ -100,7 +133,7 @@ export function useGlobalNotifications() {
       }
       ws.send(JSON.stringify({ type: 'subscribe', conversationId, cursor: 0 }))
       console.log('[GlobalNotifications] Resumed server job streaming (existing msg):', conversationId)
-      return
+      return true
     }
 
     // Add assistant message placeholder
@@ -124,6 +157,7 @@ export function useGlobalNotifications() {
     }))
 
     console.log('[GlobalNotifications] Subscribed to server job streaming:', conversationId)
+    return true
   }
 
   // ─── Incoming message routing ──────────────────────────
@@ -165,6 +199,7 @@ export function useGlobalNotifications() {
         activeServerJob = null
       }
       pendingJobs.delete(msg.conversationId)
+      retryCount.delete(msg.conversationId)
       debouncedRefresh()
       return
     }
