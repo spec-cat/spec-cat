@@ -10,6 +10,7 @@ import { eventBus, GLOBAL_CHANNEL } from '~/server/utils/eventBus'
 import { jobQueue, normalizeImageAttachments } from '~/server/utils/jobQueue'
 import type { ChatJobMessage } from '~/server/utils/jobQueue'
 import { startPersisting } from '~/server/utils/jobPersister'
+import { setupConversationWorktree } from '~/server/utils/worktreeSetup'
 
 type PermissionMode = 'plan' | 'ask' | 'auto' | 'bypass'
 
@@ -142,7 +143,12 @@ export default defineWebSocketHandler({
     }
 
     if (msg.type === 'chat') {
-      handleChatMessage(peer, msg)
+      handleChatMessage(peer, msg).catch((err) => {
+        console.error('[WS] handleChatMessage error:', err)
+        try {
+          peer.send(JSON.stringify({ type: 'error', error: 'Internal server error', requestId: msg.requestId }))
+        } catch {}
+      })
       return
     }
 
@@ -168,7 +174,7 @@ export default defineWebSocketHandler({
   },
 })
 
-function handleChatMessage(peer: any, msg: ChatMessage) {
+async function handleChatMessage(peer: any, msg: ChatMessage) {
   const attachments = normalizeImageAttachments(msg.attachments)
 
   // Validate message content
@@ -198,6 +204,25 @@ function handleChatMessage(peer: any, msg: ChatMessage) {
     return
   }
 
+  // Ensure worktree isolation when no worktree cwd is provided.
+  // Client UI and POST /api/jobs create worktrees before submitting;
+  // external WS clients may not, so we handle it here.
+  let resolvedCwd = msg.cwd
+  let resolvedWorktreeBranch = msg.worktreeBranch
+  if (!resolvedCwd || !resolvedCwd.startsWith('/tmp/sc-')) {
+    const wtResult = await setupConversationWorktree({
+      conversationId: msg.conversationId,
+      message: msg.message,
+      featureId: msg.featureId,
+      providerId: msg.providerId,
+      providerModelKey: msg.providerModelKey,
+    })
+    if (wtResult.success) {
+      resolvedCwd = wtResult.cwd
+      resolvedWorktreeBranch = wtResult.worktreeBranch
+    }
+  }
+
   // Subscribe peer to conversation events via EventBus
   subscribePeerToConversation(peer, msg.conversationId)
 
@@ -209,8 +234,8 @@ function handleChatMessage(peer: any, msg: ChatMessage) {
     requestId: msg.requestId,
     sessionId: msg.sessionId,
     permissionMode: msg.permissionMode,
-    cwd: msg.cwd,
-    worktreeBranch: msg.worktreeBranch,
+    cwd: resolvedCwd,
+    worktreeBranch: resolvedWorktreeBranch,
     featureId: msg.featureId,
     providerId: msg.providerId,
     providerModelKey: msg.providerModelKey,
