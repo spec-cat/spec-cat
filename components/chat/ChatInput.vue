@@ -9,6 +9,7 @@ import {
   QuestionMarkCircleIcon,     // ask
   BoltIcon,                   // auto
   ShieldExclamationIcon,      // bypass
+  QueueListIcon,
 } from '@heroicons/vue/24/outline'
 import { PERMISSION_MODE_LABELS, type PermissionMode, type ChatImageAttachment } from '~/types/chat'
 import type { SearchMode, SearchResponse } from '~/types/specSearch'
@@ -34,6 +35,13 @@ const showModelMenu = ref(false)
 const pendingAttachments = ref<ChatImageAttachment[]>([])
 let pendingResizeRaf: number | null = null
 const pendingConversationSelection = ref<AIProviderSelection | null>(null)
+
+interface QueuedMessage {
+  id: string
+  text: string
+  attachments: ChatImageAttachment[]
+}
+const messageQueue = ref<QueuedMessage[]>([])
 
 const { data: providerResponse, pending: providersLoading } = useAsyncData<{ providers: AIProviderMetadata[] }>(
   'chat-input-ai-providers',
@@ -217,6 +225,14 @@ onUnmounted(() => {
 const canSend = computed(() => {
   return (inputText.value.trim().length > 0 || pendingAttachments.value.length > 0) &&
     !chatStore.isActiveConversationStreaming &&
+    !isSending.value &&
+    !chatStore.pendingPermission &&
+    !hasPendingPlanApproval.value
+})
+
+// Can submit input (send directly OR queue while streaming)
+const canSubmit = computed(() => {
+  return (inputText.value.trim().length > 0 || pendingAttachments.value.length > 0) &&
     !isSending.value &&
     !chatStore.pendingPermission &&
     !hasPendingPlanApproval.value
@@ -641,9 +657,10 @@ function failAssistantStreamingTurn(conversationId: string, messageId: string, e
   chatStore.endConversationStreaming(conversationId)
 }
 
-async function sendMessage() {
-  const message = inputText.value.trim()
-  const attachments = [...pendingAttachments.value]
+async function sendMessage(overrideText?: string, overrideAttachments?: ChatImageAttachment[]) {
+  const isFromQueue = overrideText !== undefined
+  const message = (overrideText ?? inputText.value).trim()
+  const attachments = overrideAttachments ?? [...pendingAttachments.value]
   if ((message.length === 0 && attachments.length === 0) || chatStore.isActiveConversationStreaming || isSending.value || props.disabled) return
   const hadActiveConversation = !!chatStore.activeConversationId
   let conversationId: string | null = null
@@ -656,24 +673,30 @@ async function sendMessage() {
   }
   if (message === '/context' || message === '/ctx') {
     await handleShowContext()
-    inputText.value = ''
-    clearPendingAttachments()
-    resetTextareaHeight()
+    if (!isFromQueue) {
+      inputText.value = ''
+      clearPendingAttachments()
+      resetTextareaHeight()
+    }
     return
   }
   const specSearchCommand = parseSpecSearchCommand(message)
   if (specSearchCommand) {
     await handleDirectSpecSearch(specSearchCommand)
-    inputText.value = ''
-    clearPendingAttachments()
-    resetTextareaHeight()
+    if (!isFromQueue) {
+      inputText.value = ''
+      clearPendingAttachments()
+      resetTextareaHeight()
+    }
     return
   }
 
   isSending.value = true
-  inputText.value = ''
-  clearPendingAttachments()
-  resetTextareaHeight()
+  if (!isFromQueue) {
+    inputText.value = ''
+    clearPendingAttachments()
+    resetTextareaHeight()
+  }
 
   try {
     // Add user message to store (creates conversation if needed — async for worktree)
@@ -715,6 +738,43 @@ async function stopGeneration() {
   } catch {
     // Ignore stop errors
   }
+}
+
+function handleSubmit() {
+  if (chatStore.isActiveConversationStreaming) {
+    queueMessage()
+  } else {
+    sendMessage()
+  }
+}
+
+function queueMessage() {
+  const text = inputText.value.trim()
+  const attachments = [...pendingAttachments.value]
+  if (text.length === 0 && attachments.length === 0) return
+
+  messageQueue.value.push({
+    id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    text,
+    attachments,
+  })
+
+  inputText.value = ''
+  clearPendingAttachments()
+  resetTextareaHeight()
+  focusInput()
+}
+
+function removeFromQueue(id: string) {
+  messageQueue.value = messageQueue.value.filter(m => m.id !== id)
+}
+
+async function processQueue() {
+  if (messageQueue.value.length === 0) return
+  if (chatStore.isActiveConversationStreaming || isSending.value) return
+
+  const next = messageQueue.value.shift()!
+  await sendMessage(next.text, next.attachments)
 }
 
 // Reset AI context (clear provider session without deleting messages)
@@ -803,10 +863,10 @@ async function retryLastMessage() {
 }
 
 function handleKeyDown(e: KeyboardEvent) {
-  // Enter to send (without shift for new line)
+  // Enter to send or queue (without shift for new line)
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
-    sendMessage()
+    handleSubmit()
   }
 }
 
@@ -852,10 +912,14 @@ function focusInput() {
 
 watch(inputText, scheduleAutoResize)
 
-// Auto-focus when streaming ends (input becomes enabled)
+// Auto-focus when streaming ends; process queued messages
 watch(() => chatStore.isActiveConversationStreaming, (streaming, wasStreaming) => {
   if (wasStreaming && !streaming) {
-    focusInput()
+    if (messageQueue.value.length > 0) {
+      nextTick(() => processQueue())
+    } else {
+      focusInput()
+    }
   }
 })
 
@@ -864,6 +928,7 @@ watch(() => chatStore.activeConversationId, () => {
   if (chatStore.activeConversationId) {
     pendingConversationSelection.value = null
   }
+  messageQueue.value = []
   clearPendingAttachments()
   focusInput()
 })
@@ -1059,6 +1124,33 @@ watch(() => chatStore.activeConversationId, () => {
       </div>
     </div>
 
+    <!-- Message queue -->
+    <div v-if="messageQueue.length > 0" class="mb-2">
+      <div class="text-[10px] font-mono text-retro-muted mb-1 uppercase tracking-wide">
+        Queued ({{ messageQueue.length }})
+      </div>
+      <div class="space-y-1">
+        <div
+          v-for="(item, index) in messageQueue"
+          :key="item.id"
+          class="flex items-center gap-2 px-2.5 py-1.5 bg-retro-panel/50 border border-retro-border/30 rounded"
+        >
+          <span class="text-[10px] font-mono text-retro-yellow flex-shrink-0">#{{ index + 1 }}</span>
+          <span class="flex-1 text-xs font-mono text-retro-text truncate">{{ item.text }}</span>
+          <span v-if="item.attachments.length > 0" class="text-[10px] font-mono text-retro-muted flex-shrink-0">
+            +{{ item.attachments.length }} img
+          </span>
+          <button
+            class="flex-shrink-0 p-0.5 text-retro-muted hover:text-retro-red transition-colors"
+            title="Cancel queued message"
+            @click="removeFromQueue(item.id)"
+          >
+            <XMarkIcon class="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div class="flex gap-2 items-start">
       <input
         ref="fileInputRef"
@@ -1076,7 +1168,7 @@ watch(() => chatStore.activeConversationId, () => {
                transition-colors"
         type="button"
         title="Attach images"
-        :disabled="disabled || chatStore.isActiveConversationStreaming || hasPendingPermission || hasPendingPlanApproval"
+        :disabled="disabled || hasPendingPermission || hasPendingPlanApproval"
         @click="fileInputRef?.click()"
       >
         <PaperClipIcon class="w-5 h-5" />
@@ -1087,10 +1179,12 @@ watch(() => chatStore.activeConversationId, () => {
         <textarea
           ref="inputRef"
           v-model="inputText"
-          :disabled="disabled || chatStore.isActiveConversationStreaming || hasPendingPermission || hasPendingPlanApproval"
+          :disabled="disabled || hasPendingPermission || hasPendingPlanApproval"
           :placeholder="disabled
             ? 'This conversation is finalized (read-only)'
-            : 'Type a message...'"
+            : chatStore.isActiveConversationStreaming
+              ? 'Type to queue a message...'
+              : 'Type a message...'"
           rows="1"
           class="w-full h-full min-h-[40px] px-3 py-2 bg-retro-black border border-retro-border rounded
                  text-sm font-mono text-retro-text placeholder-retro-muted
@@ -1114,22 +1208,26 @@ watch(() => chatStore.activeConversationId, () => {
         <ArrowPathIcon class="w-5 h-5" />
       </button>
 
-      <!-- Send/Stop button -->
+      <!-- Send / Queue button -->
       <button
-        v-if="!canStop && !hasPendingPermission"
-        :disabled="!canSend"
+        v-if="!hasPendingPermission"
+        :disabled="!canSubmit"
+        :title="chatStore.isActiveConversationStreaming ? 'Queue message' : 'Send message'"
         class="flex-shrink-0 h-10 w-10 inline-flex items-center justify-center p-0 rounded
-               bg-retro-cyan/20 text-retro-cyan
-               hover:bg-retro-cyan/30
                disabled:opacity-50 disabled:cursor-not-allowed
                transition-colors"
-        @click="sendMessage"
+        :class="chatStore.isActiveConversationStreaming
+          ? 'bg-retro-yellow/20 text-retro-yellow hover:bg-retro-yellow/30'
+          : 'bg-retro-cyan/20 text-retro-cyan hover:bg-retro-cyan/30'"
+        @click="handleSubmit"
       >
-        <PaperAirplaneIcon class="w-5 h-5" />
+        <QueueListIcon v-if="chatStore.isActiveConversationStreaming" class="w-5 h-5" />
+        <PaperAirplaneIcon v-else class="w-5 h-5" />
       </button>
 
+      <!-- Stop button (visible alongside queue button during streaming) -->
       <button
-        v-else-if="canStop"
+        v-if="canStop"
         class="flex-shrink-0 h-10 w-10 inline-flex items-center justify-center p-0 rounded
                bg-retro-red/20 text-retro-red
                hover:bg-retro-red/30
@@ -1142,7 +1240,7 @@ watch(() => chatStore.activeConversationId, () => {
 
     <!-- Hint text -->
     <div class="mt-1 text-xs font-mono text-retro-muted">
-      Press Enter to send, Shift+Enter for new line. Slash commands: `/context`, `/reset`, `/new`, `/clear`, `/spec-search`. You can attach up to 4 images (5 MB each).
+      Press Enter to send (or queue while AI is responding), Shift+Enter for new line. Slash commands: `/context`, `/reset`, `/new`, `/clear`, `/spec-search`.
     </div>
   </div>
 </template>
