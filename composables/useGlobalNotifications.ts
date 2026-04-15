@@ -37,6 +37,7 @@ let activeServerJob: ServerJobState | null = null
 /** Jobs awaiting setup after the next refresh completes. */
 const pendingJobs = new Map<string, string>() // conversationId → message
 const retryCount = new Map<string, number>() // conversationId → attempt count
+const retryTimers = new Map<string, ReturnType<typeof setTimeout>>() // conversationId → timer
 
 function getWsUrl(): string {
   if (typeof window === 'undefined') return ''
@@ -70,10 +71,12 @@ export function useGlobalNotifications() {
       if (attempt <= MAX_RETRIES) {
         retryCount.set(convId, attempt)
         console.log(`[GlobalNotifications] Scheduling retry ${attempt}/${MAX_RETRIES} for ${convId}`)
-        setTimeout(() => {
+        const timer = setTimeout(() => {
+          retryTimers.delete(convId)
           pendingJobs.set(convId, message)
           debouncedRefresh()
         }, RETRY_DELAY * attempt)
+        retryTimers.set(convId, timer)
       } else {
         console.warn(`[GlobalNotifications] Gave up streaming setup for ${convId} after ${MAX_RETRIES} retries`)
         retryCount.delete(convId)
@@ -407,6 +410,10 @@ export function useGlobalNotifications() {
       clearTimeout(refreshTimer)
       refreshTimer = null
     }
+    for (const timer of retryTimers.values()) clearTimeout(timer)
+    retryTimers.clear()
+    retryCount.clear()
+    pendingJobs.clear()
     if (activeServerJob) {
       chatStore.endConversationStreaming(activeServerJob.conversationId)
       activeServerJob = null
