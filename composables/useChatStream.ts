@@ -21,6 +21,7 @@ import type {
 import { DEFAULT_MODEL_KEY, DEFAULT_PROVIDER_ID } from '~/types/aiProvider'
 import { generateBlockId } from '~/types/chat'
 import {
+  buildCloseReason,
   buildStreamOptsFromConversation,
   createRequestId,
   createSessionId,
@@ -28,6 +29,29 @@ import {
   isSpeckitResetCommand,
   parsePermissionRequestFromText,
 } from '~/utils/chatStream'
+import {
+  buildRecoveryKey,
+  getWsUrl,
+  isPageFocused,
+  markToolBlocks,
+} from '~/utils/chatStreamHelpers'
+import { createCascadeRegistry } from '~/utils/cascadeQueue'
+import { reduceReplayEvents } from '~/utils/streamReplayReducer'
+import {
+  buildResultSummaryBlock,
+  buildSessionInitBlock,
+  buildTextBlock,
+  buildThinkingBlock,
+  buildToolResultBlock,
+  buildToolUseStart,
+  findActiveToolByIndexOrBlock,
+} from '~/utils/eventBlockFactories'
+import {
+  checkExistingConnection,
+  createConnectionState,
+  isStaleConnection,
+  type ConnectionState as WSConnectionState,
+} from '~/utils/wsConnectionState'
 
 interface WSResponse {
   type: 'ui_event' | 'provider_json' | 'done' | 'error' | 'pong' | 'permission_prompt' | 'permission_request' | 'session_reset' | 'worktree_recovered' | 'aborted' | 'context_reset' | 'replay_start' | 'replay_end' | 'subscribed' | 'notification'
@@ -50,55 +74,7 @@ interface WSResponse {
   status?: string  // For notifications (job final status)
 }
 
-function extractProviderSessionId(msg: any): string | null {
-  if (!msg || typeof msg !== 'object') return null
-  const record = msg as Record<string, unknown>
-  const keys = ['session_id', 'sessionId', 'conversation_id', 'conversationId', 'thread_id', 'threadId']
-  for (const key of keys) {
-    const value = record[key]
-    if (typeof value === 'string' && value.length > 0) {
-      return value
-    }
-  }
-
-  const response = record.response
-  if (response && typeof response === 'object' && !Array.isArray(response)) {
-    const responseObj = response as Record<string, unknown>
-    for (const key of keys) {
-      const value = responseObj[key]
-      if (typeof value === 'string' && value.length > 0) {
-        return value
-      }
-    }
-  }
-
-  return null
-}
-
-// Track tool info
-interface ActiveTool {
-  blockId: string   // ContentBlock ID
-  toolUseId: string // SDK tool_use ID
-  name: string
-  inputJson: string
-}
-
-// Per-conversation connection state
-interface ConnectionState {
-  ws: WebSocket
-  currentMessageId: string
-  conversationId: string
-  activeTools: Map<number, ActiveTool>
-  currentTextBlockId: string | null
-  currentThinkingBlockId: string | null
-  healthCheckInterval: ReturnType<typeof setInterval> | null
-  lastMessageTime: number
-  lastServerError: string | null
-  lastSocketError: string | null
-  // Replay buffering: accumulate events during replay_start → replay_end
-  isReplaying: boolean
-  replayBuffer: WSResponse[]
-}
+type ConnectionState = WSConnectionState<WSResponse>
 
 // Module-level connection pool (shared across all composable instances)
 const connections = new Map<string, ConnectionState>()
@@ -107,7 +83,7 @@ const connections = new Map<string, ConnectionState>()
 let composableRefCount = 0
 
 // Per-conversation cascade state
-const cascadeStates = new Map<string, { queue: string[], featureId: string }>()
+const cascadeRegistry = createCascadeRegistry()
 const rolloutRecoveryAttempts = new Set<string>()
 
 // Health check constants
@@ -115,73 +91,11 @@ const HEALTH_CHECK_INTERVAL_MS = 30_000  // Check every 30s
 const STREAMING_TIMEOUT_MS = 180_000     // 180s with no messages → timeout
 const STREAMING_TIMEOUT_SECONDS = Math.round(STREAMING_TIMEOUT_MS / 1000)
 
-function summarizeCloseCode(code: number): string {
-  switch (code) {
-    case 1000:
-      return 'Normal closure'
-    case 1001:
-      return 'Endpoint is going away (server shutdown or page navigation)'
-    case 1002:
-      return 'Protocol error'
-    case 1003:
-      return 'Unsupported data'
-    case 1005:
-      return 'No status code received from peer (close frame had no code)'
-    case 1006:
-      return 'Abnormal closure (connection dropped without close frame)'
-    case 1007:
-      return 'Invalid payload data'
-    case 1008:
-      return 'Policy violation'
-    case 1009:
-      return 'Message too big'
-    case 1010:
-      return 'Missing required extension'
-    case 1011:
-      return 'Internal server error'
-    case 1012:
-      return 'Service restart'
-    case 1013:
-      return 'Try again later (temporary overload)'
-    case 1015:
-      return 'TLS handshake failure'
-    default:
-      if (code >= 4000 && code <= 4999) {
-        return 'Application-specific close code'
-      }
-      return 'Unknown close code'
-  }
-}
-
-function buildCloseReason(event: CloseEvent, conn?: ConnectionState): string {
-  const parts: string[] = []
-  if (event.reason) {
-    parts.push(event.reason)
-  } else {
-    parts.push(summarizeCloseCode(event.code))
-  }
-
-  if (conn?.lastServerError) {
-    parts.push(`Last server error: ${conn.lastServerError}`)
-  } else if (conn?.lastSocketError) {
-    parts.push(`Last socket error: ${conn.lastSocketError}`)
-  }
-
-  parts.push(`wasClean: ${event.wasClean ? 'yes' : 'no'}`)
-  return parts.join(' | ')
-}
-
 export function useChatStream() {
   const chatStore = useChatStore()
   const settingsStore = useSettingsStore()
 
   composableRefCount++
-
-  function isPageFocused(): boolean {
-    if (typeof document === 'undefined') return false
-    if (typeof document.hasFocus !== 'function') return false
-    return document.visibilityState === 'visible' && document.hasFocus()
-  }
 
   function createCompletionNotification(conversationId: string) {
     const conv = chatStore.conversations.find((c: { id: string }) => c.id === conversationId)
@@ -211,15 +125,6 @@ export function useChatStream() {
     } catch (error) {
       console.warn('[useChatStream] Failed to request browser notification permission:', error)
     }
-  }
-
-  /**
-   * Get WebSocket URL
-   */
-  function getWsUrl(): string {
-    if (typeof window === 'undefined') return ''
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    return `${protocol}//${window.location.host}/_ws`
   }
 
   /**
@@ -355,36 +260,19 @@ export function useChatStream() {
         reject(error)
       }
 
-      const existing = connections.get(conversationId)
-      if (existing && existing.ws.readyState === WebSocket.OPEN) {
-        safeResolve(existing.ws)
+      const existing = checkExistingConnection(connections, conversationId)
+      if (existing.kind === 'open') {
+        safeResolve(existing.conn.ws)
         return
       }
-
-      // Close existing connection for this conversation if any
-      if (existing) {
-        existing.ws.close()
+      if (existing.kind === 'stale') {
+        existing.conn.ws.close()
         connections.delete(conversationId)
       }
 
       const url = getWsUrl()
       const ws = new WebSocket(url)
-
-      // Create connection state
-      const connState: ConnectionState = {
-        ws,
-        currentMessageId: '',
-        conversationId,
-        activeTools: new Map(),
-        currentTextBlockId: null,
-        currentThinkingBlockId: null,
-        healthCheckInterval: null,
-        lastMessageTime: Date.now(),
-        lastServerError: null,
-        lastSocketError: null,
-        isReplaying: false,
-        replayBuffer: [],
-      }
+      const connState = createConnectionState<WSResponse>(ws, conversationId)
       connections.set(conversationId, connState)
 
       ws.onopen = () => {
@@ -393,12 +281,8 @@ export function useChatStream() {
 
       ws.onerror = (event) => {
         console.error(`[useChatStream] WebSocket error for conversation ${conversationId}:`, event)
+        if (isStaleConnection(connections, conversationId, ws)) return
         const conn = connections.get(conversationId)
-
-        // If the connection pool already holds a different WebSocket for this
-        // conversation (e.g. a new message was sent after abort), this close/error
-        // belongs to the OLD socket — skip cleanup so we don't corrupt the new one.
-        if (conn && conn.ws !== ws) return
 
         if (conn) {
           conn.lastSocketError = 'Browser reported a WebSocket transport error (network/proxy/server)'
@@ -417,14 +301,13 @@ export function useChatStream() {
       }
 
       ws.onclose = (event) => {
-        const conn = connections.get(conversationId)
-
         // Stale close: a new WebSocket already replaced this one — bail out.
-        if (conn && conn.ws !== ws) return
+        if (isStaleConnection(connections, conversationId, ws)) return
+        const conn = connections.get(conversationId)
 
         if (conn) clearHealthCheck(conn)
         connections.delete(conversationId)
-        cascadeStates.delete(conversationId)
+        cascadeRegistry.disable(conversationId)
 
         if (!settled) {
           safeReject(new Error(`WebSocket closed before connection was established (code: ${event.code})`))
@@ -446,8 +329,7 @@ export function useChatStream() {
 
       ws.onmessage = (event) => {
         // Ignore messages from a stale WebSocket that has been replaced
-        const conn = connections.get(conversationId)
-        if (conn && conn.ws !== ws) return
+        if (isStaleConnection(connections, conversationId, ws)) return
         handleMessage(event.data, conversationId)
       }
     })
@@ -466,10 +348,6 @@ export function useChatStream() {
     }
     console.error('[useChatStream] Conversation not found after retries:', id)
     return undefined
-  }
-
-  function buildRecoveryKey(conversationId: string, messageId: string): string {
-    return `${conversationId}:${messageId}`
   }
 
   function findUserPromptForAssistantMessage(conversationId: string, assistantMessageId: string): string | null {
@@ -528,164 +406,13 @@ export function useChatStream() {
       }
 
       if (response.type === 'error') {
-        console.error(`[useChatStream] Server error for ${conversationId}:`, response.error)
-        const errorMsg = response.error || 'Unknown server error'
-        conn.lastServerError = errorMsg
-        const hasCodexPermissionError = /codex cannot access session files|failed to clean up stale arg0 temp dirs: Permission denied|failed to initialize rollout recorder: Permission denied|failed to create session: Permission denied|\/\.codex\/.*permission denied/i.test(errorMsg)
-        const missingRolloutPath = /state db missing rollout path for thread/i.test(errorMsg)
-        if (missingRolloutPath && !hasCodexPermissionError) {
-          const recoveryKey = buildRecoveryKey(conversationId, conn.currentMessageId)
-          if (!rolloutRecoveryAttempts.has(recoveryKey)) {
-            const prompt = findUserPromptForAssistantMessage(conversationId, conn.currentMessageId)
-            if (prompt) {
-              rolloutRecoveryAttempts.add(recoveryKey)
-              chatStore.setProviderSessionId('', conversationId)
-              appendTextBlock(
-                conn.currentMessageId,
-                '\n\n> **Session Reset**: Codex resume state was corrupted. Retrying once with a fresh session...\n\n',
-                conversationId,
-              )
-              try {
-                const conv = chatStore.conversations.find((c: { id: string }) => c.id === conversationId)
-                const streamOpts = buildStreamOptsFromConversation(conv)
-                await sendMessage(prompt, conn.currentMessageId, conversationId, streamOpts)
-                return
-              } catch (retryError) {
-                console.error(`[useChatStream] Rollout-path recovery retry failed for ${conversationId}:`, retryError)
-              }
-            }
-          }
-        }
-
-        clearHealthCheck(conn)
-        // Mark any remaining running tool_use blocks as error
-        markRunningToolBlocks(conn.currentMessageId, conversationId, 'error')
-        chatStore.updateMessage(conn.currentMessageId, { status: 'error' }, conversationId)
-        if (/state db missing rollout path for thread/i.test(errorMsg)) {
-          // Ensure next send is fresh even if server-side reset was missed.
-          chatStore.setProviderSessionId('', conversationId)
-        }
-        rolloutRecoveryAttempts.delete(buildRecoveryKey(conversationId, conn.currentMessageId))
-        chatStore.setSessionError(errorMsg, conversationId)
-        chatStore.endSession(conversationId)
-        chatStore.endConversationStreaming(conversationId)
-        // Stop cascade on error
-        disableCascade(conversationId)
-        chatStore.saveConversation(conversationId, true)
-        cleanupConnection(conversationId)
+        const recovered = await handleServerError(response, conn, conversationId)
+        if (recovered) return
         return
       }
 
       if (response.type === 'done') {
-        clearHealthCheck(conn)
-        const currentStatus = getMessageStatus(conversationId, conn.currentMessageId)
-        rolloutRecoveryAttempts.delete(buildRecoveryKey(conversationId, conn.currentMessageId))
-
-        // Permission denial is a stopped state, not a successful completion.
-        if (response.denied) {
-          markRunningToolBlocks(conn.currentMessageId, conversationId, 'error')
-          chatStore.updateMessage(conn.currentMessageId, { status: 'stopped' }, conversationId)
-          chatStore.endSession(conversationId)
-          chatStore.endConversationStreaming(conversationId)
-          disableCascade(conversationId)
-          chatStore.clearPendingPermission(conversationId)
-          conn.activeTools.clear()
-          chatStore.saveConversation(conversationId, true)
-          // Keep socket/session alive so the next turn can resume provider context.
-          return
-        }
-
-        // If a prior event already marked terminal failure, keep that status.
-        if (currentStatus === 'error' || currentStatus === 'stopped') {
-          markRunningToolBlocks(conn.currentMessageId, conversationId, 'error')
-          chatStore.endSession(conversationId)
-          chatStore.endConversationStreaming(conversationId)
-          disableCascade(conversationId)
-          chatStore.clearPendingPermission(conversationId)
-          conn.activeTools.clear()
-          chatStore.saveConversation(conversationId, true)
-          // Keep socket/session alive so the next turn can resume provider context.
-          return
-        }
-
-        // Mark any remaining running tool_use blocks as complete
-        markRunningToolBlocks(conn.currentMessageId, conversationId, 'complete')
-        chatStore.completeMessageWithSave(conn.currentMessageId, conversationId)
-        chatStore.endSession(conversationId)
-        chatStore.endConversationStreaming(conversationId)
-        notifyChatCompleted(conversationId)
-
-        // Find conversation with retry (store may not be synced yet)
-        const conv = await findConversationWithRetry(conversationId)
-
-        // Auto-commit changes in worktree, then sync preview if active
-        const commitPromise = (conv?.hasWorktree && conv.worktreePath)
-          ? $fetch('/api/chat/worktree-commit', {
-              method: 'POST',
-              body: {
-                worktreePath: conv.worktreePath,
-                conversationId,
-                previousBranch: conv.worktreeBranch,
-              },
-            }).then((result: any) => {
-              if (conv.previewBranch && conv.worktreePath) {
-                return $fetch<{ success: boolean; error?: string }>('/api/chat/preview-sync', {
-                  method: 'POST',
-                  body: { previewBranch: conv.previewBranch, worktreePath: conv.worktreePath },
-                }).then((syncResult) => {
-                  if (!syncResult.success) {
-                    throw new Error(syncResult.error || 'Unknown preview sync failure')
-                  }
-                  return result
-                })
-              }
-              return result
-            }).then(async (result: any) => {
-              // Update UI if branch changed or commits were made
-              if (result?.success && result.currentBranch !== conv.worktreeBranch) {
-                const oldBranch = conv.worktreeBranch || 'unknown'
-                chatStore.updateWorktreeBranch(conversationId, result.currentBranch)
-                const linkedFeatureId = await chatStore.syncConversationFeatureFromBranch(conversationId)
-                const deletedText = result.deletedPreviousBranch ? ` and deleted \`${oldBranch}\`` : ''
-                const linkedText = linkedFeatureId ? ` and linked to feature \`${linkedFeatureId}\`` : ''
-                appendTextBlock(
-                  conn.currentMessageId,
-                  `\n\n> **Branch changed**: AI switched from \`${oldBranch}\` to \`${result.currentBranch}\`${deletedText}${linkedText}\n\n`,
-                  conversationId,
-                )
-              } else if (result?.success && conv.worktreeBranch) {
-                // No branch change, but commits may have been made - update lastCommitTime to refresh UI
-                chatStore.updateWorktreeBranch(conversationId, conv.worktreeBranch)
-              }
-
-              chatStore.saveConversation(conversationId, false)
-              return result
-            }).catch((err: unknown) => {
-              console.warn('[useChatStream] Auto-commit/preview-sync failed:', err)
-            })
-          : Promise.resolve()
-
-        // Cascade: after auto-commit settles, send next step if queued
-        const cascade = cascadeStates.get(conversationId)
-        if (cascade && cascade.queue.length > 0) {
-          const nextStep = cascade.queue.shift()!
-          const featureId = cascade.featureId
-          commitPromise.then(() => {
-            // Small delay to let auto-commit settle
-            setTimeout(() => {
-              sendCascadeStep(conversationId, featureId, nextStep)
-            }, 1500)
-          })
-          // Clean up if queue is now empty
-          if (cascade.queue.length === 0) {
-            cascadeStates.delete(conversationId)
-          }
-        }
-
-        chatStore.clearPendingPermission(conversationId)
-        chatStore.saveConversation(conversationId, true)
-        conn.activeTools.clear()
-        // Keep socket/session alive so the next turn can resume provider context.
+        await handleDone(response, conn, conversationId)
         return
       }
 
@@ -760,38 +487,13 @@ export function useChatStream() {
         return
       }
 
-      // Handle permission request from server
       if (response.type === 'permission_request') {
-        // Claude CLI exits while waiting for permission approval.
-        // Move UI out of "streaming" until user responds.
-        clearHealthCheck(conn)
-        chatStore.endConversationStreaming(conversationId)
-
-        const request: PermissionRequest = parsePermissionRequestFromText(
-          response.description || '',
-          response.tool || 'Permission',
-        )
-
-        chatStore.setPendingPermission(request, conversationId)
-
-        let permText = `\n\n**Permission Required**: ${request.tool}`
-        if (request.filePath) permText += ` - ${request.filePath}`
-        appendTextBlock(conn.currentMessageId, permText + '\n', conversationId)
+        handlePermissionRequest(response, conn, conversationId)
         return
       }
 
-      // Handle permission prompt from PTY (legacy format)
       if (response.type === 'permission_prompt' && response.text) {
-        // Legacy permission prompt path has the same lifecycle as permission_request.
-        clearHealthCheck(conn)
-        chatStore.endConversationStreaming(conversationId)
-
-        const request: PermissionRequest = parsePermissionRequestFromText(response.text, 'Permission')
-
-        chatStore.setPendingPermission(request, conversationId)
-
-        const permText = `\n\n**${request.tool}**: ${request.filePath || request.command || request.description}\n`
-        appendTextBlock(conn.currentMessageId, permText, conversationId)
+        handlePermissionPrompt(response, conn, conversationId)
         return
       }
 
@@ -811,6 +513,281 @@ export function useChatStream() {
       chatStore.saveConversation(conversationId, true)
       cleanupConnection(conversationId)
     }
+  }
+
+  /**
+   * Apply a block_delta event: append streamed text/thinking to the matching
+   * open block, or accumulate tool input JSON for the active tool.
+   */
+  function applyBlockDelta(event: Extract<UIStreamEvent, { type: 'block_delta' }>, conn: ConnectionState, conversationId: string) {
+    if (event.text && conn.currentTextBlockId) {
+      flushTextChunk(conn, conversationId, event.text)
+    }
+
+    if (event.thinking && conn.currentThinkingBlockId) {
+      chatStore.updateBlockWithSave(conn.currentMessageId, conn.currentThinkingBlockId, (block) => {
+        if (block.type === 'thinking') {
+          (block as ThinkingBlock).thinking += event.thinking!
+        }
+      }, conversationId, { syncContent: false })
+    }
+
+    if (event.partialJson) {
+      const tool = findActiveToolByIndexOrBlock(conn.activeTools, event.index, event.blockId)
+      if (tool) tool.inputJson += event.partialJson
+    }
+  }
+
+  /**
+   * Apply a block_end event: finalize a streaming text/thinking block, or
+   * promote a pending tool block to the parsed-input "pending" state. Also
+   * intercepts ExitPlanMode to raise the plan approval UI.
+   */
+  function applyBlockEnd(event: Extract<UIStreamEvent, { type: 'block_end' }>, conn: ConnectionState, conversationId: string) {
+    const tool = findActiveToolByIndexOrBlock(conn.activeTools, event.index, event.blockId)
+
+    // Only clear text/thinking block IDs when this block_end is NOT for a tool block.
+    if (!tool) {
+      if (conn.currentTextBlockId) conn.currentTextBlockId = null
+      if (conn.currentThinkingBlockId) conn.currentThinkingBlockId = null
+      return
+    }
+
+    let input: Record<string, unknown> = {}
+    try { input = JSON.parse(tool.inputJson) } catch {}
+
+    // Intercept ExitPlanMode — raise approval UI before finalizing the tool.
+    if (tool.name === 'ExitPlanMode') {
+      const approval: PlanApproval = {
+        allowedPrompts: input.allowedPrompts as PlanApproval['allowedPrompts'],
+      }
+      chatStore.setPendingPlanApproval(approval, conversationId)
+    }
+
+    chatStore.updateBlockWithSave(conn.currentMessageId, tool.blockId, (block) => {
+      if (block.type === 'tool_use') {
+        const tb = block as ToolUseBlock
+        tb.input = input
+        tb.inputSummary = formatToolInputSummary(input)
+        tb.status = 'pending'
+      }
+    }, conversationId)
+  }
+
+  /**
+   * Handle a permission_request message (server-driven). Claude CLI exits
+   * while awaiting approval, so we move the UI out of "streaming".
+   */
+  function handlePermissionRequest(response: WSResponse, conn: ConnectionState, conversationId: string) {
+    clearHealthCheck(conn)
+    chatStore.endConversationStreaming(conversationId)
+
+    const request: PermissionRequest = parsePermissionRequestFromText(
+      response.description || '',
+      response.tool || 'Permission',
+    )
+
+    chatStore.setPendingPermission(request, conversationId)
+
+    let permText = `\n\n**Permission Required**: ${request.tool}`
+    if (request.filePath) permText += ` - ${request.filePath}`
+    appendTextBlock(conn.currentMessageId, permText + '\n', conversationId)
+  }
+
+  /**
+   * Legacy permission_prompt from PTY transport. Same lifecycle as
+   * permission_request but text-only payload.
+   */
+  function handlePermissionPrompt(response: WSResponse, conn: ConnectionState, conversationId: string) {
+    clearHealthCheck(conn)
+    chatStore.endConversationStreaming(conversationId)
+
+    const request: PermissionRequest = parsePermissionRequestFromText(response.text || '', 'Permission')
+    chatStore.setPendingPermission(request, conversationId)
+
+    const permText = `\n\n**${request.tool}**: ${request.filePath || request.command || request.description}\n`
+    appendTextBlock(conn.currentMessageId, permText, conversationId)
+  }
+
+  /**
+   * Match patterns for codex permission failures, in which case we should
+   * NOT try to recover by clearing the rollout path.
+   */
+  const CODEX_PERMISSION_ERROR_RE = /codex cannot access session files|failed to clean up stale arg0 temp dirs: Permission denied|failed to initialize rollout recorder: Permission denied|failed to create session: Permission denied|\/\.codex\/.*permission denied/i
+  const MISSING_ROLLOUT_PATH_RE = /state db missing rollout path for thread/i
+
+  /**
+   * Handle a server-side `error` message. Attempts a one-shot recovery for
+   * "missing rollout path" corruption by clearing the session and resending
+   * the prompt. Returns true when a recovery retry was dispatched and the
+   * caller should stop processing.
+   */
+  async function handleServerError(response: WSResponse, conn: ConnectionState, conversationId: string): Promise<boolean> {
+    console.error(`[useChatStream] Server error for ${conversationId}:`, response.error)
+    const errorMsg = response.error || 'Unknown server error'
+    conn.lastServerError = errorMsg
+
+    const hasCodexPermissionError = CODEX_PERMISSION_ERROR_RE.test(errorMsg)
+    const missingRolloutPath = MISSING_ROLLOUT_PATH_RE.test(errorMsg)
+
+    if (missingRolloutPath && !hasCodexPermissionError) {
+      const recoveryKey = buildRecoveryKey(conversationId, conn.currentMessageId)
+      if (!rolloutRecoveryAttempts.has(recoveryKey)) {
+        const prompt = findUserPromptForAssistantMessage(conversationId, conn.currentMessageId)
+        if (prompt) {
+          rolloutRecoveryAttempts.add(recoveryKey)
+          chatStore.setProviderSessionId('', conversationId)
+          appendTextBlock(
+            conn.currentMessageId,
+            '\n\n> **Session Reset**: Codex resume state was corrupted. Retrying once with a fresh session...\n\n',
+            conversationId,
+          )
+          try {
+            const conv = chatStore.conversations.find((c: { id: string }) => c.id === conversationId)
+            const streamOpts = buildStreamOptsFromConversation(conv)
+            await sendMessage(prompt, conn.currentMessageId, conversationId, streamOpts)
+            return true
+          } catch (retryError) {
+            console.error(`[useChatStream] Rollout-path recovery retry failed for ${conversationId}:`, retryError)
+          }
+        }
+      }
+    }
+
+    clearHealthCheck(conn)
+    markRunningToolBlocks(conn.currentMessageId, conversationId, 'error')
+    chatStore.updateMessage(conn.currentMessageId, { status: 'error' }, conversationId)
+    if (MISSING_ROLLOUT_PATH_RE.test(errorMsg)) {
+      // Ensure the next send is fresh even if server-side reset was missed.
+      chatStore.setProviderSessionId('', conversationId)
+    }
+    rolloutRecoveryAttempts.delete(buildRecoveryKey(conversationId, conn.currentMessageId))
+    chatStore.setSessionError(errorMsg, conversationId)
+    chatStore.endSession(conversationId)
+    chatStore.endConversationStreaming(conversationId)
+    disableCascade(conversationId)
+    chatStore.saveConversation(conversationId, true)
+    cleanupConnection(conversationId)
+    return false
+  }
+
+  /**
+   * Settle a `done` message: mark the assistant turn terminal, optionally
+   * auto-commit the worktree, then schedule any queued cascade step.
+   */
+  async function handleDone(response: WSResponse, conn: ConnectionState, conversationId: string) {
+    clearHealthCheck(conn)
+    const currentStatus = getMessageStatus(conversationId, conn.currentMessageId)
+    rolloutRecoveryAttempts.delete(buildRecoveryKey(conversationId, conn.currentMessageId))
+
+    // Permission denial: stopped state, not a successful completion.
+    if (response.denied) {
+      markRunningToolBlocks(conn.currentMessageId, conversationId, 'error')
+      chatStore.updateMessage(conn.currentMessageId, { status: 'stopped' }, conversationId)
+      finalizeTurn(conn, conversationId)
+      return
+    }
+
+    // Carry over terminal failure status set by an earlier event.
+    if (currentStatus === 'error' || currentStatus === 'stopped') {
+      markRunningToolBlocks(conn.currentMessageId, conversationId, 'error')
+      finalizeTurn(conn, conversationId)
+      return
+    }
+
+    // Happy path: mark the turn complete and start post-turn side effects.
+    markRunningToolBlocks(conn.currentMessageId, conversationId, 'complete')
+    chatStore.completeMessageWithSave(conn.currentMessageId, conversationId)
+    chatStore.endSession(conversationId)
+    chatStore.endConversationStreaming(conversationId)
+    notifyChatCompleted(conversationId)
+
+    const conv = await findConversationWithRetry(conversationId)
+    const commitPromise = autoCommitAndSyncPreview(conv, conversationId, conn)
+
+    const nextCascade = cascadeRegistry.popNextStep(conversationId)
+    if (nextCascade) {
+      commitPromise.then(() => {
+        // Small delay to let auto-commit settle
+        setTimeout(() => {
+          sendCascadeStep(conversationId, nextCascade.featureId, nextCascade.step)
+        }, 1500)
+      })
+    }
+
+    chatStore.clearPendingPermission(conversationId)
+    chatStore.saveConversation(conversationId, true)
+    conn.activeTools.clear()
+    // Keep socket/session alive so the next turn can resume provider context.
+  }
+
+  /**
+   * Common teardown for denied/terminal-error done paths. Keeps the socket
+   * open so the next turn can resume provider context.
+   */
+  function finalizeTurn(conn: ConnectionState, conversationId: string) {
+    chatStore.endSession(conversationId)
+    chatStore.endConversationStreaming(conversationId)
+    disableCascade(conversationId)
+    chatStore.clearPendingPermission(conversationId)
+    conn.activeTools.clear()
+    chatStore.saveConversation(conversationId, true)
+  }
+
+  /**
+   * Auto-commit worktree changes, then sync any active preview branch, then
+   * update UI if the branch changed. Errors are swallowed with a warning —
+   * the assistant turn is already considered complete.
+   */
+  function autoCommitAndSyncPreview(
+    conv: { hasWorktree?: boolean; worktreePath?: string; worktreeBranch?: string; previewBranch?: string } | null | undefined,
+    conversationId: string,
+    conn: ConnectionState,
+  ): Promise<any> {
+    if (!conv?.hasWorktree || !conv.worktreePath) return Promise.resolve()
+
+    return $fetch('/api/chat/worktree-commit', {
+      method: 'POST',
+      body: {
+        worktreePath: conv.worktreePath,
+        conversationId,
+        previousBranch: conv.worktreeBranch,
+      },
+    }).then((result: any) => {
+      if (conv.previewBranch && conv.worktreePath) {
+        return $fetch<{ success: boolean; error?: string }>('/api/chat/preview-sync', {
+          method: 'POST',
+          body: { previewBranch: conv.previewBranch, worktreePath: conv.worktreePath },
+        }).then((syncResult) => {
+          if (!syncResult.success) {
+            throw new Error(syncResult.error || 'Unknown preview sync failure')
+          }
+          return result
+        })
+      }
+      return result
+    }).then(async (result: any) => {
+      if (result?.success && result.currentBranch !== conv.worktreeBranch) {
+        const oldBranch = conv.worktreeBranch || 'unknown'
+        chatStore.updateWorktreeBranch(conversationId, result.currentBranch)
+        const linkedFeatureId = await chatStore.syncConversationFeatureFromBranch(conversationId)
+        const deletedText = result.deletedPreviousBranch ? ` and deleted \`${oldBranch}\`` : ''
+        const linkedText = linkedFeatureId ? ` and linked to feature \`${linkedFeatureId}\`` : ''
+        appendTextBlock(
+          conn.currentMessageId,
+          `\n\n> **Branch changed**: AI switched from \`${oldBranch}\` to \`${result.currentBranch}\`${deletedText}${linkedText}\n\n`,
+          conversationId,
+        )
+      } else if (result?.success && conv.worktreeBranch) {
+        // Commits may have been made without branch change — bump lastCommitTime for UI refresh.
+        chatStore.updateWorktreeBranch(conversationId, conv.worktreeBranch)
+      }
+
+      chatStore.saveConversation(conversationId, false)
+      return result
+    }).catch((err: unknown) => {
+      console.warn('[useChatStream] Auto-commit/preview-sync failed:', err)
+    })
   }
 
   // Debounce global notification refreshes to avoid redundant fetches
@@ -869,137 +846,48 @@ export function useChatStream() {
     switch (event.type) {
       case 'session_init': {
         ensureBlocks(conn.currentMessageId, conversationId)
-        const block: SessionInitBlock = {
-          id: generateBlockId(),
-          type: 'session_init',
-          model: event.model,
-          tools: event.tools,
-          permissionMode: event.permissionMode,
-          cwd: event.cwd,
-        }
-        chatStore.appendContentBlockWithSave(conn.currentMessageId, block, conversationId)
+        chatStore.appendContentBlockWithSave(
+          conn.currentMessageId,
+          buildSessionInitBlock(event),
+          conversationId,
+        )
         break
       }
 
       case 'block_start': {
         ensureBlocks(conn.currentMessageId, conversationId)
-        const blockId = event.blockId || generateBlockId()
-        
+
         if (event.blockType === 'text') {
-          const block: TextBlock = { id: blockId, type: 'text', text: event.text || '' }
+          const block = buildTextBlock(event)
           chatStore.appendContentBlockWithSave(conn.currentMessageId, block, conversationId)
-          conn.currentTextBlockId = blockId
+          conn.currentTextBlockId = block.id
         } else if (event.blockType === 'thinking') {
-          const block: ThinkingBlock = { id: blockId, type: 'thinking', thinking: event.thinking || '' }
+          const block = buildThinkingBlock(event)
           chatStore.appendContentBlockWithSave(conn.currentMessageId, block, conversationId)
-          conn.currentThinkingBlockId = blockId
-        } else if (event.blockType === 'tool_use' && event.toolUseId && event.name) {
-          const block: ToolUseBlock = {
-            id: blockId,
-            type: 'tool_use',
-            toolUseId: event.toolUseId,
-            name: event.name,
-            input: {},
-            inputSummary: '',
-            status: 'running',
+          conn.currentThinkingBlockId = block.id
+        } else if (event.blockType === 'tool_use') {
+          const toolStart = buildToolUseStart(event)
+          if (toolStart) {
+            chatStore.appendContentBlockWithSave(conn.currentMessageId, toolStart.block, conversationId)
+            conn.activeTools.set(toolStart.index, toolStart.tracking)
           }
-          chatStore.appendContentBlockWithSave(conn.currentMessageId, block, conversationId)
-          conn.activeTools.set(event.index ?? 0, {
-            blockId,
-            toolUseId: event.toolUseId,
-            name: event.name,
-            inputJson: '',
-          })
         }
         break
       }
 
       case 'block_delta': {
-        if (event.text && conn.currentTextBlockId) {
-          flushTextChunk(conn, conversationId, event.text)
-        }
-
-        if (event.thinking && conn.currentThinkingBlockId) {
-          chatStore.updateBlockWithSave(conn.currentMessageId, conn.currentThinkingBlockId, (block) => {
-            if (block.type === 'thinking') {
-              (block as ThinkingBlock).thinking += event.thinking!
-            }
-          }, conversationId, { syncContent: false })
-        }
-
-        if (event.partialJson) {
-          let tool: { blockId: string; toolUseId: string; name: string; inputJson: string } | undefined
-          if (event.index !== undefined) {
-            tool = conn.activeTools.get(event.index)
-          }
-          if (!tool && event.blockId) {
-            for (const [, t] of conn.activeTools) {
-              if (t.blockId === event.blockId) { tool = t; break }
-            }
-          }
-          if (tool) {
-            tool.inputJson += event.partialJson
-          }
-        }
+        applyBlockDelta(event, conn, conversationId)
         break
       }
 
       case 'block_end': {
-        // Find the tool entry by index or by blockId fallback
-        let tool: { blockId: string; toolUseId: string; name: string; inputJson: string } | undefined
-        if (event.index !== undefined) {
-          tool = conn.activeTools.get(event.index)
-        }
-        if (!tool && event.blockId) {
-          for (const [, t] of conn.activeTools) {
-            if (t.blockId === event.blockId) { tool = t; break }
-          }
-        }
-
-        // Only clear text/thinking block IDs when this block_end is NOT for a tool block
-        if (!tool) {
-          if (conn.currentTextBlockId) {
-            conn.currentTextBlockId = null
-          }
-          if (conn.currentThinkingBlockId) {
-            conn.currentThinkingBlockId = null
-          }
-        }
-
-        if (tool) {
-          // Parse tool input
-          let input: Record<string, unknown> = {}
-          try {
-            input = JSON.parse(tool.inputJson)
-          } catch {
-            // ignore parse errors
-          }
-
-          // Intercept ExitPlanMode — show approval UI
-          if (tool.name === 'ExitPlanMode') {
-            const approval: PlanApproval = {
-              allowedPrompts: input.allowedPrompts as PlanApproval['allowedPrompts'],
-            }
-            chatStore.setPendingPlanApproval(approval, conversationId)
-          }
-
-          // Update the ToolUseBlock with parsed input and mark as pending (waiting for result)
-          chatStore.updateBlockWithSave(conn.currentMessageId, tool.blockId, (block) => {
-            if (block.type === 'tool_use') {
-              const tb = block as ToolUseBlock
-              tb.input = input
-              tb.inputSummary = formatToolInputSummary(input)
-              tb.status = 'pending'
-            }
-          }, conversationId)
-        }
+        applyBlockEnd(event, conn, conversationId)
         break
       }
 
       case 'tool_result': {
         ensureBlocks(conn.currentMessageId, conversationId)
 
-        // Update the matching ToolUseBlock status
         const toolBlock = chatStore.findToolUseBlock(conn.currentMessageId, event.toolUseId, conversationId)
         if (toolBlock && toolBlock.type === 'tool_use') {
           chatStore.updateBlockById(conn.currentMessageId, toolBlock.id, (block) => {
@@ -1009,15 +897,11 @@ export function useChatStream() {
           }, conversationId)
         }
 
-        // Create ToolResultBlock
-        const block: ToolResultBlock = {
-          id: generateBlockId(),
-          type: 'tool_result',
-          toolUseId: event.toolUseId,
-          content: event.content || '',
-          isError: !!event.isError,
-        }
-        chatStore.appendContentBlockWithSave(conn.currentMessageId, block, conversationId)
+        chatStore.appendContentBlockWithSave(
+          conn.currentMessageId,
+          buildToolResultBlock(event),
+          conversationId,
+        )
         break
       }
 
@@ -1033,9 +917,7 @@ export function useChatStream() {
         }
 
         chatStore.setPendingPermission(request, conversationId)
-
-        let permText = `\n\n**Permission Required**: ${request.tool}`
-        appendTextBlock(conn.currentMessageId, permText + '\n', conversationId)
+        appendTextBlock(conn.currentMessageId, `\n\n**Permission Required**: ${request.tool}\n`, conversationId)
         break
       }
 
@@ -1050,18 +932,10 @@ export function useChatStream() {
           }
         }
 
-        // Add result summary block for successful completions
-        if (event.subtype === 'success' && event.usage) {
+        const summary = buildResultSummaryBlock(event)
+        if (summary) {
           ensureBlocks(conn.currentMessageId, conversationId)
-          const block: ResultSummaryBlock = {
-            id: generateBlockId(),
-            type: 'result_summary',
-            totalCostUsd: event.totalCostUsd ?? 0,
-            durationMs: event.durationMs ?? 0,
-            numTurns: event.numTurns ?? 0,
-            usage: event.usage,
-          }
-          chatStore.appendContentBlockWithSave(conn.currentMessageId, block, conversationId)
+          chatStore.appendContentBlockWithSave(conn.currentMessageId, summary, conversationId)
         }
         break
       }
@@ -1083,218 +957,35 @@ export function useChatStream() {
     const events = conn.replayBuffer
     if (events.length === 0) return
 
-    // Accumulate into plain (non-reactive) arrays
-    const contentBlocks: ContentBlock[] = []
-    let flatText = ''
-    let currentTextBlockId: string | null = null
-    let currentThinkingBlockId: string | null = null
-    const activeTools = new Map<number, ActiveTool>()
-    let finalStatus: 'streaming' | 'complete' | 'error' | 'stopped' = 'streaming'
-    let isDone = false
+    const result = reduceReplayEvents(events)
 
-    for (const response of events) {
-      if (response.type === 'done') {
-        if (response.denied) {
-          markToolBlocks(contentBlocks, 'error')
-          finalStatus = 'stopped'
-        } else if (finalStatus === 'error' || finalStatus === 'stopped') {
-          markToolBlocks(contentBlocks, 'error')
-        } else {
-          markToolBlocks(contentBlocks, 'complete')
-          finalStatus = 'complete'
-        }
-        isDone = true
-        continue
-      }
-
-      if (response.type === 'error') {
-        markToolBlocks(contentBlocks, 'error')
-        finalStatus = 'error'
-        continue
-      }
-
-      if (response.type !== 'ui_event' || !response.event) continue
-      const event = response.event
-
-      if (event.sessionId) {
-        chatStore.setProviderSessionId(event.sessionId, conversationId)
-      }
-
-      switch (event.type) {
-        case 'session_init': {
-          const block: SessionInitBlock = {
-            id: generateBlockId(),
-            type: 'session_init',
-            model: event.model,
-            tools: event.tools,
-            permissionMode: event.permissionMode,
-            cwd: event.cwd,
-          }
-          contentBlocks.push(block)
-          break
-        }
-
-        case 'block_start': {
-          const blockId = event.blockId || generateBlockId()
-          if (event.blockType === 'text') {
-            const block: TextBlock = { id: blockId, type: 'text', text: event.text || '' }
-            contentBlocks.push(block)
-            currentTextBlockId = blockId
-            if (event.text) flatText += event.text
-          } else if (event.blockType === 'thinking') {
-            const block: ThinkingBlock = { id: blockId, type: 'thinking', thinking: event.thinking || '' }
-            contentBlocks.push(block)
-            currentThinkingBlockId = blockId
-          } else if (event.blockType === 'tool_use' && event.toolUseId && event.name) {
-            const block: ToolUseBlock = {
-              id: blockId,
-              type: 'tool_use',
-              toolUseId: event.toolUseId,
-              name: event.name,
-              input: {},
-              inputSummary: '',
-              status: 'running',
-            }
-            contentBlocks.push(block)
-            activeTools.set(event.index ?? 0, {
-              blockId,
-              toolUseId: event.toolUseId,
-              name: event.name,
-              inputJson: '',
-            })
-          }
-          break
-        }
-
-        case 'block_delta': {
-          if (event.text && currentTextBlockId) {
-            const block = contentBlocks.find(b => b.id === currentTextBlockId)
-            if (block && block.type === 'text') {
-              (block as TextBlock).text += event.text
-              flatText += event.text
-            }
-          }
-          if (event.thinking && currentThinkingBlockId) {
-            const block = contentBlocks.find(b => b.id === currentThinkingBlockId)
-            if (block && block.type === 'thinking') {
-              (block as ThinkingBlock).thinking += event.thinking
-            }
-          }
-          if (event.partialJson) {
-            let tool: { blockId: string; toolUseId: string; name: string; inputJson: string } | undefined
-            if (event.index !== undefined) tool = activeTools.get(event.index)
-            if (!tool && event.blockId) {
-              for (const [, t] of activeTools) {
-                if (t.blockId === event.blockId) { tool = t; break }
-              }
-            }
-            if (tool) tool.inputJson += event.partialJson
-          }
-          break
-        }
-
-        case 'block_end': {
-          let tool: { blockId: string; toolUseId: string; name: string; inputJson: string } | undefined
-          if (event.index !== undefined) tool = activeTools.get(event.index)
-          if (!tool && event.blockId) {
-            for (const [, t] of activeTools) {
-              if (t.blockId === event.blockId) { tool = t; break }
-            }
-          }
-          if (!tool) {
-            if (currentTextBlockId) currentTextBlockId = null
-            if (currentThinkingBlockId) currentThinkingBlockId = null
-          }
-          if (tool) {
-            let input: Record<string, unknown> = {}
-            try { input = JSON.parse(tool.inputJson) } catch {}
-            const block = contentBlocks.find(b => b.id === tool.blockId)
-            if (block && block.type === 'tool_use') {
-              const tb = block as ToolUseBlock
-              tb.input = input
-              tb.inputSummary = formatToolInputSummary(input)
-              tb.status = 'pending'
-            }
-          }
-          break
-        }
-
-        case 'tool_result': {
-          const toolBlock = contentBlocks.find(
-            b => b.type === 'tool_use' && (b as ToolUseBlock).toolUseId === event.toolUseId,
-          )
-          if (toolBlock && toolBlock.type === 'tool_use') {
-            (toolBlock as ToolUseBlock).status = event.isError ? 'error' : 'complete'
-          }
-          const block: ToolResultBlock = {
-            id: generateBlockId(),
-            type: 'tool_result',
-            toolUseId: event.toolUseId,
-            content: event.content || '',
-            isError: !!event.isError,
-          }
-          contentBlocks.push(block)
-          break
-        }
-
-        case 'turn_result': {
-          if (event.subtype !== 'success') {
-            finalStatus = 'error'
-          }
-          if (event.subtype === 'success' && event.usage) {
-            const block: ResultSummaryBlock = {
-              id: generateBlockId(),
-              type: 'result_summary',
-              totalCostUsd: event.totalCostUsd ?? 0,
-              durationMs: event.durationMs ?? 0,
-              numTurns: event.numTurns ?? 0,
-              usage: event.usage,
-            }
-            contentBlocks.push(block)
-          }
-          break
-        }
-
-        case 'error': {
-          finalStatus = 'error'
-          break
-        }
-      }
+    // Apply provider session IDs observed during the replay window
+    for (const sessionId of result.providerSessionIds) {
+      chatStore.setProviderSessionId(sessionId, conversationId)
     }
 
     // Single reactive update — sets content blocks and flat text at once
     chatStore.batchSetMessageBlocks(
       conn.currentMessageId,
-      contentBlocks,
-      flatText,
-      finalStatus,
+      result.contentBlocks,
+      result.flatText,
+      result.finalStatus,
       conversationId,
     )
 
     // Update connection state for any live events that arrive after replay
-    conn.currentTextBlockId = currentTextBlockId
-    conn.currentThinkingBlockId = currentThinkingBlockId
-    conn.activeTools = activeTools
+    conn.currentTextBlockId = result.currentTextBlockId
+    conn.currentThinkingBlockId = result.currentThinkingBlockId
+    conn.activeTools = result.activeTools
 
-    if (isDone) {
+    if (result.isDone) {
       clearHealthCheck(conn)
       chatStore.endSession(conversationId)
       chatStore.endConversationStreaming(conversationId)
       notifyChatCompleted(conversationId)
     }
 
-    console.log(`[useChatStream] Replay batch processed: ${events.length} events → ${contentBlocks.length} blocks, status=${finalStatus}`)
-  }
-
-  function markToolBlocks(blocks: ContentBlock[], status: 'complete' | 'error') {
-    for (const block of blocks) {
-      if (block.type === 'tool_use') {
-        const tb = block as ToolUseBlock
-        if (tb.status === 'running' || tb.status === 'pending') {
-          tb.status = status
-        }
-      }
-    }
+    console.log(`[useChatStream] Replay batch processed: ${events.length} events → ${result.contentBlocks.length} blocks, status=${result.finalStatus}`)
   }
 
   /**
@@ -1428,21 +1119,14 @@ export function useChatStream() {
    * Enable cascade: queue remaining speckit steps to auto-run after each completion
    */
   function enableCascade(featureId: string, conversationId: string, remainingSteps: string[]) {
-    cascadeStates.set(conversationId, {
-      featureId,
-      queue: [...remainingSteps],
-    })
+    cascadeRegistry.enable(conversationId, featureId, remainingSteps)
   }
 
   /**
    * Disable cascade for a specific conversation
    */
   function disableCascade(conversationId?: string) {
-    if (conversationId) {
-      cascadeStates.delete(conversationId)
-    } else {
-      cascadeStates.clear()
-    }
+    cascadeRegistry.disable(conversationId)
   }
 
   /**
@@ -1567,7 +1251,7 @@ export function useChatStream() {
       conn.ws.close()
       connections.delete(conversationId)
     }
-    cascadeStates.delete(conversationId)
+    cascadeRegistry.disable(conversationId)
   }
 
   /**
@@ -1579,7 +1263,7 @@ export function useChatStream() {
       conn.ws.close()
       connections.delete(id)
     }
-    cascadeStates.clear()
+    cascadeRegistry.disable()
   }
 
   /**

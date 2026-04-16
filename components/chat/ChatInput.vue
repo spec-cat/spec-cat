@@ -17,6 +17,36 @@ import type { AIProviderMetadata, AIProviderSelection } from '~/types/aiProvider
 import { DEFAULT_MODEL_KEY, DEFAULT_PROVIDER_ID } from '~/types/aiProvider'
 import { useSettingsStore } from '~/stores/settings'
 import { buildStreamOptsFromConversation } from '~/utils/chatStream'
+import {
+  buildContextQuery,
+  buildSpecSearchQuery,
+  classifyChatCommand,
+  formatContextDiagnostics,
+  formatSpecSearchResponse,
+  type ContextDiagnostics,
+  type SpecSearchCommand,
+} from '~/utils/chatCommands'
+import {
+  buildModelOptions,
+  findOptionForSelection,
+  getSelectionKey,
+  groupModelOptions,
+  type ModelOption,
+  type ModelOptionGroup,
+} from '~/utils/modelOptions'
+import {
+  MAX_IMAGE_ATTACHMENTS,
+  MAX_IMAGE_SIZE_BYTES,
+  createAttachmentId,
+  formatAttachmentSize,
+  readFileAsDataUrl,
+  validateImageFile,
+} from '~/utils/imageAttachments'
+import {
+  buildQueuedMessage,
+  removeFromQueue as removeFromQueueUtil,
+  type QueuedMessage,
+} from '~/utils/messageQueue'
 
 const props = defineProps<{
   disabled?: boolean
@@ -36,11 +66,6 @@ const pendingAttachments = ref<ChatImageAttachment[]>([])
 let pendingResizeRaf: number | null = null
 const pendingConversationSelection = ref<AIProviderSelection | null>(null)
 
-interface QueuedMessage {
-  id: string
-  text: string
-  attachments: ChatImageAttachment[]
-}
 const messageQueue = ref<QueuedMessage[]>([])
 
 const { data: providerResponse, pending: providersLoading } = useAsyncData<{ providers: AIProviderMetadata[] }>(
@@ -51,82 +76,11 @@ const { data: providerResponse, pending: providersLoading } = useAsyncData<{ pro
 
 const providers = computed(() => providerResponse.value?.providers ?? [])
 
-interface ModelOption {
-  key: string
-  providerId: string
-  providerName: string
-  modelKey: string
-  modelLabel: string
-  label: string
-  compatible: boolean
-}
-
-interface ModelOptionGroup {
-  providerId: string
-  providerName: string
-  options: ModelOption[]
-}
-
 const requiresPermissions = computed(() => chatStore.permissionMode === 'ask' || chatStore.permissionMode === 'plan')
-const modelOptions = computed<ModelOption[]>(() => {
-  const labelCounts = new Map<string, number>()
-  for (const provider of providers.value) {
-    for (const model of provider.models) {
-      labelCounts.set(model.label, (labelCounts.get(model.label) ?? 0) + 1)
-    }
-  }
-
-  const options = providers.value.flatMap((provider) => provider.models.map((model) => {
-    const compatible = provider.capabilities.streaming
-      && (!requiresPermissions.value || provider.capabilities.permissions)
-    const isDuplicatedModelLabel = (labelCounts.get(model.label) ?? 0) > 1
-    return {
-      key: `${provider.id}::${model.key}`,
-      providerId: provider.id,
-      providerName: provider.name,
-      modelKey: model.key,
-      modelLabel: model.label,
-      label: isDuplicatedModelLabel ? `${model.label} · ${provider.name}` : model.label,
-      compatible,
-    }
-  }))
-  return options.sort((a, b) =>
-    a.modelLabel.localeCompare(b.modelLabel, undefined, { sensitivity: 'base' }) ||
-    a.providerName.localeCompare(b.providerName, undefined, { sensitivity: 'base' })
-  )
-})
-const modelOptionGroups = computed<ModelOptionGroup[]>(() => {
-  const groupMap = new Map<string, ModelOptionGroup>()
-  for (const option of modelOptions.value) {
-    const existing = groupMap.get(option.providerId)
-    if (existing) {
-      existing.options.push(option)
-      continue
-    }
-    groupMap.set(option.providerId, {
-      providerId: option.providerId,
-      providerName: option.providerName,
-      options: [option],
-    })
-  }
-
-  const providerOrder = new Map<string, number>([
-    ['codex', 0],
-    ['claude', 1],
-  ])
-  const groups = Array.from(groupMap.values())
-  groups.sort((a, b) => {
-    const aOrder = providerOrder.get(a.providerId) ?? 99
-    const bOrder = providerOrder.get(b.providerId) ?? 99
-    if (aOrder !== bOrder) return aOrder - bOrder
-    return a.providerName.localeCompare(b.providerName, undefined, { sensitivity: 'base' })
-  })
-  return groups
-})
-
-function getSelectionKey(selection: AIProviderSelection): string {
-  return `${selection.providerId}::${selection.modelKey}`
-}
+const modelOptions = computed<ModelOption[]>(() =>
+  buildModelOptions(providers.value, requiresPermissions.value),
+)
+const modelOptionGroups = computed<ModelOptionGroup[]>(() => groupModelOptions(modelOptions.value))
 
 const currentSelection = computed<AIProviderSelection>(() => {
   const conv = chatStore.activeConversation
@@ -141,7 +95,7 @@ const currentSelection = computed<AIProviderSelection>(() => {
 
 const selectedModelKey = computed(() => getSelectionKey(currentSelection.value))
 const selectedModelOption = computed(() =>
-  modelOptions.value.find(option => option.key === selectedModelKey.value) || null
+  findOptionForSelection(modelOptions.value, currentSelection.value),
 )
 const selectedModelLabel = computed(() => selectedModelOption.value?.label || 'Select model')
 
@@ -176,8 +130,6 @@ function selectModel(option: ModelOption) {
   showModelMenu.value = false
 }
 
-const MAX_IMAGE_ATTACHMENTS = 4
-const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024
 
 const modeIcons = {
   plan: ClipboardDocumentListIcon,
@@ -277,27 +229,6 @@ function removeAttachment(id: string) {
   pendingAttachments.value = pendingAttachments.value.filter(attachment => attachment.id !== id)
 }
 
-function formatAttachmentSize(size: number): string {
-  if (size < 1024) return `${size} B`
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`
-}
-
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        resolve(reader.result)
-      } else {
-        reject(new Error('Failed to read image'))
-      }
-    }
-    reader.onerror = () => reject(reader.error || new Error('Failed to read image'))
-    reader.readAsDataURL(file)
-  })
-}
-
 async function handleFilePick(event: Event) {
   const input = event.target as HTMLInputElement
   const files = input.files ? Array.from(input.files) : []
@@ -315,19 +246,20 @@ async function handleFilePick(event: Event) {
 
   for (const file of files) {
     if (capacity <= 0) break
-    if (!file.type.startsWith('image/')) {
-      toast.warning(`Skipped "${file.name}": only image files are supported.`)
-      continue
-    }
-    if (file.size > MAX_IMAGE_SIZE_BYTES) {
-      toast.warning(`Skipped "${file.name}": max size is 5 MB.`)
+    const validation = validateImageFile(file)
+    if (!validation.ok) {
+      if (validation.reason === 'not-image') {
+        toast.warning(`Skipped "${file.name}": only image files are supported.`)
+      } else {
+        toast.warning(`Skipped "${file.name}": max size is 5 MB.`)
+      }
       continue
     }
 
     try {
       const dataUrl = await readFileAsDataUrl(file)
       pendingAttachments.value.push({
-        id: `att-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        id: createAttachmentId(),
         name: file.name,
         mimeType: file.type,
         size: file.size,
@@ -348,190 +280,6 @@ const canRetry = computed(() => {
   const lastMsg = chatStore.lastMessage
   return lastMsg?.role === 'assistant' && lastMsg?.status === 'error'
 })
-
-interface ContextDiagnostics {
-  generatedAt: string
-  requestedCwd: string
-  effectiveCwd: string
-  providerId: string
-  providerModelKey: string
-  permissionMode: string
-  providerSessionId: string | null
-  sessionState: 'resume' | 'fresh'
-  featureId: string | null
-  specContext: {
-    active: boolean
-    reason: string
-    files: string[]
-  }
-  instructionFiles: Array<{
-    path: string
-    source: 'cwd' | 'ancestor'
-    kind: 'file' | 'directory'
-    hint: string
-    mtime: string | null
-  }>
-}
-
-function formatContextDiagnostics(diag: ContextDiagnostics): string {
-  const instructionLines = diag.instructionFiles.length > 0
-    ? diag.instructionFiles.map((file) => {
-        const scope = file.source === 'cwd' ? 'cwd' : 'ancestor'
-        const mtime = file.mtime ? ` (mtime: ${file.mtime})` : ''
-        return `- \`${file.path}\` [${scope}] - ${file.hint}${mtime}`
-      })
-    : ['- (none detected from current cwd ancestry)']
-
-  const specFiles = diag.specContext.files.length > 0
-    ? diag.specContext.files.map((file) => `- \`${file}\``)
-    : ['- (none)']
-
-  return [
-    '## Context Snapshot',
-    '',
-    `- Time: ${diag.generatedAt}`,
-    `- Session state: **${diag.sessionState}**`,
-    `- Provider session ID: \`${diag.providerSessionId ?? '(empty)'}\``,
-    `- Provider: \`${diag.providerId}\` / \`${diag.providerModelKey}\``,
-    `- Permission mode: \`${diag.permissionMode}\``,
-    `- CWD (requested): \`${diag.requestedCwd}\``,
-    `- CWD (effective): \`${diag.effectiveCwd}\``,
-    `- Feature: \`${diag.featureId ?? '(none)'}\``,
-    '',
-    '### Spec Context Injection',
-    `- Active on next turn: **${diag.specContext.active ? 'yes' : 'no'}**`,
-    `- Reason: ${diag.specContext.reason}`,
-    ...specFiles,
-    '',
-    '### Detected Instruction Files',
-    ...instructionLines,
-  ].join('\n')
-}
-
-interface SpecSearchCommand {
-  q: string
-  mode?: SearchMode
-  featureId?: string
-  fileType?: string
-  limit?: number
-}
-
-function tokenizeCommandArgs(input: string): string[] {
-  const matches = input.match(/"[^"]*"|'[^']*'|\S+/g) ?? []
-  return matches.map((token) => {
-    if ((token.startsWith('"') && token.endsWith('"')) || (token.startsWith("'") && token.endsWith("'"))) {
-      return token.slice(1, -1)
-    }
-    return token
-  })
-}
-
-function parseSpecSearchCommand(input: string): SpecSearchCommand | null {
-  const match = input.match(/^\/(?:spec-search|specsearch)\b(.*)$/i)
-  if (!match) return null
-
-  const tokens = tokenizeCommandArgs(match[1]?.trim() ?? '')
-  const queryTokens: string[] = []
-  const parsed: SpecSearchCommand = { q: '' }
-
-  for (let i = 0; i < tokens.length; i++) {
-    const token = tokens[i]
-
-    if (token === '--mode' && tokens[i + 1]) {
-      const candidate = tokens[++i]
-      if (candidate === 'keyword' || candidate === 'semantic' || candidate === 'hybrid') {
-        parsed.mode = candidate
-      }
-      continue
-    }
-    if (token.startsWith('--mode=')) {
-      const candidate = token.slice('--mode='.length)
-      if (candidate === 'keyword' || candidate === 'semantic' || candidate === 'hybrid') {
-        parsed.mode = candidate
-      }
-      continue
-    }
-    if (token === '--feature' && tokens[i + 1]) {
-      parsed.featureId = tokens[++i]
-      continue
-    }
-    if (token.startsWith('--feature=')) {
-      parsed.featureId = token.slice('--feature='.length)
-      continue
-    }
-    if (token === '--file-type' && tokens[i + 1]) {
-      parsed.fileType = tokens[++i]
-      continue
-    }
-    if (token.startsWith('--file-type=')) {
-      parsed.fileType = token.slice('--file-type='.length)
-      continue
-    }
-    if (token === '--limit' && tokens[i + 1]) {
-      const limit = Number.parseInt(tokens[++i], 10)
-      if (Number.isFinite(limit) && limit > 0) {
-        parsed.limit = limit
-      }
-      continue
-    }
-    if (token.startsWith('--limit=')) {
-      const limit = Number.parseInt(token.slice('--limit='.length), 10)
-      if (Number.isFinite(limit) && limit > 0) {
-        parsed.limit = limit
-      }
-      continue
-    }
-
-    queryTokens.push(token)
-  }
-
-  parsed.q = queryTokens.join(' ').trim()
-  return parsed
-}
-
-function truncateMarkdown(input: string, maxLen = 1400): string {
-  const text = input.trim()
-  if (text.length <= maxLen) return text
-  return `${text.slice(0, maxLen)}\n...`
-}
-
-function formatSpecSearchResponse(
-  command: SpecSearchCommand,
-  response: SearchResponse,
-): string {
-  const lines: string[] = []
-  lines.push('## Spec Search Results')
-  lines.push('')
-  lines.push(`- Query: \`${command.q}\``)
-  lines.push(`- Mode: \`${response.mode}\``)
-  if (command.featureId) lines.push(`- Feature filter: \`${command.featureId}\``)
-  if (command.fileType) lines.push(`- File type filter: \`${command.fileType}\``)
-  lines.push(`- Hits: **${response.totalCount}** (${response.searchTime}ms)`)
-  if (response.warning) {
-    lines.push(`- Warning: ${response.warning}`)
-  }
-
-  if (response.results.length === 0) {
-    lines.push('')
-    lines.push('No matching indexed chunks were found.')
-    return lines.join('\n')
-  }
-
-  lines.push('')
-  for (const [index, result] of response.results.entries()) {
-    const chunk = result.chunk
-    lines.push(`### ${index + 1}. \`${chunk.sourcePath}:${chunk.lineStart}\``)
-    lines.push(`- Match: \`${result.matchType}\` (score: ${result.score.toFixed(3)})`)
-    if (chunk.headingHierarchy.length > 0) {
-      lines.push(`- Headings: ${chunk.headingHierarchy.join(' > ')}`)
-    }
-    lines.push('')
-    lines.push(truncateMarkdown(chunk.content))
-    lines.push('')
-  }
-
-  return lines.join('\n')
-}
 
 async function handleDirectSpecSearch(command: SpecSearchCommand): Promise<void> {
   const conversationId = chatStore.activeConversationId ?? await chatStore.createConversation()
@@ -556,13 +304,7 @@ async function handleDirectSpecSearch(command: SpecSearchCommand): Promise<void>
   }
 
   const activeConv = chatStore.activeConversation
-  const query = {
-    q: command.q,
-    mode: command.mode ?? 'hybrid',
-    featureId: command.featureId ?? activeConv?.featureId,
-    fileType: command.fileType,
-    limit: String(command.limit ?? 5),
-  }
+  const query = buildSpecSearchQuery(command, { featureId: activeConv?.featureId })
 
   try {
     const response = await $fetch<SearchResponse>('/api/specs/search', { query })
@@ -570,11 +312,7 @@ async function handleDirectSpecSearch(command: SpecSearchCommand): Promise<void>
       assistantMessage.id,
       {
         content: formatSpecSearchResponse(
-          {
-            ...command,
-            mode: query.mode as SearchMode,
-            featureId: query.featureId,
-          },
+          { ...command, mode: query.mode, featureId: query.featureId },
           response,
         ),
         status: 'complete',
@@ -595,28 +333,7 @@ async function handleDirectSpecSearch(command: SpecSearchCommand): Promise<void>
 }
 
 async function handleShowContext() {
-  const activeConv = chatStore.activeConversation
-  const query: Record<string, string> = {
-    permissionMode: chatStore.permissionMode,
-  }
-
-  if (activeConv?.hasWorktree && activeConv.worktreePath) {
-    query.cwd = activeConv.worktreePath
-  } else if (activeConv?.cwd) {
-    query.cwd = activeConv.cwd
-  }
-  if (activeConv?.featureId) {
-    query.featureId = activeConv.featureId
-  }
-  if (activeConv?.providerId) {
-    query.providerId = activeConv.providerId
-  }
-  if (activeConv?.providerModelKey) {
-    query.providerModelKey = activeConv.providerModelKey
-  }
-  if (activeConv?.providerSessionId) {
-    query.providerSessionId = activeConv.providerSessionId
-  }
+  const query = buildContextQuery(chatStore.activeConversation, chatStore.permissionMode)
 
   const diag = await $fetch<ContextDiagnostics>('/api/chat/context', { query })
   const conversationId = chatStore.activeConversationId ?? await chatStore.createConversation()
@@ -666,23 +383,14 @@ async function sendMessage(overrideText?: string, overrideAttachments?: ChatImag
   let conversationId: string | null = null
   let assistantMessageId: string | null = null
 
-  // Check for /reset command
-  if (message === '/reset' || message === '/reset-context' || message === '/new' || message === '/clear') {
-    await handleResetContext()
-    return
-  }
-  if (message === '/context' || message === '/ctx') {
-    await handleShowContext()
-    if (!isFromQueue) {
-      inputText.value = ''
-      clearPendingAttachments()
-      resetTextareaHeight()
+  const command = classifyChatCommand(message)
+  if (command.kind !== 'none') {
+    if (command.kind === 'reset') {
+      await handleResetContext()
+      return
     }
-    return
-  }
-  const specSearchCommand = parseSpecSearchCommand(message)
-  if (specSearchCommand) {
-    await handleDirectSpecSearch(specSearchCommand)
+    if (command.kind === 'context') await handleShowContext()
+    else if (command.kind === 'spec-search') await handleDirectSpecSearch(command.command)
     if (!isFromQueue) {
       inputText.value = ''
       clearPendingAttachments()
@@ -749,16 +457,13 @@ function handleSubmit() {
 }
 
 function queueMessage() {
-  const text = inputText.value.trim()
-  const attachments = [...pendingAttachments.value]
-  if (text.length === 0 && attachments.length === 0) return
-
-  messageQueue.value.push({
-    id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    text,
-    attachments,
+  const queued = buildQueuedMessage({
+    text: inputText.value,
+    attachments: pendingAttachments.value,
   })
+  if (!queued) return
 
+  messageQueue.value.push(queued)
   inputText.value = ''
   clearPendingAttachments()
   resetTextareaHeight()
@@ -766,7 +471,7 @@ function queueMessage() {
 }
 
 function removeFromQueue(id: string) {
-  messageQueue.value = messageQueue.value.filter(m => m.id !== id)
+  messageQueue.value = removeFromQueueUtil(messageQueue.value, id)
 }
 
 async function processQueue() {

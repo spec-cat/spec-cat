@@ -63,6 +63,98 @@ export function formatToolInputSummary(input: Record<string, unknown>): string {
   return ''
 }
 
+export interface CloseEventLike {
+  code: number
+  reason?: string
+  wasClean: boolean
+}
+
+export interface CloseContextLike {
+  lastServerError?: string | null
+  lastSocketError?: string | null
+}
+
+export function summarizeCloseCode(code: number): string {
+  switch (code) {
+    case 1000:
+      return 'Normal closure'
+    case 1001:
+      return 'Endpoint is going away (server shutdown or page navigation)'
+    case 1002:
+      return 'Protocol error'
+    case 1003:
+      return 'Unsupported data'
+    case 1005:
+      return 'No status code received from peer (close frame had no code)'
+    case 1006:
+      return 'Abnormal closure (connection dropped without close frame)'
+    case 1007:
+      return 'Invalid payload data'
+    case 1008:
+      return 'Policy violation'
+    case 1009:
+      return 'Message too big'
+    case 1010:
+      return 'Missing required extension'
+    case 1011:
+      return 'Internal server error'
+    case 1012:
+      return 'Service restart'
+    case 1013:
+      return 'Try again later (temporary overload)'
+    case 1015:
+      return 'TLS handshake failure'
+    default:
+      if (code >= 4000 && code <= 4999) {
+        return 'Application-specific close code'
+      }
+      return 'Unknown close code'
+  }
+}
+
+export function buildCloseReason(event: CloseEventLike, conn?: CloseContextLike): string {
+  const parts: string[] = []
+  if (event.reason) {
+    parts.push(event.reason)
+  } else {
+    parts.push(summarizeCloseCode(event.code))
+  }
+
+  if (conn?.lastServerError) {
+    parts.push(`Last server error: ${conn.lastServerError}`)
+  } else if (conn?.lastSocketError) {
+    parts.push(`Last socket error: ${conn.lastSocketError}`)
+  }
+
+  parts.push(`wasClean: ${event.wasClean ? 'yes' : 'no'}`)
+  return parts.join(' | ')
+}
+
+export function extractProviderSessionId(msg: unknown): string | null {
+  if (!msg || typeof msg !== 'object') return null
+  const record = msg as Record<string, unknown>
+  const keys = ['session_id', 'sessionId', 'conversation_id', 'conversationId', 'thread_id', 'threadId']
+  for (const key of keys) {
+    const value = record[key]
+    if (typeof value === 'string' && value.length > 0) {
+      return value
+    }
+  }
+
+  const response = record.response
+  if (response && typeof response === 'object' && !Array.isArray(response)) {
+    const responseObj = response as Record<string, unknown>
+    for (const key of keys) {
+      const value = responseObj[key]
+      if (typeof value === 'string' && value.length > 0) {
+        return value
+      }
+    }
+  }
+
+  return null
+}
+
 export function parsePermissionRequestFromText(
   text: string,
   fallbackTool = 'Permission'

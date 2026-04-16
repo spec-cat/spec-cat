@@ -63,3 +63,38 @@ export function filterCommitsByBranches(
     commit.branches.some((branch) => branchSet.has(branch))
   )
 }
+
+/**
+ * Tiny bounded cache keyed on `${query}:${commits.length}`.
+ * Evicts the oldest entry on overflow (insertion-order LRU).
+ * Isolates the memoization concern from the Pinia store's computed.
+ */
+export function createCommitSearchCache(maxSize = 10) {
+  const cache = new Map<string, GitLogCommit[]>()
+
+  function filter(
+    commits: readonly GitLogCommit[],
+    query: string
+  ): GitLogCommit[] {
+    const normalized = query.toLowerCase()
+    const cacheKey = `${normalized}:${commits.length}`
+
+    const existing = cache.get(cacheKey)
+    if (existing) return existing
+
+    const result = filterCommitsByQuery(commits, normalized)
+
+    if (cache.size >= maxSize) {
+      const firstKey = cache.keys().next().value
+      if (firstKey !== undefined) cache.delete(firstKey)
+    }
+    cache.set(cacheKey, result)
+    return result
+  }
+
+  function clear() {
+    cache.clear()
+  }
+
+  return { filter, clear }
+}

@@ -26,10 +26,17 @@ import type {
   FileDiffResponse,
 } from "~/types/git";
 import {
+  createCommitSearchCache,
   extractGitErrorMessage,
   filterCommitsByBranches,
-  filterCommitsByQuery,
 } from "~/utils/gitGraphHelpers";
+import { fetchMergeBase as fetchMergeBaseApi } from "~/utils/gitMergeBase";
+import { fetchFileDiff } from "~/utils/fileDiffApi";
+import {
+  fetchComparisonDiff,
+  type ComparisonFile,
+  type ComparisonStats,
+} from "~/utils/comparisonApi";
 
 export interface GitGraphState {
   // Data
@@ -201,9 +208,7 @@ export const useGitGraphStore = defineStore("gitGraph", () => {
   const diffViewerContent = ref<FileDiffResponse | null>(null);
   const diffViewerLoading = ref(false);
 
-  // Memoization cache for search results
-  const searchCache = new Map<string, GitLogCommit[]>();
-  const MAX_CACHE_SIZE = 10;
+  const searchCache = createCommitSearchCache();
 
   // Getters with optimized filtering
   const filteredCommits = computed(() => {
@@ -212,34 +217,18 @@ export const useGitGraphStore = defineStore("gitGraph", () => {
       return commits.value;
     }
 
-    let result = commits.value;
+    let result: readonly GitLogCommit[] = commits.value;
 
-    // Filter by search query (P3) with caching
     if (searchQuery.value) {
-      const query = searchQuery.value.toLowerCase();
-      const cacheKey = `${query}:${commits.value.length}`;
-
-      if (searchCache.has(cacheKey)) {
-        result = searchCache.get(cacheKey)!;
-      } else {
-        result = filterCommitsByQuery(result, query);
-
-        // Manage cache size
-        if (searchCache.size >= MAX_CACHE_SIZE) {
-          const firstKey = searchCache.keys().next().value;
-          if (firstKey) searchCache.delete(firstKey);
-        }
-        searchCache.set(cacheKey, result);
-      }
+      result = searchCache.filter(result, searchQuery.value);
     }
 
-    // Filter by selected branches (P3)
     if (filteredBranches.value.length > 0) {
-      const branchSet = new Set(filteredBranches.value); // Use Set for O(1) lookup
+      const branchSet = new Set(filteredBranches.value);
       result = filterCommitsByBranches(result, branchSet);
     }
 
-    return result;
+    return result as GitLogCommit[];
   });
 
   const currentBranch = computed(() => {
@@ -826,104 +815,43 @@ export const useGitGraphStore = defineStore("gitGraph", () => {
     };
   }
 
+  async function updateMergeBaseRef(
+    target: Ref<string | null>,
+    branch: string | null | undefined,
+    baseBranch?: string | null,
+  ) {
+    if (!branch || !workingDirectory.value) {
+      target.value = null
+      return
+    }
+    target.value = await fetchMergeBaseApi(workingDirectory.value, branch, baseBranch)
+  }
+
   async function setSelectedFeatureId(id: string | null) {
     selectedFeatureId.value = id;
-    featureMergeBase.value = null;
-
-    if (id && workingDirectory.value) {
-      try {
-        const data = await $fetch<{ mergeBase: string | null }>('/api/git/merge-base', {
-          params: {
-            workingDirectory: workingDirectory.value,
-            branch: id,
-          }
-        });
-        featureMergeBase.value = data.mergeBase;
-      } catch {
-        featureMergeBase.value = null;
-      }
-    }
+    await updateMergeBaseRef(featureMergeBase, id)
   }
 
   async function setConversationBranch(branch: string | null, baseBranch?: string | null) {
     conversationBranch.value = branch;
-    conversationMergeBase.value = null;
     conversationBaseBranch.value = baseBranch ?? null;
-
-    if (branch && workingDirectory.value) {
-      try {
-        const data = await $fetch<{ mergeBase: string | null }>('/api/git/merge-base', {
-          params: {
-            workingDirectory: workingDirectory.value,
-            branch,
-            baseBranch: baseBranch ?? undefined,
-          }
-        });
-        conversationMergeBase.value = data.mergeBase;
-      } catch {
-        conversationMergeBase.value = null;
-      }
-    }
+    await updateMergeBaseRef(conversationMergeBase, branch, baseBranch)
   }
 
   async function setPreviewBranch(branch: string | null, baseBranch?: string | null) {
     previewBranch.value = branch;
-    previewMergeBase.value = null;
     previewBaseBranch.value = baseBranch ?? null;
-
-    if (branch && workingDirectory.value) {
-      try {
-        const data = await $fetch<{ mergeBase: string | null }>('/api/git/merge-base', {
-          params: {
-            workingDirectory: workingDirectory.value,
-            branch,
-            baseBranch: baseBranch ?? undefined,
-          }
-        });
-        previewMergeBase.value = data.mergeBase;
-      } catch {
-        previewMergeBase.value = null;
-      }
-    }
-  }
-
-  async function fetchMergeBase(
-    branch: string,
-    baseBranch: string | null | undefined,
-    target: Ref<string | null>,
-  ) {
-    try {
-      const data = await $fetch<{ mergeBase: string | null }>('/api/git/merge-base', {
-        params: {
-          workingDirectory: workingDirectory.value!,
-          branch,
-          baseBranch: baseBranch ?? undefined,
-        }
-      });
-      target.value = data.mergeBase;
-    } catch {
-      target.value = null;
-    }
+    await updateMergeBaseRef(previewMergeBase, branch, baseBranch)
   }
 
   async function refreshHighlightMergeBases() {
     if (!workingDirectory.value) return;
 
-    const requests: Promise<void>[] = [];
-
-    if (selectedFeatureId.value) {
-      requests.push(fetchMergeBase(selectedFeatureId.value, undefined, featureMergeBase));
-    }
-    if (conversationBranch.value) {
-      requests.push(fetchMergeBase(conversationBranch.value, conversationBaseBranch.value, conversationMergeBase));
-    }
-    if (previewBranch.value) {
-      requests.push(fetchMergeBase(previewBranch.value, previewBaseBranch.value, previewMergeBase));
-    }
-
-    if (requests.length > 0) {
-      await Promise.all(requests);
-    }
+    await Promise.all([
+      updateMergeBaseRef(featureMergeBase, selectedFeatureId.value),
+      updateMergeBaseRef(conversationMergeBase, conversationBranch.value, conversationBaseBranch.value),
+      updateMergeBaseRef(previewMergeBase, previewBranch.value, previewBaseBranch.value),
+    ])
   }
 
   function navigateToCommit(hash: string) {
@@ -958,8 +886,8 @@ export const useGitGraphStore = defineStore("gitGraph", () => {
   }
 
   // Comparison state (FR-021, FR-022)
-  const comparisonFiles = ref<Array<{ path: string; oldPath?: string; status: string; additions: number; deletions: number; binary: boolean }> | null>(null);
-  const comparisonStats = ref<{ filesChanged: number; additions: number; deletions: number } | null>(null);
+  const comparisonFiles = ref<ComparisonFile[] | null>(null);
+  const comparisonStats = ref<ComparisonStats | null>(null);
   const comparisonLoading = ref(false);
 
   const isComparing = computed(() => !!comparisonCommit.value && !!selectedCommit.value);
@@ -982,13 +910,10 @@ export const useGitGraphStore = defineStore("gitGraph", () => {
     if (!workingDirectory.value || !selectedCommit.value || !comparisonCommit.value) return;
     comparisonLoading.value = true;
     try {
-      const from = comparisonCommit.value.hash;
-      const to = selectedCommit.value.hash;
-      const data = await $fetch<{
-        files: Array<{ path: string; oldPath?: string; status: string; additions: number; deletions: number; binary: boolean }>;
-        stats: { filesChanged: number; additions: number; deletions: number };
-      }>("/api/git/diff", {
-        query: { workingDirectory: workingDirectory.value, from, to },
+      const data = await fetchComparisonDiff({
+        workingDirectory: workingDirectory.value,
+        from: comparisonCommit.value.hash,
+        to: selectedCommit.value.hash,
       });
       comparisonFiles.value = data.files;
       comparisonStats.value = data.stats;
@@ -1036,14 +961,11 @@ export const useGitGraphStore = defineStore("gitGraph", () => {
 
     diffViewerLoading.value = true;
     try {
-      const response = await $fetch<FileDiffResponse>("/api/git/file-diff", {
-        query: {
-          workingDirectory: workingDirectory.value,
-          commitHash: diffViewerCommitHash.value,
-          filePath: diffViewerFile.value.path,
-        },
+      diffViewerContent.value = await fetchFileDiff({
+        workingDirectory: workingDirectory.value,
+        commitHash: diffViewerCommitHash.value,
+        filePath: diffViewerFile.value.path,
       });
-      diffViewerContent.value = response;
     } catch (err) {
       console.error("Failed to load file diff:", err);
       setOperationError("Failed to load file diff");

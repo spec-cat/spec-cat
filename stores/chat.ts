@@ -37,7 +37,30 @@ import {
   saveConversations as saveToStorage,
   saveConversation as saveConversationToStorage,
 } from '~/utils/conversationStorage'
-import { buildMessageContentFromBlocks } from '~/utils/contentBlocks'
+import {
+  syncContentFromBlocks,
+  shouldSyncContentForBlockChange,
+} from '~/utils/chatBlocks'
+import {
+  batchFiles,
+  buildDetectedConflictsMessage,
+  buildStartResolutionMessage,
+  createConflictChatMessage,
+  filterUnresolvedFiles,
+  summarizeAiResolution,
+} from '~/utils/conflictResolution'
+import { decidePreviewToggle, endPreview, startPreview } from '~/utils/previewApi'
+import { createWorktree, deleteWorktree, syncPreviewBranch } from '~/utils/worktreeApi'
+import { createSaveScheduler } from '~/utils/saveScheduler'
+import {
+  abortRebaseApi,
+  aiResolveConflictApi,
+  continueRebaseApi,
+  fetchConflictList,
+  finalizeConversationApi,
+  rebaseConversationApi,
+  writeResolvedFile,
+} from '~/utils/rebaseApi'
 
 // Panel width and permission mode are persisted via /api/settings
 
@@ -77,8 +100,16 @@ export const useChatStore = defineStore('chat', () => {
   const streamStateTick = ref(0)
 
   // Debounce timers for auto-save during streaming (per-conversation)
-  const saveDebounceTimers = new Map<string, ReturnType<typeof setTimeout>>()
   const STREAM_SAVE_DEBOUNCE_MS = 1200
+  const saveScheduler = createSaveScheduler({
+    delayMs: STREAM_SAVE_DEBOUNCE_MS,
+    onFlush: (conversationId: string) => {
+      const conv = conversations.value.find(c => c.id === conversationId)
+      if (!conv) return
+      conv.updatedAt = new Date().toISOString()
+      saveConversationToStorage(conv)
+    },
+  })
 
   // Global preview state: which conversation is currently previewed (runtime only, not persisted)
   const previewingConversationId = ref<string | null>(null)
@@ -187,16 +218,10 @@ export const useChatStore = defineStore('chat', () => {
     if (!conv?.previewBranch || !conv.worktreePath) return
 
     try {
-      const res = await $fetch<{ success: boolean; error?: string }>('/api/chat/preview-sync', {
-        method: 'POST',
-        body: {
-          previewBranch: conv.previewBranch,
-          worktreePath: conv.worktreePath,
-        },
+      await syncPreviewBranch({
+        previewBranch: conv.previewBranch,
+        worktreePath: conv.worktreePath,
       })
-      if (!res.success) {
-        throw new Error(res.error || 'Unknown preview sync failure')
-      }
     } catch (error) {
       console.warn('[chat] Failed to sync preview branch after worktree update', {
         conversationId: conv.id,
@@ -225,11 +250,7 @@ export const useChatStore = defineStore('chat', () => {
       })
 
       if (response.success && response.archived) {
-        const timer = saveDebounceTimers.get(id)
-        if (timer) {
-          clearTimeout(timer)
-          saveDebounceTimers.delete(id)
-        }
+        saveScheduler.cancel(id)
         conversationStreamStates.delete(id)
 
         conversations.value = Array.isArray(response.conversations)
@@ -726,29 +747,6 @@ export const useChatStore = defineStore('chat', () => {
   /**
    * Rebuild flat content string from content blocks (for search/compat)
    */
-  function syncContentFromBlocks(message: ChatMessage) {
-    if (!message.contentBlocks) return
-    message.content = buildMessageContentFromBlocks(message.contentBlocks)
-  }
-
-  function shouldSyncContentForBlockChange(previous: ContentBlock, next: ContentBlock): boolean {
-    if (previous.type !== next.type) return true
-    switch (next.type) {
-      case 'text':
-        return (previous as Extract<ContentBlock, { type: 'text' }>).text !== next.text
-      case 'tool_use': {
-        const prev = previous as Extract<ContentBlock, { type: 'tool_use' }>
-        return prev.name !== next.name || prev.inputSummary !== next.inputSummary
-      }
-      case 'tool_result': {
-        const prev = previous as Extract<ContentBlock, { type: 'tool_result' }>
-        return prev.content !== next.content || prev.isError !== next.isError
-      }
-      default:
-        return false
-    }
-  }
-
   /**
    * Initialize contentBlocks array on a message
    */
@@ -1144,26 +1142,10 @@ export const useChatStore = defineStore('chat', () => {
   function saveConversation(conversationId: string, immediate = false) {
     const conv = conversations.value.find(c => c.id === conversationId)
     if (!conv) return
-
     if (immediate) {
-      const existingTimer = saveDebounceTimers.get(conversationId)
-      if (existingTimer) {
-        clearTimeout(existingTimer)
-        saveDebounceTimers.delete(conversationId)
-      }
-      conv.updatedAt = new Date().toISOString()
-      saveConversationToStorage(conv)
+      saveScheduler.flush(conversationId)
     } else {
-      const existingTimer = saveDebounceTimers.get(conversationId)
-      if (existingTimer) {
-        return
-      }
-      const timer = setTimeout(() => {
-        conv.updatedAt = new Date().toISOString()
-        saveConversationToStorage(conv)
-        saveDebounceTimers.delete(conversationId)
-      }, STREAM_SAVE_DEBOUNCE_MS)
-      saveDebounceTimers.set(conversationId, timer)
+      saveScheduler.schedule(conversationId)
     }
   }
 
@@ -1205,11 +1187,12 @@ export const useChatStore = defineStore('chat', () => {
 
     // For feature-originated conversations, validate worktree first before creating conversation
     // This prevents the chat card from appearing and then disappearing on branch conflict
-    let worktreeResult: { success: boolean; worktreePath?: string; branch?: string; baseBranch?: string; error?: string } | null = null
+    let worktreeResult: Awaited<ReturnType<typeof createWorktree>> | null = null
     if (options?.featureId) {
-      const res = await $fetch<{ success: boolean; worktreePath?: string; branch?: string; baseBranch?: string; error?: string }>('/api/chat/worktree', {
-        method: 'POST',
-        body: { conversationId: id, featureId: options.featureId, baseBranch: options.baseBranch },
+      const res = await createWorktree({
+        conversationId: id,
+        featureId: options.featureId,
+        baseBranch: options.baseBranch,
       })
       if (!res.success && res.error) {
         throw new Error(res.error)
@@ -1274,10 +1257,7 @@ export const useChatStore = defineStore('chat', () => {
     // For non-feature conversations, create worktree after adding to list (graceful fallback)
     if (!options?.featureId) {
       try {
-        const res = await $fetch<{ success: boolean; worktreePath?: string; branch?: string; baseBranch?: string; error?: string }>('/api/chat/worktree', {
-          method: 'POST',
-          body: { conversationId: id, baseBranch: options?.baseBranch },
-        })
+        const res = await createWorktree({ conversationId: id, baseBranch: options?.baseBranch })
 
         if (res.success && res.worktreePath && res.branch) {
           const reactiveConv = conversations.value.find(c => c.id === id)
@@ -1351,10 +1331,7 @@ export const useChatStore = defineStore('chat', () => {
     // Clean up worktree if present
     if (conv.hasWorktree && conv.worktreePath && conv.worktreeBranch) {
       try {
-        await $fetch('/api/chat/worktree', {
-          method: 'DELETE',
-          body: { worktreePath: conv.worktreePath, branch: conv.worktreeBranch },
-        })
+        await deleteWorktree({ worktreePath: conv.worktreePath, branch: conv.worktreeBranch })
       } catch (err) {
         console.warn('[chat] Failed to clean up worktree for conversation', id, err)
       }
@@ -1364,11 +1341,7 @@ export const useChatStore = defineStore('chat', () => {
 
     // Clean up stream state
     conversationStreamStates.delete(id)
-    const timer = saveDebounceTimers.get(id)
-    if (timer) {
-      clearTimeout(timer)
-      saveDebounceTimers.delete(id)
-    }
+    saveScheduler.cancel(id)
 
     // If deleted conversation was active, clear the panel
     if (activeConversationId.value === id) {
@@ -1402,16 +1375,13 @@ export const useChatStore = defineStore('chat', () => {
     const baseBranch = targetBranch || conv.baseBranch
 
     try {
-      const res = await $fetch<FinalizeResponse>('/api/chat/finalize', {
-        method: 'POST',
-        body: {
-          conversationId: id,
-          commitMessage,
-          baseBranch,
-          worktreePath: conv.worktreePath,
-          worktreeBranch: conv.worktreeBranch,
-          previewBranch: conv.previewBranch,
-        },
+      const res = await finalizeConversationApi({
+        conversationId: id,
+        commitMessage,
+        baseBranch,
+        worktreePath: conv.worktreePath,
+        worktreeBranch: conv.worktreeBranch,
+        previewBranch: conv.previewBranch,
       })
 
       if (res.success) {
@@ -1456,13 +1426,10 @@ export const useChatStore = defineStore('chat', () => {
     const rebaseBranch = targetBranch || conv.baseBranch
 
     try {
-      const res = await $fetch<FinalizeResponse>('/api/chat/rebase', {
-        method: 'POST',
-        body: {
-          conversationId: id,
-          baseBranch: rebaseBranch,
-          worktreePath: conv.worktreePath,
-        },
+      const res = await rebaseConversationApi({
+        conversationId: id,
+        baseBranch: rebaseBranch,
+        worktreePath: conv.worktreePath,
       })
 
       if (res.rebaseInProgress) {
@@ -1509,13 +1476,11 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     try {
-      const res = await $fetch<ConflictListResponse>('/api/rebase/conflicts', {
-        params: { worktreePath },
-      })
+      const res = await fetchConflictList(worktreePath)
       if (conflictState.value) {
         conflictState.value.files = res.files
         conflictState.value.loading = false
-        addConflictChatMessage('system', `Detected ${res.files.length} conflicted file${res.files.length === 1 ? '' : 's'}. Enter optional guidance below and click "Resolve Conflicts Automatically" to start.`, 'info')
+        addConflictChatMessage('system', buildDetectedConflictsMessage(res.files.length), 'info')
       }
     } catch (err) {
       if (conflictState.value) {
@@ -1535,14 +1500,9 @@ export const useChatStore = defineStore('chat', () => {
     fileRef?: string,
   ) {
     if (!conflictState.value) return
-    conflictState.value.chatMessages.push({
-      id: `conflict-msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      role,
-      content,
-      timestamp: Date.now(),
-      type,
-      fileRef,
-    })
+    conflictState.value.chatMessages.push(
+      createConflictChatMessage(role, content, type, fileRef),
+    )
   }
 
   /**
@@ -1552,13 +1512,10 @@ export const useChatStore = defineStore('chat', () => {
     if (!conflictState.value) return false
 
     try {
-      const res = await $fetch<{ success: boolean; error?: string }>('/api/rebase/resolve', {
-        method: 'PUT',
-        body: {
-          worktreePath: conflictState.value.worktreePath,
-          filePath,
-          content,
-        },
+      const res = await writeResolvedFile({
+        worktreePath: conflictState.value.worktreePath,
+        filePath,
+        content,
       })
       if (res.success && conflictState.value) {
         conflictState.value.resolvedFiles.add(filePath)
@@ -1580,21 +1537,16 @@ export const useChatStore = defineStore('chat', () => {
 
     const { conversationId, commitMessage, baseBranch, mode, worktreePath } = conflictState.value
 
-    // Choose endpoint based on mode
-    const endpoint = mode === 'sync' ? '/api/rebase/continue-sync' : '/api/rebase/continue'
-
     try {
       const conv = conversations.value.find(c => c.id === conversationId)
-      const res = await $fetch<FinalizeResponse>(endpoint, {
-        method: 'POST',
-        body: {
-          conversationId,
-          commitMessage,
-          baseBranch,
-          worktreePath,
-          worktreeBranch: conv?.worktreeBranch,
-          previewBranch: conv?.previewBranch,
-        },
+      const res = await continueRebaseApi({
+        mode,
+        conversationId,
+        commitMessage,
+        baseBranch,
+        worktreePath,
+        worktreeBranch: conv?.worktreeBranch,
+        previewBranch: conv?.previewBranch,
       })
 
       if (res.success) {
@@ -1645,10 +1597,7 @@ export const useChatStore = defineStore('chat', () => {
     if (!conflictState.value) return false
 
     try {
-      const res = await $fetch<RebaseAbortResponse>('/api/rebase/abort', {
-        method: 'POST',
-        body: { worktreePath: conflictState.value.worktreePath },
-      })
+      const res = await abortRebaseApi(conflictState.value.worktreePath)
       conflictState.value = null
       return res.success
     } catch {
@@ -1667,14 +1616,11 @@ export const useChatStore = defineStore('chat', () => {
     if (!file) return false
 
     try {
-      const res = await $fetch<AiResolveResponse>('/api/rebase/ai-resolve', {
-        method: 'POST',
-        body: {
-          worktreePath: conflictState.value.worktreePath,
-          filePath,
-          conflictContent: file.content,
-          userGuidance: conflictState.value.userGuidance || undefined,
-        },
+      const res = await aiResolveConflictApi({
+        worktreePath: conflictState.value.worktreePath,
+        filePath,
+        conflictContent: file.content,
+        userGuidance: conflictState.value.userGuidance || undefined,
       })
 
       if (res.success && res.resolvedContent !== undefined) {
@@ -1703,8 +1649,9 @@ export const useChatStore = defineStore('chat', () => {
   async function aiResolveAllConflicts(): Promise<void> {
     if (!conflictState.value) return
 
-    const unresolved = conflictState.value.files.filter(
-      f => !conflictState.value!.resolvedFiles.has(f.path),
+    const unresolved = filterUnresolvedFiles(
+      conflictState.value.files,
+      conflictState.value.resolvedFiles,
     )
 
     if (unresolved.length === 0) {
@@ -1722,16 +1669,15 @@ export const useChatStore = defineStore('chat', () => {
     if (guidance) {
       addConflictChatMessage('user', guidance)
     }
-    addConflictChatMessage('system', `Starting AI resolution for ${unresolved.length} file${unresolved.length === 1 ? '' : 's'} (parallel)...`, 'info')
+    addConflictChatMessage('system', buildStartResolutionMessage(unresolved.length), 'info')
 
     let successCount = 0
     let failCount = 0
 
     // Process in parallel batches of 3
-    const BATCH_SIZE = 3
-    for (let i = 0; i < unresolved.length; i += BATCH_SIZE) {
+    const batches = batchFiles(unresolved, 3)
+    for (const batch of batches) {
       if (!conflictState.value || signal.aborted) break
-      const batch = unresolved.slice(i, i + BATCH_SIZE)
 
       for (const file of batch) {
         addConflictChatMessage('assistant', `Resolving: ${file.path}...`, 'progress', file.path)
@@ -1756,13 +1702,9 @@ export const useChatStore = defineStore('chat', () => {
       return
     }
 
-    if (failCount === 0) {
-      conflictState.value.lifecycleState = 'resolved'
-      addConflictChatMessage('system', `All ${successCount} file${successCount === 1 ? '' : 's'} resolved successfully. Click "Continue Rebase" to proceed.`, 'summary')
-    } else {
-      conflictState.value.lifecycleState = 'failed'
-      addConflictChatMessage('system', `Resolution complete: ${successCount} succeeded, ${failCount} failed. You can retry or abort.`, 'summary')
-    }
+    const summary = summarizeAiResolution(successCount, failCount)
+    conflictState.value.lifecycleState = summary.succeeded ? 'resolved' : 'failed'
+    addConflictChatMessage('system', summary.message, 'summary')
   }
 
   /**
@@ -1784,10 +1726,7 @@ export const useChatStore = defineStore('chat', () => {
 
     // Abort the git rebase to restore working tree, then re-enter conflict resolution
     try {
-      await $fetch<RebaseAbortResponse>('/api/rebase/abort', {
-        method: 'POST',
-        body: { worktreePath },
-      })
+      await abortRebaseApi(worktreePath)
     } catch {
       // abort may fail if no rebase in progress — that's ok
     }
@@ -1811,13 +1750,10 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     try {
-      const res = await $fetch<{ success: boolean; previewBranch?: string; error?: string }>('/api/chat/preview', {
-        method: 'POST',
-        body: {
-          conversationId: id,
-          worktreePath: conv.worktreePath,
-          baseBranch: conv.baseBranch,
-        },
+      const res = await startPreview({
+        conversationId: id,
+        worktreePath: conv.worktreePath,
+        baseBranch: conv.baseBranch,
       })
 
       if (res.success && res.previewBranch) {
@@ -1844,12 +1780,9 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     try {
-      const res = await $fetch<{ success: boolean; error?: string }>('/api/chat/preview', {
-        method: 'DELETE',
-        body: {
-          previewBranch: conv.previewBranch,
-          baseBranch: conv.baseBranch,
-        },
+      const res = await endPreview({
+        previewBranch: conv.previewBranch,
+        baseBranch: conv.baseBranch,
       })
 
       if (res.success) {
@@ -1870,22 +1803,21 @@ export const useChatStore = defineStore('chat', () => {
    * If another conversation is previewing, switch to this one.
    */
   async function togglePreview(id: string): Promise<{ success: boolean; error?: string }> {
-    // Already previewing this conversation — end it
-    if (previewingConversationId.value === id) {
-      const res = await unpreviewConversation(id)
-      return res
+    const decision = decidePreviewToggle(previewingConversationId.value, id)
+
+    if (decision.kind === 'end-current') {
+      return await unpreviewConversation(decision.id)
     }
 
-    // Another conversation is previewing — end that first
-    if (previewingConversationId.value) {
-      const endResult = await unpreviewConversation(previewingConversationId.value)
+    if (decision.kind === 'swap') {
+      const endResult = await unpreviewConversation(decision.endId)
       if (!endResult.success) {
         return { success: false, error: `Failed to end previous preview: ${endResult.error}` }
       }
+      return await previewConversation(decision.startId)
     }
 
-    // Start preview for the new conversation
-    return await previewConversation(id)
+    return await previewConversation(decision.id)
   }
 
   /**

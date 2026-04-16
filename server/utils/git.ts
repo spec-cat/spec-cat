@@ -1,6 +1,18 @@
-import { exec, execSync, execFile, execFileSync } from 'child_process'
-import { promisify } from 'util'
 import { getProjectDir } from './projectDir'
+import { execGit, execGitArgs, execGitCommand } from './gitExec'
+import { parseGitLog, generateBranchColor, hashString, parseUnifiedDiff } from './gitParsers'
+import {
+  renameBranch,
+  mergeBranch,
+  rebaseBranch,
+  pushBranch,
+  pullBranch,
+  fetchBranch,
+  cherryPick,
+  revertCommit,
+  resetBranch,
+  cleanUntrackedFiles,
+} from './gitBranchOperations'
 import type {
   Commit,
   CommitDetail,
@@ -11,59 +23,12 @@ import type {
   FileChangeStatus
 } from '~/types/git'
 
-const execAsync = promisify(exec)
-const execFileAsync = promisify(execFile)
-
-const GIT_MAX_BUFFER = 1024 * 1024 * 10 // 10MB
-
-/**
- * Execute a git command synchronously (simple string command)
- */
-export function execGit(cwd: string, command: string): string {
-  try {
-    const output = execSync(`git ${command}`, {
-      cwd,
-      maxBuffer: GIT_MAX_BUFFER, // 10MB buffer
-      encoding: 'utf-8'
-    })
-    return output.trim()
-  } catch (error: any) {
-    throw new Error(`Git command failed: ${error.message}`)
-  }
-}
-
-/**
- * Execute a git command synchronously with argument array (shell-injection safe)
- */
-export function execGitArgs(cwd: string, args: string[]): string {
-  try {
-    const output = execFileSync('git', args, {
-      cwd,
-      maxBuffer: GIT_MAX_BUFFER,
-      encoding: 'utf-8'
-    })
-    return output.trim()
-  } catch (error: any) {
-    throw new Error(`Git command failed: ${error.message}`)
-  }
-}
-
-/**
- * Execute a git command safely with proper error handling
- */
-export async function execGitCommand(
-  args: string[],
-  cwd: string = getProjectDir()
-): Promise<string> {
-  try {
-    const { stdout } = await execFileAsync('git', args, {
-      cwd,
-      maxBuffer: GIT_MAX_BUFFER // 10MB buffer for large repositories
-    })
-    return stdout.trim()
-  } catch (error: any) {
-    throw new Error(`Git command failed: ${error.message}`)
-  }
+// Re-export low-level helpers so existing importers of ~/server/utils/git keep working
+export {
+  execGit, execGitArgs, execGitCommand,
+  parseGitLog, generateBranchColor, parseUnifiedDiff,
+  renameBranch, mergeBranch, rebaseBranch, pushBranch, pullBranch, fetchBranch,
+  cherryPick, revertCommit, resetBranch, cleanUntrackedFiles,
 }
 
 /**
@@ -285,35 +250,6 @@ export async function getBranches(
   return branches
 }
 
-/**
- * Generate a deterministic color for a branch name (FR-003: 12-color palette)
- */
-export function generateBranchColor(branchName: string): string {
-  const colors = [
-    '#3B82F6', // blue
-    '#EF4444', // red
-    '#10B981', // green
-    '#F59E0B', // amber
-    '#8B5CF6', // violet
-    '#EC4899', // pink
-    '#14B8A6', // teal
-    '#F97316', // orange
-    '#06B6D4', // cyan
-    '#84CC16', // lime
-    '#F43F5E', // rose
-    '#A855F7', // purple
-  ]
-
-  // Simple hash function for consistent colors
-  let hash = 0
-  for (let i = 0; i < branchName.length; i++) {
-    const char = branchName.charCodeAt(i)
-    hash = ((hash << 5) - hash) + char
-    hash = hash & hash // Convert to 32-bit integer
-  }
-
-  return colors[Math.abs(hash) % colors.length]
-}
 
 /**
  * Find the merge-base (fork point) between two branches/commits.
@@ -394,40 +330,6 @@ export function getCommitCount(cwd: string): number {
   } catch {
     return 0
   }
-}
-
-/**
- * Parse git log output into GitLogCommit objects
- */
-export function parseGitLog(
-  output: string,
-  branches: string[],
-  tags: string[]
-): import('~/types/git').GitLogCommit[] {
-  if (!output.trim()) return []
-
-  const branchTips = new Map<string, string>()
-  const tagTips = new Map<string, string>()
-
-  // We would need to resolve branch/tag tips to hashes for decoration
-  // For now, return commits without decorations (they can be added later)
-
-  return output.split('\n').filter(Boolean).map(line => {
-    const [hash, shortHash, author, email, timestamp, message, parentHashes] = line.split('|')
-    const parents = parentHashes ? parentHashes.split(' ').filter(Boolean) : []
-
-    return {
-      hash,
-      shortHash,
-      author,
-      email,
-      timestamp: parseInt(timestamp, 10),
-      message,
-      parents,
-      branches: [], // Decorations added separately
-      tags: []
-    }
-  })
 }
 
 /**
@@ -616,138 +518,6 @@ export function getStashListHash(cwd: string): string {
   }
 }
 
-function hashString(value: string): string {
-  let hash = 0
-  for (let i = 0; i < value.length; i++) {
-    const char = value.charCodeAt(i)
-    hash = ((hash << 5) - hash) + char
-    hash |= 0
-  }
-  return Math.abs(hash).toString(16)
-}
-
-// =============================================================================
-// Branch Operations (FR-023 to FR-032)
-// =============================================================================
-
-/**
- * Rename a branch (FR-024)
- */
-export function renameBranch(cwd: string, oldName: string, newName: string): string {
-  return execGitArgs(cwd, ['branch', '-m', oldName, newName])
-}
-
-/**
- * Merge a branch into current (FR-026)
- */
-export function mergeBranch(
-  cwd: string,
-  branch: string,
-  options: { noCommit?: boolean; noFastForward?: boolean; squash?: boolean } = {}
-): string {
-  const args = ['merge']
-  if (options.noCommit) args.push('--no-commit')
-  if (options.noFastForward) args.push('--no-ff')
-  if (options.squash) args.push('--squash')
-  args.push(branch)
-  return execGitArgs(cwd, args)
-}
-
-/**
- * Rebase current branch onto target (FR-027)
- */
-export function rebaseBranch(cwd: string, onto: string): string {
-  return execGitArgs(cwd, ['rebase', onto])
-}
-
-/**
- * Push branch to remote (FR-028)
- */
-export function pushBranch(
-  cwd: string,
-  branch: string,
-  options: { remote?: string; force?: boolean; forceWithLease?: boolean } = {}
-): string {
-  const args = ['push']
-  if (options.force) args.push('--force')
-  if (options.forceWithLease) args.push('--force-with-lease')
-  args.push(options.remote || 'origin')
-  args.push(branch)
-  return execGitArgs(cwd, args)
-}
-
-/**
- * Pull branch from remote (FR-029)
- */
-export function pullBranch(
-  cwd: string,
-  options: { branch?: string; remote?: string; noFastForward?: boolean; squash?: boolean } = {}
-): string {
-  const args = ['pull']
-  if (options.noFastForward) args.push('--no-ff')
-  if (options.squash) args.push('--squash')
-  if (options.remote) args.push(options.remote)
-  if (options.branch) args.push(options.branch)
-  return execGitArgs(cwd, args)
-}
-
-/**
- * Fetch from remote (FR-030, FR-075)
- */
-export function fetchBranch(
-  cwd: string,
-  options: { branch?: string; remote?: string; force?: boolean; all?: boolean; prune?: boolean; pruneTags?: boolean } = {}
-): string {
-  const args = ['fetch']
-  if (options.all) args.push('--all')
-  if (options.prune) args.push('--prune')
-  if (options.pruneTags) args.push('--prune-tags')
-  if (options.force) args.push('--force')
-  if (!options.all && options.remote) args.push(options.remote)
-  if (!options.all && options.branch) args.push(options.branch)
-  return execGitArgs(cwd, args)
-}
-
-// =============================================================================
-// Commit Operations (FR-033 to FR-039)
-// =============================================================================
-
-/**
- * Cherry-pick a commit (FR-034)
- */
-export function cherryPick(
-  cwd: string,
-  hash: string,
-  options: { recordOrigin?: boolean; noCommit?: boolean } = {}
-): string {
-  const args = ['cherry-pick']
-  if (options.recordOrigin) args.push('-x')
-  if (options.noCommit) args.push('--no-commit')
-  args.push(hash)
-  return execGitArgs(cwd, args)
-}
-
-/**
- * Revert a commit (FR-035)
- */
-export function revertCommit(cwd: string, hash: string): string {
-  return execGitArgs(cwd, ['revert', '--no-edit', hash])
-}
-
-/**
- * Reset current branch to a commit (FR-037)
- */
-export function resetBranch(cwd: string, hash: string, mode: 'soft' | 'mixed' | 'hard'): string {
-  return execGitArgs(cwd, ['reset', `--${mode}`, hash])
-}
-
-/**
- * Remove untracked files/directories from working tree.
- */
-export function cleanUntrackedFiles(cwd: string): string {
-  return execGitArgs(cwd, ['clean', '-fd'])
-}
-
 /**
  * Get diff between two commits or working tree (FR-021, FR-022)
  */
@@ -816,8 +586,7 @@ export function getFileDiff(
   commitHash: string,
   filePath: string,
   parentHash?: string
-): { filePath: string; oldPath?: string; status: string; binary: boolean; lines: Array<{ type: 'add' | 'delete' | 'context' | 'header'; content: string; oldLineNumber?: number; newLineNumber?: number }>; truncated: boolean } {
-  const MAX_DIFF_LINES = 10000
+): { filePath: string; oldPath?: string; status: string; binary: boolean; lines: ReturnType<typeof parseUnifiedDiff>['lines']; truncated: boolean } {
 
   // Determine the diff command based on whether this is the initial commit
   let diffOutput: string
@@ -872,55 +641,7 @@ export function getFileDiff(
     return { filePath, oldPath, status, binary: true, lines: [], truncated: false }
   }
 
-  // Parse unified diff output into lines
-  const lines: Array<{ type: 'add' | 'delete' | 'context' | 'header'; content: string; oldLineNumber?: number; newLineNumber?: number }> = []
-  let truncated = false
-
-  if (diffOutput.trim()) {
-    const diffLines = diffOutput.split('\n')
-    let oldLineNum = 0
-    let newLineNum = 0
-
-    for (const line of diffLines) {
-      if (lines.length >= MAX_DIFF_LINES) {
-        truncated = true
-        break
-      }
-
-      // Skip diff metadata headers (diff --git, index, ---, +++ lines)
-      if (line.startsWith('diff --git') || line.startsWith('index ') || line.startsWith('---') || line.startsWith('+++')) {
-        continue
-      }
-
-      // Hunk header: @@ -oldStart,oldCount +newStart,newCount @@
-      if (line.startsWith('@@')) {
-        const match = line.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/)
-        if (match) {
-          oldLineNum = parseInt(match[1], 10)
-          newLineNum = parseInt(match[2], 10)
-        }
-        lines.push({ type: 'header', content: line })
-        continue
-      }
-
-      if (line.startsWith('+')) {
-        lines.push({ type: 'add', content: line.substring(1), newLineNumber: newLineNum })
-        newLineNum++
-      } else if (line.startsWith('-')) {
-        lines.push({ type: 'delete', content: line.substring(1), oldLineNumber: oldLineNum })
-        oldLineNum++
-      } else if (line.startsWith(' ') || line === '') {
-        // Context line (starts with space) or empty trailing line
-        const content = line.startsWith(' ') ? line.substring(1) : line
-        lines.push({ type: 'context', content, oldLineNumber: oldLineNum, newLineNumber: newLineNum })
-        oldLineNum++
-        newLineNum++
-      } else if (line.startsWith('\\')) {
-        // "\ No newline at end of file" — skip
-        continue
-      }
-    }
-  }
+  const { lines, truncated } = parseUnifiedDiff(diffOutput)
 
   return { filePath, oldPath, status, binary: false, lines, truncated }
 }
