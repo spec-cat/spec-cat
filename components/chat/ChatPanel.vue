@@ -108,7 +108,14 @@ async function refreshBaseCompare() {
 }
 
 watch(
-  () => [chatStore.activeConversationId, chatStore.activeConversation?.worktreePath, chatStore.activeConversation?.baseBranch, chatStore.activeConversation?.lastCommitTime],
+  () => [
+    chatStore.activeConversationId,
+    chatStore.activeConversation?.worktreePath,
+    chatStore.activeConversation?.baseBranch,
+    chatStore.activeConversation?.lastCommitTime,
+    chatStore.activeConversation?.updatedAt,
+    chatStore.isActiveConversationStreaming,
+  ],
   () => { refreshBaseCompare() },
   { immediate: true }
 )

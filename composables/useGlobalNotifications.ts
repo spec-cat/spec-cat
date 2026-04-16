@@ -13,7 +13,7 @@
 
 import { useChatStore } from '~/stores/chat'
 import { generateBlockId } from '~/types/chat'
-import type { TextBlock, UIStreamEvent } from '~/types/chat'
+import type { ContentBlock, TextBlock, ToolUseBlock, ToolResultBlock, UIStreamEvent } from '~/types/chat'
 
 let ws: WebSocket | null = null
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
@@ -29,6 +29,9 @@ interface ServerJobState {
   conversationId: string
   messageId: string
   currentTextBlockId: string | null
+  /** Currently active tool_use block being streamed */
+  currentToolBlockId: string | null
+  currentToolInputJson: string
   isReplaying: boolean
   replayBuffer: any[]
 }
@@ -131,6 +134,8 @@ export function useGlobalNotifications() {
         conversationId,
         messageId: existingAssistant.id,
         currentTextBlockId: null,
+        currentToolBlockId: null,
+        currentToolInputJson: '',
         isReplaying: false,
         replayBuffer: [],
       }
@@ -148,6 +153,8 @@ export function useGlobalNotifications() {
       conversationId,
       messageId: assistantMsg.id,
       currentTextBlockId: null,
+      currentToolBlockId: null,
+      currentToolInputJson: '',
       isReplaying: false,
       replayBuffer: [],
     }
@@ -275,9 +282,11 @@ export function useGlobalNotifications() {
    * and set them in a single store update.
    */
   function processReplayBatch(job: ServerJobState) {
-    const blocks: TextBlock[] = []
+    const blocks: ContentBlock[] = []
     let flatText = ''
-    let currentBlockId: string | null = null
+    let currentTextBlockId: string | null = null
+    let currentToolIndex: number | null = null
+    let currentToolInputJson = ''
 
     for (const msg of job.replayBuffer) {
       if (msg.type !== 'ui_event' || !msg.event) continue
@@ -287,23 +296,72 @@ export function useGlobalNotifications() {
         case 'block_start':
           if (event.blockType === 'text') {
             const blockId = event.blockId || generateBlockId()
-            blocks.push({ id: blockId, type: 'text', text: event.text || '' })
-            currentBlockId = blockId
+            blocks.push({ id: blockId, type: 'text', text: event.text || '' } as TextBlock)
+            currentTextBlockId = blockId
+            currentToolIndex = null
             if (event.text) flatText += event.text
+          } else if (event.blockType === 'tool_use' && event.toolUseId && event.name) {
+            const blockId = event.blockId || generateBlockId()
+            blocks.push({
+              id: blockId,
+              type: 'tool_use',
+              toolUseId: event.toolUseId,
+              name: event.name,
+              input: {},
+              inputSummary: '',
+              status: 'running',
+            } as ToolUseBlock)
+            currentTextBlockId = null
+            currentToolIndex = event.index ?? 0
+            currentToolInputJson = ''
           }
           break
         case 'block_delta':
-          if (event.text && currentBlockId) {
-            const block = blocks.find(b => b.id === currentBlockId)
-            if (block) {
-              block.text += event.text
+          if (event.text && currentTextBlockId) {
+            const block = blocks.find(b => b.id === currentTextBlockId)
+            if (block && block.type === 'text') {
+              (block as TextBlock).text += event.text
               flatText += event.text
             }
           }
+          if (event.partialJson && currentToolIndex !== null) {
+            currentToolInputJson += event.partialJson
+          }
           break
         case 'block_end':
-          if (currentBlockId) currentBlockId = null
+          if (currentTextBlockId) currentTextBlockId = null
+          if (currentToolIndex !== null) {
+            // Finalize the tool_use block with parsed input
+            const toolBlock = [...blocks].reverse().find(b => b.type === 'tool_use') as ToolUseBlock | undefined
+            if (toolBlock) {
+              let input: Record<string, unknown> = {}
+              try { input = JSON.parse(currentToolInputJson) } catch {}
+              toolBlock.input = input
+              toolBlock.inputSummary = formatToolInputSummary(input)
+              toolBlock.status = 'pending'
+            }
+            currentToolIndex = null
+            currentToolInputJson = ''
+          }
           break
+        case 'tool_result': {
+          // Find matching tool_use and update status
+          const matchingTool = [...blocks].reverse().find(
+            b => b.type === 'tool_use' && (b as ToolUseBlock).toolUseId === event.toolUseId,
+          ) as ToolUseBlock | undefined
+          if (matchingTool) {
+            matchingTool.status = event.isError ? 'error' : 'complete'
+          }
+          // Add tool_result block
+          blocks.push({
+            id: generateBlockId(),
+            type: 'tool_result',
+            toolUseId: event.toolUseId,
+            content: event.content || '',
+            isError: !!event.isError,
+          } as ToolResultBlock)
+          break
+        }
       }
     }
 
@@ -318,8 +376,17 @@ export function useGlobalNotifications() {
       )
     }
 
-    job.currentTextBlockId = currentBlockId
-    console.log(`[GlobalNotifications] Replay batch: ${job.replayBuffer.length} events → ${blocks.length} text blocks`)
+    job.currentTextBlockId = currentTextBlockId
+    job.currentToolBlockId = null
+    job.currentToolInputJson = ''
+    console.log(`[GlobalNotifications] Replay batch: ${job.replayBuffer.length} events → ${blocks.length} blocks`)
+  }
+
+  function formatToolInputSummary(input: Record<string, unknown>): string {
+    if (input.file_path) return String(input.file_path)
+    if (input.path) return String(input.path)
+    if (input.command) return String(input.command).slice(0, 50)
+    return ''
   }
 
   function processUIEvent(job: ServerJobState, event: UIStreamEvent, convId: string) {
@@ -330,9 +397,25 @@ export function useGlobalNotifications() {
           const block: TextBlock = { id: blockId, type: 'text', text: event.text || '' }
           chatStore.appendContentBlock(job.messageId, block, convId)
           job.currentTextBlockId = blockId
+          job.currentToolBlockId = null
           if (event.text) {
             chatStore.appendToMessage(job.messageId, event.text, convId)
           }
+        } else if (event.blockType === 'tool_use' && event.toolUseId && event.name) {
+          const blockId = event.blockId || generateBlockId()
+          const block: ToolUseBlock = {
+            id: blockId,
+            type: 'tool_use',
+            toolUseId: event.toolUseId,
+            name: event.name,
+            input: {},
+            inputSummary: '',
+            status: 'running',
+          }
+          chatStore.appendContentBlock(job.messageId, block, convId)
+          job.currentToolBlockId = blockId
+          job.currentToolInputJson = ''
+          job.currentTextBlockId = null
         }
         break
       }
@@ -345,16 +428,58 @@ export function useGlobalNotifications() {
           }, convId)
           chatStore.appendToMessage(job.messageId, event.text, convId)
         }
+        if (event.partialJson && job.currentToolBlockId) {
+          job.currentToolInputJson += event.partialJson
+        }
         break
       }
       case 'block_end': {
         if (job.currentTextBlockId) {
           job.currentTextBlockId = null
         }
+        if (job.currentToolBlockId) {
+          // Finalize tool_use block with parsed input
+          const toolBlockId = job.currentToolBlockId
+          const inputJson = job.currentToolInputJson
+          chatStore.updateBlockById(job.messageId, toolBlockId, (block) => {
+            if (block.type === 'tool_use') {
+              const tb = block as ToolUseBlock
+              let input: Record<string, unknown> = {}
+              try { input = JSON.parse(inputJson) } catch {}
+              tb.input = input
+              tb.inputSummary = formatToolInputSummary(input)
+              tb.status = 'pending'
+            }
+          }, convId)
+          job.currentToolBlockId = null
+          job.currentToolInputJson = ''
+        }
+        break
+      }
+      case 'tool_result': {
+        // Update matching tool_use status
+        if (event.toolUseId) {
+          const toolBlock = chatStore.findToolUseBlock(job.messageId, event.toolUseId, convId)
+          if (toolBlock) {
+            chatStore.updateBlockById(job.messageId, toolBlock.id, (block) => {
+              if (block.type === 'tool_use') {
+                (block as ToolUseBlock).status = event.isError ? 'error' : 'complete'
+              }
+            }, convId)
+          }
+          // Add tool_result block
+          const resultBlock: ToolResultBlock = {
+            id: generateBlockId(),
+            type: 'tool_result',
+            toolUseId: event.toolUseId,
+            content: event.content || '',
+            isError: !!event.isError,
+          }
+          chatStore.appendContentBlock(job.messageId, resultBlock, convId)
+        }
         break
       }
       case 'session_init':
-      case 'tool_result':
       case 'turn_result':
       case 'error':
         // These are persisted by jobPersister; skip for lightweight streaming
@@ -462,7 +587,13 @@ export function useGlobalNotifications() {
         if (lastMsg && (lastMsg.status === 'complete' || lastMsg.status === 'error' || lastMsg.status === 'stopped')) continue
 
         console.log('[GlobalNotifications] Resuming active server job:', job.id, 'for conversation:', job.conversationId)
-        setupServerJobStreaming(job.conversationId, '')
+        const success = setupServerJobStreaming(job.conversationId, '')
+        if (!success) {
+          // WS might not be open yet after page reload — use the retry mechanism
+          console.log('[GlobalNotifications] WS not ready for resume, queuing for retry:', job.conversationId)
+          pendingJobs.set(job.conversationId, '')
+          debouncedRefresh()
+        }
       }
     } catch (err) {
       console.warn('[GlobalNotifications] Failed to check for active server jobs:', err)
