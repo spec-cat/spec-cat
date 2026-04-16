@@ -50,10 +50,13 @@ Four-column workbench on a single page:
 - **Permission modes**: `ask` (confirm each action), `plan` (upfront approval), `auto` (no prompts), `bypass` (admin)
 - **Providers**: Claude, Gemini, Codex — with capability-based selection and safe fallbacks
 - Session resume on page reload, per-conversation stream isolation
+- **Streaming resilience**: reconnect after refresh, retry setup with linear backoff when the server record hasn't landed yet, and clean up timers on disconnect to kill ghost callbacks
+- **Type-while-streaming**: messages entered during an AI response are queued and flushed in order once streaming settles
 - Commit message generation from diffs
 
 ### Worktree Isolation
 - Each conversation gets its own git worktree
+- Auto-provisioned for browser UI, `POST /api/jobs`, and external WebSocket clients alike — no manual setup
 - **Preview**: apply worktree changes to main workspace for review
 - **Finalize**: clean up worktree after merge
 - **Sync**: keep worktree alive for continued iteration
@@ -73,6 +76,11 @@ Four-column workbench on a single page:
 - Registered tool schemas sent per AI request (request-scoped, not global)
 - Skill prompt system for spec-kit operations
 - Provider adapters map tools to each provider's format
+
+### WebSocket API
+- External tools can drive chat through the same `/_ws` endpoint the browser uses
+- Speckit commands (`/speckit.plan 001-auth`) and bare spec IDs in messages are auto-detected, validated against `specs/`, and wired to the matching feature branch
+- Server-initiated jobs stream live tool use and text to any subscribed client; reference client in `scripts/speccat_client.py`
 
 ### Theme
 - Dark / light mode with retro-style color palette
