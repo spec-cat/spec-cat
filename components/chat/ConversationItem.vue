@@ -12,6 +12,7 @@ import {
   FolderIcon,
 } from '@heroicons/vue/24/outline'
 import type { Conversation } from '~/types/chat'
+import { writeTextToClipboard } from '~/utils/clipboard'
 
 const props = defineProps<{
   conversation: Conversation
@@ -51,7 +52,7 @@ function cancelEdit() {
 const toast = useToast()
 async function copyToClipboard(text: string) {
   try {
-    await navigator.clipboard.writeText(text)
+    await writeTextToClipboard(text)
     toast.success('Copied to clipboard', 1500)
   } catch {
     toast.error('Failed to copy')

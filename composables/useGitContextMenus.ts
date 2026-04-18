@@ -103,10 +103,11 @@ export function useGitContextMenus(
   }
 
   async function handleBranchCopyName() {
-    const name = branchMenu.value.branch;
+    const { branch, x, y } = branchMenu.value;
     closeBranchMenu();
-    await store.copyToClipboard(name);
-    showCopyFeedback(branchMenu.value.x, branchMenu.value.y);
+    const result = await store.copyToClipboard(branch);
+    if (!result.success) return;
+    showCopyFeedback(x, y);
   }
 
   function handleBranchCreateBranch() {
@@ -144,15 +145,23 @@ export function useGitContextMenus(
     store.clearActiveContextMenu();
   }
 
+  function isActionResultSuccessful(result: unknown): boolean {
+    if (result === false) return false;
+    if (typeof result === "object" && result !== null && "success" in result) {
+      return Boolean((result as { success?: unknown }).success);
+    }
+    return true;
+  }
+
   function withCommitMenuCommit(action: (commit: GitLogCommit) => unknown | Promise<unknown>): boolean | Promise<boolean> {
     const commit = commitMenu.value.commit;
     if (!commit) return false;
     closeCommitMenu();
     const result = action(commit);
     if (result && typeof (result as Promise<unknown>).then === "function") {
-      return (result as Promise<unknown>).then(() => true);
+      return (result as Promise<unknown>).then(isActionResultSuccessful).catch(() => false);
     }
-    return true;
+    return isActionResultSuccessful(result);
   }
 
   function handleCommitAddTag() {
@@ -203,7 +212,10 @@ export function useGitContextMenus(
   }
 
   async function handleCommitCopySubject() {
-    await withCommitMenuCommit((commit) => store.copyCommitSubject(commit));
+    const { x, y } = commitMenu.value;
+    const copied = await withCommitMenuCommit((commit) => store.copyCommitSubject(commit));
+    if (!copied) return;
+    showCopyFeedback(x, y);
   }
 
   // ============================================================================
@@ -257,10 +269,11 @@ export function useGitContextMenus(
   }
 
   async function handleTagCopyName() {
-    const tag = tagMenu.value.tag;
+    const { tag, x, y } = tagMenu.value;
     closeTagMenu();
-    await store.copyToClipboard(tag);
-    showCopyFeedback(tagMenu.value.x, tagMenu.value.y);
+    const result = await store.copyToClipboard(tag);
+    if (!result.success) return;
+    showCopyFeedback(x, y);
   }
 
   // ============================================================================
@@ -326,9 +339,9 @@ export function useGitContextMenus(
     closeStashMenu();
     const result = action(stash);
     if (result && typeof (result as Promise<unknown>).then === "function") {
-      return (result as Promise<unknown>).then(() => true);
+      return (result as Promise<unknown>).then(isActionResultSuccessful).catch(() => false);
     }
-    return true;
+    return isActionResultSuccessful(result);
   }
 
   async function handleStashApply() {

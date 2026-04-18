@@ -37,6 +37,7 @@ import {
   type ComparisonFile,
   type ComparisonStats,
 } from "~/utils/comparisonApi";
+import { writeTextToClipboard } from "~/utils/clipboard";
 
 export interface GitGraphState {
   // Data
@@ -662,15 +663,8 @@ export const useGitGraphStore = defineStore("gitGraph", () => {
   }
 
   async function copyCommitSubject(commit: GitLogCommit): Promise<{ success: boolean; error?: string }> {
-    try {
-      const subject = commit.message.split('\n')[0];
-      await copyToClipboard(subject);
-      return { success: true };
-    } catch (err: any) {
-      const errorMessage = err?.message || "Failed to copy commit subject";
-      setOperationError(errorMessage);
-      return { success: false, error: errorMessage };
-    }
+    const subject = commit.message.split('\n')[0];
+    return copyToClipboard(subject);
   }
 
   // ============================================================================
@@ -704,14 +698,7 @@ export const useGitGraphStore = defineStore("gitGraph", () => {
   }
 
   async function copyTagName(name: string): Promise<{ success: boolean; error?: string }> {
-    try {
-      await copyToClipboard(name);
-      return { success: true };
-    } catch (err: any) {
-      const errorMessage = err?.message || "Failed to copy tag name";
-      setOperationError(errorMessage);
-      return { success: false, error: errorMessage };
-    }
+    return copyToClipboard(name);
   }
 
   // ============================================================================
@@ -927,9 +914,14 @@ export const useGitGraphStore = defineStore("gitGraph", () => {
     }
   }
 
-  async function copyToClipboard(text: string): Promise<void> {
-    if (import.meta.client && navigator?.clipboard) {
-      await navigator.clipboard.writeText(text);
+  async function copyToClipboard(text: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      await writeTextToClipboard(text);
+      return { success: true };
+    } catch (err: any) {
+      const errorMessage = err?.message || "Failed to copy to clipboard";
+      setOperationError(errorMessage);
+      return { success: false, error: errorMessage };
     }
   }
 
