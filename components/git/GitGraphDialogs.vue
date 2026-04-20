@@ -28,232 +28,254 @@ const props = defineProps<{
   copyFeedback: { visible: boolean; x: number; y: number }
 }>()
 
-const d = props.dialogs
+// Destructure dialog refs into top-level bindings so Vue's template auto-unwrap
+// resolves `checkoutDialog.visible` to `checkoutDialog.value.visible`. Accessing
+// refs through an intermediate plain object (e.g. `d.checkoutDialog.visible`)
+// does not auto-unwrap and silently reads `undefined`.
+const {
+  checkoutDialog, confirmCheckout,
+  createBranchDialog, confirmCreateBranch,
+  deleteBranchDialog, confirmDeleteBranch,
+  renameDialog, confirmRenameBranch,
+  mergeDialog, confirmMerge,
+  rebaseDialog, confirmRebase,
+  pushDialog, confirmPush,
+  pullDialog, confirmPull,
+  cherryPickDialog, confirmCherryPick,
+  resetDialog, confirmReset,
+  tagCreateDialog, confirmTagCreate,
+  tagDeleteDialog, confirmTagDelete,
+  tagDetailDialog,
+  stashDialog, confirmStash,
+  stashBranchDialog, stashBranchInput, confirmStashBranch,
+  resetWorkingDialog, confirmResetWorking,
+  cleanUntrackedDialog, confirmCleanUntracked,
+} = props.dialogs
 </script>
 
 <template>
   <!-- Checkout Dialog -->
   <GitDialog
-    v-if="d.checkoutDialog.visible"
+    v-if="checkoutDialog.visible"
     title="Checkout"
-    :visible="d.checkoutDialog.visible"
-    :loading="d.checkoutDialog.loading"
-    :error="d.checkoutDialog.error"
+    :visible="checkoutDialog.visible"
+    :loading="checkoutDialog.loading"
+    :error="checkoutDialog.error"
     confirmLabel="Checkout"
-    @close="d.checkoutDialog.visible = false"
-    @confirm="d.confirmCheckout"
+    @close="checkoutDialog.visible = false"
+    @confirm="confirmCheckout"
   >
     <p class="text-retro-muted text-sm">
       Are you sure you want to checkout
-      <span class="text-retro-cyan font-mono">{{ d.checkoutDialog.branchName }}</span>?
+      <span class="text-retro-cyan font-mono">{{ checkoutDialog.branchName }}</span>?
     </p>
   </GitDialog>
 
   <!-- Rename Branch Dialog -->
   <GitDialog
-    v-if="d.renameDialog.visible"
+    v-if="renameDialog.visible"
     title="Rename Branch"
-    :visible="d.renameDialog.visible"
-    :loading="d.renameDialog.loading"
-    :error="d.renameDialog.error"
+    :visible="renameDialog.visible"
+    :loading="renameDialog.loading"
+    :error="renameDialog.error"
     confirmLabel="Rename"
-    @close="d.renameDialog.visible = false"
-    @confirm="d.confirmRenameBranch"
+    @close="renameDialog.visible = false"
+    @confirm="confirmRenameBranch"
   >
     <div class="space-y-3">
       <p class="text-retro-muted text-sm">
-        Rename <span class="text-retro-cyan font-mono">{{ d.renameDialog.branchName }}</span>
+        Rename <span class="text-retro-cyan font-mono">{{ renameDialog.branchName }}</span>
       </p>
       <input
-        v-model="d.renameDialog.newName"
+        v-model="renameDialog.newName"
         type="text"
         class="w-full px-3 py-2 text-sm bg-retro-panel border border-retro-border rounded text-retro-text placeholder-retro-muted focus:outline-none focus:border-retro-cyan"
         placeholder="New branch name"
-        @keyup.enter="d.confirmRenameBranch"
+        @keyup.enter="confirmRenameBranch"
       />
     </div>
   </GitDialog>
 
   <!-- Merge Dialog (FR-026) -->
   <MergeDialog
-    v-if="d.mergeDialog.visible"
-    :visible="d.mergeDialog.visible"
-    :branchName="d.mergeDialog.branchName"
-    :loading="d.mergeDialog.loading"
-    :error="d.mergeDialog.error"
-    @close="d.mergeDialog.visible = false"
-    @confirm="d.confirmMerge"
+    v-if="mergeDialog.visible"
+    :visible="mergeDialog.visible"
+    :branchName="mergeDialog.branchName"
+    :loading="mergeDialog.loading"
+    :error="mergeDialog.error"
+    @close="mergeDialog.visible = false"
+    @confirm="confirmMerge"
   />
 
   <!-- Delete Branch Dialog (FR-025) -->
   <DeleteBranchDialog
-    v-if="d.deleteBranchDialog.visible"
-    :visible="d.deleteBranchDialog.visible"
-    :branchName="d.deleteBranchDialog.branchName"
-    :isLocal="d.deleteBranchDialog.isLocal"
-    :loading="d.deleteBranchDialog.loading"
-    :error="d.deleteBranchDialog.error"
-    @close="d.deleteBranchDialog.visible = false"
-    @confirm="d.confirmDeleteBranch"
+    v-if="deleteBranchDialog.visible"
+    :visible="deleteBranchDialog.visible"
+    :branchName="deleteBranchDialog.branchName"
+    :isLocal="deleteBranchDialog.isLocal"
+    :loading="deleteBranchDialog.loading"
+    :error="deleteBranchDialog.error"
+    @close="deleteBranchDialog.visible = false"
+    @confirm="confirmDeleteBranch"
   />
 
   <!-- Push Dialog (FR-028) -->
   <PushDialog
-    v-if="d.pushDialog.visible"
-    :visible="d.pushDialog.visible"
-    :branchName="d.pushDialog.branchName"
+    v-if="pushDialog.visible"
+    :visible="pushDialog.visible"
+    :branchName="pushDialog.branchName"
     :remotes="remoteNames"
-    :loading="d.pushDialog.loading"
-    :error="d.pushDialog.error"
-    @close="d.pushDialog.visible = false"
-    @confirm="d.confirmPush"
+    :loading="pushDialog.loading"
+    :error="pushDialog.error"
+    @close="pushDialog.visible = false"
+    @confirm="confirmPush"
   />
 
   <!-- Pull Dialog (FR-029) -->
   <PullDialog
-    v-if="d.pullDialog.visible"
-    :visible="d.pullDialog.visible"
-    :branchName="d.pullDialog.branchName"
+    v-if="pullDialog.visible"
+    :visible="pullDialog.visible"
+    :branchName="pullDialog.branchName"
     :remotes="remoteNames"
-    :loading="d.pullDialog.loading"
-    :error="d.pullDialog.error"
-    @close="d.pullDialog.visible = false"
-    @confirm="d.confirmPull"
+    :loading="pullDialog.loading"
+    :error="pullDialog.error"
+    @close="pullDialog.visible = false"
+    @confirm="confirmPull"
   />
 
   <!-- Rebase Dialog (FR-027) -->
   <RebaseDialog
-    v-if="d.rebaseDialog.visible"
-    :visible="d.rebaseDialog.visible"
+    v-if="rebaseDialog.visible"
+    :visible="rebaseDialog.visible"
     :branchName="store.currentBranch?.name || 'HEAD'"
-    :ontoBranch="d.rebaseDialog.branchName"
-    :loading="d.rebaseDialog.loading"
-    :error="d.rebaseDialog.error"
-    @close="d.rebaseDialog.visible = false"
-    @confirm="d.confirmRebase"
+    :ontoBranch="rebaseDialog.branchName"
+    :loading="rebaseDialog.loading"
+    :error="rebaseDialog.error"
+    @close="rebaseDialog.visible = false"
+    @confirm="confirmRebase"
   />
 
   <!-- Cherry Pick Dialog (FR-034) -->
   <CherryPickDialog
-    v-if="d.cherryPickDialog.visible"
-    :visible="d.cherryPickDialog.visible"
-    :commitHash="d.cherryPickDialog.commitHash"
-    :commitMessage="d.cherryPickDialog.commitMessage"
-    :loading="d.cherryPickDialog.loading"
-    :error="d.cherryPickDialog.error"
-    @close="d.cherryPickDialog.visible = false"
-    @confirm="d.confirmCherryPick"
+    v-if="cherryPickDialog.visible"
+    :visible="cherryPickDialog.visible"
+    :commitHash="cherryPickDialog.commitHash"
+    :commitMessage="cherryPickDialog.commitMessage"
+    :loading="cherryPickDialog.loading"
+    :error="cherryPickDialog.error"
+    @close="cherryPickDialog.visible = false"
+    @confirm="confirmCherryPick"
   />
 
   <!-- Reset Dialog (FR-037) -->
   <ResetDialog
-    v-if="d.resetDialog.visible"
-    :visible="d.resetDialog.visible"
-    :commitHash="d.resetDialog.commitHash"
-    :commitMessage="d.resetDialog.commitMessage"
-    :loading="d.resetDialog.loading"
-    :error="d.resetDialog.error"
-    @close="d.resetDialog.visible = false"
-    @confirm="d.confirmReset"
+    v-if="resetDialog.visible"
+    :visible="resetDialog.visible"
+    :commitHash="resetDialog.commitHash"
+    :commitMessage="resetDialog.commitMessage"
+    :loading="resetDialog.loading"
+    :error="resetDialog.error"
+    @close="resetDialog.visible = false"
+    @confirm="confirmReset"
   />
 
   <!-- Tag Create Dialog (FR-040) -->
   <TagCreateDialog
-    v-if="d.tagCreateDialog.visible"
-    :visible="d.tagCreateDialog.visible"
-    :commitHash="d.tagCreateDialog.commitHash"
+    v-if="tagCreateDialog.visible"
+    :visible="tagCreateDialog.visible"
+    :commitHash="tagCreateDialog.commitHash"
     :remotes="remoteNames"
-    :loading="d.tagCreateDialog.loading"
-    :error="d.tagCreateDialog.error"
-    @close="d.tagCreateDialog.visible = false"
-    @confirm="d.confirmTagCreate"
+    :loading="tagCreateDialog.loading"
+    :error="tagCreateDialog.error"
+    @close="tagCreateDialog.visible = false"
+    @confirm="confirmTagCreate"
   />
 
   <!-- Tag Delete Dialog (FR-041) -->
   <TagDeleteDialog
-    v-if="d.tagDeleteDialog.visible"
-    :visible="d.tagDeleteDialog.visible"
-    :tagName="d.tagDeleteDialog.tagName"
+    v-if="tagDeleteDialog.visible"
+    :visible="tagDeleteDialog.visible"
+    :tagName="tagDeleteDialog.tagName"
     :remotes="remoteNames"
-    :loading="d.tagDeleteDialog.loading"
-    :error="d.tagDeleteDialog.error"
-    @close="d.tagDeleteDialog.visible = false"
-    @confirm="d.confirmTagDelete"
+    :loading="tagDeleteDialog.loading"
+    :error="tagDeleteDialog.error"
+    @close="tagDeleteDialog.visible = false"
+    @confirm="confirmTagDelete"
   />
 
   <!-- Tag Detail Dialog (FR-043) -->
   <TagDetailDialog
-    v-if="d.tagDetailDialog.visible"
-    :visible="d.tagDetailDialog.visible"
-    :tagName="d.tagDetailDialog.tagName"
-    :tagDetail="d.tagDetailDialog.tagDetail"
-    :loading="d.tagDetailDialog.loading"
-    @close="d.tagDetailDialog.visible = false"
+    v-if="tagDetailDialog.visible"
+    :visible="tagDetailDialog.visible"
+    :tagName="tagDetailDialog.tagName"
+    :tagDetail="tagDetailDialog.tagDetail"
+    :loading="tagDetailDialog.loading"
+    @close="tagDetailDialog.visible = false"
   />
 
   <!-- Create Branch Dialog (FR-031) -->
   <CreateBranchDialog
-    v-if="d.createBranchDialog.visible"
-    :visible="d.createBranchDialog.visible"
-    :fromCommit="d.createBranchDialog.fromCommit"
-    :loading="d.createBranchDialog.loading"
-    :error="d.createBranchDialog.error"
-    @close="d.createBranchDialog.visible = false"
-    @confirm="d.confirmCreateBranch"
+    v-if="createBranchDialog.visible"
+    :visible="createBranchDialog.visible"
+    :fromCommit="createBranchDialog.fromCommit"
+    :loading="createBranchDialog.loading"
+    :error="createBranchDialog.error"
+    @close="createBranchDialog.visible = false"
+    @confirm="confirmCreateBranch"
   />
 
   <!-- Stash Branch Dialog (FR-049) -->
   <GitDialog
-    v-if="d.stashBranchDialog.visible"
+    v-if="stashBranchDialog.visible"
     title="Create Branch from Stash"
-    :visible="d.stashBranchDialog.visible"
-    :loading="d.stashBranchDialog.loading"
-    :error="d.stashBranchDialog.error"
+    :visible="stashBranchDialog.visible"
+    :loading="stashBranchDialog.loading"
+    :error="stashBranchDialog.error"
     confirmLabel="Create Branch"
-    @close="d.stashBranchDialog.visible = false"
-    @confirm="d.confirmStashBranch(d.stashBranchInput.value)"
+    @close="stashBranchDialog.visible = false"
+    @confirm="confirmStashBranch(stashBranchInput)"
   >
     <div class="space-y-3">
       <p class="text-retro-muted text-sm">
-        Create a new branch from <span class="text-retro-magenta font-mono">stash@{{'{'}}{{ d.stashBranchDialog.stashIndex }}{{'}'}}</span>
+        Create a new branch from <span class="text-retro-magenta font-mono">stash@{{'{'}}{{ stashBranchDialog.stashIndex }}{{'}'}}</span>
       </p>
       <input
-        v-model="d.stashBranchInput.value"
+        v-model="stashBranchInput"
         type="text"
         class="w-full px-3 py-2 text-sm bg-retro-panel border border-retro-border rounded text-retro-text placeholder-retro-muted focus:outline-none focus:border-retro-cyan"
         placeholder="Branch name"
-        @keyup.enter="d.confirmStashBranch(d.stashBranchInput.value)"
+        @keyup.enter="confirmStashBranch(stashBranchInput)"
       />
     </div>
   </GitDialog>
 
   <!-- Stash Dialog (FR-050) -->
   <StashDialog
-    v-if="d.stashDialog.visible"
-    :visible="d.stashDialog.visible"
-    :loading="d.stashDialog.loading"
-    :error="d.stashDialog.error"
-    @close="d.stashDialog.visible = false"
-    @confirm="d.confirmStash"
+    v-if="stashDialog.visible"
+    :visible="stashDialog.visible"
+    :loading="stashDialog.loading"
+    :error="stashDialog.error"
+    @close="stashDialog.visible = false"
+    @confirm="confirmStash"
   />
 
   <!-- Reset Working Dialog (FR-057) -->
   <ResetWorkingDialog
-    v-if="d.resetWorkingDialog.visible"
-    :visible="d.resetWorkingDialog.visible"
-    :loading="d.resetWorkingDialog.loading"
-    :error="d.resetWorkingDialog.error"
-    @close="d.resetWorkingDialog.visible = false"
-    @confirm="d.confirmResetWorking"
+    v-if="resetWorkingDialog.visible"
+    :visible="resetWorkingDialog.visible"
+    :loading="resetWorkingDialog.loading"
+    :error="resetWorkingDialog.error"
+    @close="resetWorkingDialog.visible = false"
+    @confirm="confirmResetWorking"
   />
 
   <CleanUntrackedDialog
-    v-if="d.cleanUntrackedDialog.visible"
-    :visible="d.cleanUntrackedDialog.visible"
-    :loading="d.cleanUntrackedDialog.loading"
-    :error="d.cleanUntrackedDialog.error"
-    @close="d.cleanUntrackedDialog.visible = false"
-    @confirm="d.confirmCleanUntracked"
+    v-if="cleanUntrackedDialog.visible"
+    :visible="cleanUntrackedDialog.visible"
+    :loading="cleanUntrackedDialog.loading"
+    :error="cleanUntrackedDialog.error"
+    @close="cleanUntrackedDialog.visible = false"
+    @confirm="confirmCleanUntracked"
   />
 
   <!-- Copy Feedback Toast -->
