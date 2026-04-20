@@ -66,7 +66,22 @@ const pendingAttachments = ref<ChatImageAttachment[]>([])
 let pendingResizeRaf: number | null = null
 const pendingConversationSelection = ref<AIProviderSelection | null>(null)
 
-const messageQueue = ref<QueuedMessage[]>([])
+const messageQueues = ref<Record<string, QueuedMessage[]>>({})
+
+const messageQueue = computed<QueuedMessage[]>(() => {
+  const id = chatStore.activeConversationId
+  if (!id) return []
+  return messageQueues.value[id] ?? []
+})
+
+function setQueueForConversation(conversationId: string, queue: QueuedMessage[]) {
+  if (queue.length === 0) {
+    const { [conversationId]: _removed, ...rest } = messageQueues.value
+    messageQueues.value = rest
+  } else {
+    messageQueues.value = { ...messageQueues.value, [conversationId]: queue }
+  }
+}
 
 const { data: providerResponse, pending: providersLoading } = useAsyncData<{ providers: AIProviderMetadata[] }>(
   'chat-input-ai-providers',
@@ -457,13 +472,15 @@ function handleSubmit() {
 }
 
 function queueMessage() {
+  const conversationId = chatStore.activeConversationId
+  if (!conversationId) return
   const queued = buildQueuedMessage({
     text: inputText.value,
     attachments: pendingAttachments.value,
   })
   if (!queued) return
 
-  messageQueue.value.push(queued)
+  setQueueForConversation(conversationId, [...messageQueue.value, queued])
   inputText.value = ''
   clearPendingAttachments()
   resetTextareaHeight()
@@ -471,14 +488,20 @@ function queueMessage() {
 }
 
 function removeFromQueue(id: string) {
-  messageQueue.value = removeFromQueueUtil(messageQueue.value, id)
+  const conversationId = chatStore.activeConversationId
+  if (!conversationId) return
+  setQueueForConversation(conversationId, removeFromQueueUtil(messageQueue.value, id))
 }
 
 async function processQueue() {
-  if (messageQueue.value.length === 0) return
+  const conversationId = chatStore.activeConversationId
+  if (!conversationId) return
+  const queue = messageQueues.value[conversationId] ?? []
+  if (queue.length === 0) return
   if (chatStore.isActiveConversationStreaming || isSending.value) return
 
-  const next = messageQueue.value.shift()!
+  const [next, ...rest] = queue
+  setQueueForConversation(conversationId, rest)
   await sendMessage(next.text, next.attachments)
 }
 
@@ -633,9 +656,13 @@ watch(() => chatStore.activeConversationId, () => {
   if (chatStore.activeConversationId) {
     pendingConversationSelection.value = null
   }
-  messageQueue.value = []
   clearPendingAttachments()
   focusInput()
+  // Resume processing a persisted queue when switching back to a conversation
+  // that has queued messages and is no longer streaming.
+  if (!chatStore.isActiveConversationStreaming && messageQueue.value.length > 0) {
+    nextTick(() => processQueue())
+  }
 })
 </script>
 
