@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseGitLog, generateBranchColor, parseUnifiedDiff } from '~/server/utils/git'
+import { parseGitLog, parseGitStatusPorcelain, generateBranchColor, parseUnifiedDiff } from '~/server/utils/git'
 
 describe('parseGitLog', () => {
   it('returns empty array for blank output', () => {
@@ -97,6 +97,29 @@ describe('generateBranchColor', () => {
     }
     // Expect at least several distinct colors from a 12-color palette
     expect(colors.size).toBeGreaterThan(3)
+  })
+})
+
+describe('parseGitStatusPorcelain', () => {
+  it('preserves a leading space on the first porcelain line', () => {
+    const output = [
+      ' M AGENTS.md',
+      'M  app/api/chat.ts',
+    ].join('\n')
+
+    const { stagedFiles, unstagedFiles } = parseGitStatusPorcelain(output)
+
+    expect(stagedFiles).toEqual([
+      { path: 'app/api/chat.ts', status: 'M', staged: true, unstaged: false },
+    ])
+    expect(unstagedFiles).toEqual([
+      { path: 'AGENTS.md', status: 'M', staged: false, unstaged: true },
+    ])
+  })
+
+  it('returns empty arrays for blank porcelain output', () => {
+    expect(parseGitStatusPorcelain('')).toEqual({ stagedFiles: [], unstagedFiles: [] })
+    expect(parseGitStatusPorcelain(' \n')).toEqual({ stagedFiles: [], unstagedFiles: [] })
   })
 })
 

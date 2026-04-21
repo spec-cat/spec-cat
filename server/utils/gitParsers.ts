@@ -1,4 +1,5 @@
-import type { GitLogCommit } from '~/types/git'
+import type { GitLogCommit, GitStatusFile } from '~/types/git'
+import { FileChangeStatus } from '~/types/git'
 
 type ParsedDiffLine = {
   type: 'add' | 'delete' | 'context' | 'header'
@@ -36,6 +37,82 @@ export function parseGitLog(
       tags: []
     }
   })
+}
+
+/**
+ * Parse `git status --porcelain` output into staged and unstaged file lists.
+ * Important: do not trim the full output first, or a leading space on the
+ * first line will corrupt both the status columns and the file path offset.
+ */
+export function parseGitStatusPorcelain(
+  output: string
+): { stagedFiles: GitStatusFile[]; unstagedFiles: GitStatusFile[] } {
+  const stagedFiles: GitStatusFile[] = []
+  const unstagedFiles: GitStatusFile[] = []
+
+  if (!output.trim()) {
+    return { stagedFiles, unstagedFiles }
+  }
+
+  const lines = output.split('\n').filter(Boolean)
+
+  for (const line of lines) {
+    if (line.length < 3) continue
+
+    const stagingStatus = line.charAt(0)
+    const workingStatus = line.charAt(1)
+    const filePath = line.substring(3)
+
+    let path = filePath
+    let oldPath: string | undefined
+
+    if (filePath.includes(' -> ')) {
+      const parts = filePath.split(' -> ')
+      oldPath = parts[0]
+      path = parts[1]
+    }
+
+    if (stagingStatus !== ' ' && stagingStatus !== '?') {
+      let status: FileChangeStatus
+      if (stagingStatus === 'A') status = FileChangeStatus.Added
+      else if (stagingStatus === 'D') status = FileChangeStatus.Deleted
+      else if (stagingStatus === 'R') status = FileChangeStatus.Renamed
+      else if (stagingStatus === 'C') status = FileChangeStatus.Copied
+      else status = FileChangeStatus.Modified
+
+      const file: GitStatusFile = {
+        path,
+        status,
+        staged: true,
+        unstaged: false,
+      }
+      if (oldPath) file.oldPath = oldPath
+      stagedFiles.push(file)
+    }
+
+    const isUntracked = stagingStatus === '?' && workingStatus === '?'
+    if (workingStatus !== ' ' || isUntracked) {
+      let status: FileChangeStatus
+      if (isUntracked) {
+        status = FileChangeStatus.Added
+      } else if (workingStatus === 'D') {
+        status = FileChangeStatus.Deleted
+      } else {
+        status = FileChangeStatus.Modified
+      }
+
+      const file: GitStatusFile = {
+        path,
+        status,
+        staged: false,
+        unstaged: true,
+      }
+      if (oldPath) file.oldPath = oldPath
+      unstagedFiles.push(file)
+    }
+  }
+
+  return { stagedFiles, unstagedFiles }
 }
 
 /**

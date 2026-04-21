@@ -102,9 +102,11 @@ describe('ChatToolBlock', () => {
 
     await wrapper.find('button').trigger('click')
     expect(wrapper.text()).toContain('Show full')
+    expect(wrapper.find('pre.whitespace-pre-wrap.pl-1').exists()).toBe(true)
 
     await wrapper.find('button.text-retro-cyan').trigger('click')
     expect(wrapper.text()).toContain('Collapse')
+    expect(wrapper.find('pre.whitespace-pre-wrap.pl-1').exists()).toBe(true)
   })
 
   it('stays collapsed by default even for running tool blocks', async () => {
@@ -202,6 +204,7 @@ describe('ChatToolBlock', () => {
     expect(wrapper.text()).toContain('Diff')
     expect(wrapper.text()).toContain('+1')
     expect(wrapper.text()).toContain('-1')
+    expect(wrapper.find('.px-2.whitespace-pre-wrap').exists()).toBe(true)
 
     await wrapper.find('button.text-retro-cyan').trigger('click')
     expect(wrapper.text()).toContain('const x = 2')

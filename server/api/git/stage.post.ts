@@ -1,5 +1,5 @@
 import type { GitStageRequest, GitStageResponse } from "~/types/git";
-import { execGitArgs } from "~/server/utils/git";
+import { execGitArgs, parseGitStatusPorcelain } from "~/server/utils/git";
 import { logger } from "~/server/utils/logger";
 import {
   resolveWorkingDirectoryFromBody,
@@ -21,14 +21,8 @@ export default defineEventHandler(async (event): Promise<GitStageResponse> => {
 
     // Count staged files after operation
     const statusOutput = execGitArgs(workingDirectory, ["status", "--porcelain"]);
-    const lines = statusOutput.trim().split("\n").filter(Boolean);
-    let stagedCount = 0;
-    for (const line of lines) {
-      const stagingStatus = line.charAt(0);
-      if (stagingStatus !== " " && stagingStatus !== "?") {
-        stagedCount++;
-      }
-    }
+    const { stagedFiles } = parseGitStatusPorcelain(statusOutput);
+    const stagedCount = stagedFiles.length;
 
     logger.api.info("Git stage successful", {
       files: files.length === 0 ? "all" : files,

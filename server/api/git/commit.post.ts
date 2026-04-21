@@ -1,5 +1,5 @@
 import type { GitCommitResponse } from "~/types/git";
-import { execGitArgs } from "~/server/utils/git";
+import { execGitArgs, parseGitStatusPorcelain } from "~/server/utils/git";
 import { logger } from "~/server/utils/logger";
 import { resolveWorkingDirectoryFromBody, handleGitApiError } from "~/server/utils/gitApiHelpers";
 
@@ -16,11 +16,8 @@ export default defineEventHandler(async (event): Promise<GitCommitResponse> => {
 
     // Check that there are staged changes
     const statusOutput = execGitArgs(workingDirectory, ["status", "--porcelain"]);
-    const lines = statusOutput.trim().split("\n").filter(Boolean);
-    const hasStagedChanges = lines.some((line) => {
-      const stagingStatus = line.charAt(0);
-      return stagingStatus !== " " && stagingStatus !== "?";
-    });
+    const { stagedFiles } = parseGitStatusPorcelain(statusOutput);
+    const hasStagedChanges = stagedFiles.length > 0;
 
     if (!hasStagedChanges) {
       throw createError({

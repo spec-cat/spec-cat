@@ -388,7 +388,7 @@ watch(
               <div
                 v-for="(line, index) in visibleResultLines"
                 :key="`diff-${index}`"
-                class="px-1 rounded whitespace-pre-wrap break-all"
+                class="px-2 rounded whitespace-pre-wrap break-all"
                 :class="resultLineClass(line)"
               >
                 {{ line || ' ' }}
@@ -410,7 +410,7 @@ watch(
             </button>
           </template>
           <template v-else-if="!resultExpanded && isLongResult">
-            <pre class="whitespace-pre-wrap">{{ resultPreview }}</pre>
+            <pre class="whitespace-pre-wrap pl-1">{{ resultPreview }}</pre>
             <button
               class="text-retro-cyan hover:underline mt-1 text-[10px]"
               @click.stop="resultExpanded = true"
@@ -419,7 +419,7 @@ watch(
             </button>
           </template>
           <template v-else>
-            <pre class="whitespace-pre-wrap">{{ resultContent }}</pre>
+            <pre class="whitespace-pre-wrap pl-1">{{ resultContent }}</pre>
             <button
               v-if="isLongResult"
               class="text-retro-cyan hover:underline mt-1 text-[10px]"

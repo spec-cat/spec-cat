@@ -1,5 +1,5 @@
 import type { GitUnstageResponse } from "~/types/git";
-import { execGitArgs } from "~/server/utils/git";
+import { execGitArgs, parseGitStatusPorcelain } from "~/server/utils/git";
 import { logger } from "~/server/utils/logger";
 import { resolveWorkingDirectoryFromBody, handleGitApiError } from "~/server/utils/gitApiHelpers";
 
@@ -17,15 +17,8 @@ export default defineEventHandler(async (event): Promise<GitUnstageResponse> => 
 
     // Count unstaged files after operation
     const statusOutput = execGitArgs(workingDirectory, ["status", "--porcelain"]);
-    const lines = statusOutput.trim().split("\n").filter(Boolean);
-    let unstagedCount = 0;
-    for (const line of lines) {
-      const stagingStatus = line.charAt(0);
-      const workingStatus = line.charAt(1);
-      if (workingStatus !== " " || stagingStatus === "?") {
-        unstagedCount++;
-      }
-    }
+    const { unstagedFiles } = parseGitStatusPorcelain(statusOutput);
+    const unstagedCount = unstagedFiles.length;
 
     logger.api.info("Git unstage successful", {
       files: (body.files as string[]).length === 0 ? "all" : body.files,

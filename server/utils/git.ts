@@ -1,6 +1,6 @@
 import { getProjectDir } from './projectDir'
 import { execGit, execGitArgs, execGitCommand } from './gitExec'
-import { parseGitLog, generateBranchColor, hashString, parseUnifiedDiff } from './gitParsers'
+import { parseGitLog, parseGitStatusPorcelain, generateBranchColor, hashString, parseUnifiedDiff } from './gitParsers'
 import {
   renameBranch,
   mergeBranch,
@@ -26,7 +26,7 @@ import type {
 // Re-export low-level helpers so existing importers of ~/server/utils/git keep working
 export {
   execGit, execGitArgs, execGitCommand,
-  parseGitLog, generateBranchColor, parseUnifiedDiff,
+  parseGitLog, parseGitStatusPorcelain, generateBranchColor, parseUnifiedDiff,
   renameBranch, mergeBranch, rebaseBranch, pushBranch, pullBranch, fetchBranch,
   cherryPick, revertCommit, resetBranch, cleanUntrackedFiles,
 }
