@@ -228,7 +228,7 @@ const formattedContent = computed(() => {
       >{{ message.content }}</div>
       <div
         v-if="!hasRenderableBlocks && hasFlatContent && !isUser"
-        class="text-sm font-mono text-retro-text break-words chat-markdown"
+        class="text-sm font-mono text-retro-text break-words chat-markdown px-1"
         v-html="formattedContent"
       />
 

@@ -29,6 +29,22 @@ function makeAssistantMessage(contentBlocks: ChatMessageType['contentBlocks']): 
 }
 
 describe('ChatMessage', () => {
+  it('keeps a left gutter on assistant markdown content', async () => {
+    const message: ChatMessageType = {
+      id: 'msg-markdown',
+      role: 'assistant',
+      content: 'STAGE CHANGED (1)\n\n`components/chat/ChatMessage.vue`',
+      timestamp: '2026-03-21T10:33:51.062Z',
+      status: 'complete',
+    }
+
+    const wrapper = await mountSuspended(ChatMessage, { props: { message } })
+
+    expect(wrapper.find('.chat-markdown.px-1').exists()).toBe(true)
+    expect(wrapper.text()).toContain('STAGE CHANGED (1)')
+    expect(wrapper.text()).toContain('components/chat/ChatMessage.vue')
+  })
+
   it('aggregates consecutive low-signal tool calls into a single summary block', async () => {
     const message = makeAssistantMessage([
       { id: 'txt-1', type: 'text', text: 'Checking files...\n' },
