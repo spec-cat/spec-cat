@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { ChevronUpDownIcon, XMarkIcon } from '@heroicons/vue/24/outline'
 import type { BranchResponse } from '~/types/git'
 import { useWorktreeStore } from '~/stores/worktree'
+import { isSelectableBaseBranchName, resolveSelectableBaseBranch } from '~/utils/baseBranchSelection'
 
 const worktreeStore = useWorktreeStore()
 
@@ -39,21 +40,27 @@ async function loadBranches() {
     const localBranches = res.branches
       .filter(b => !b.isRemote)
       .map(b => b.name)
+      .filter(isSelectableBaseBranchName)
+    const uniqueBranches = Array.from(new Set(localBranches))
+      .sort((a, b) => {
+        const rank = (branch: string) => {
+          if (branch === 'main') return 0
+          if (branch === 'master') return 1
+          return 2
+        }
+        const rankDiff = rank(a) - rank(b)
+        if (rankDiff !== 0) return rankDiff
+        return a.localeCompare(b, undefined, { sensitivity: 'base' })
+      })
 
-    branches.value = localBranches
-    if (!localBranches.length) {
+    branches.value = uniqueBranches
+    if (!uniqueBranches.length) {
       selectedBranch.value = ''
       error.value = 'No local branches available for chat creation.'
       return
     }
 
-    const preferred =
-      (res.current && localBranches.includes(res.current) ? res.current : '') ||
-      (localBranches.includes('main') ? 'main' : '') ||
-      (localBranches.includes('master') ? 'master' : '') ||
-      localBranches[0]
-
-    selectedBranch.value = preferred
+    selectedBranch.value = resolveSelectableBaseBranch('main', uniqueBranches) || uniqueBranches[0]
   } catch (e) {
     branches.value = []
     selectedBranch.value = ''
