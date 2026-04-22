@@ -11,10 +11,8 @@
 
 import { validateWorktreePath, validateFilePath } from '~/server/utils/validateWorktree'
 import { getServerProviderSelection } from '~/server/utils/aiProviderSelection'
-import { getClaudeCliPath } from '~/server/utils/claude'
-import { getClaudeModelId } from '~/server/utils/claudeModel'
 import { logger } from '~/server/utils/logger'
-import { spawn } from 'node:child_process'
+import { runProviderOneShot } from '~/server/utils/providerOneShot'
 import type { AiResolveRequest, AiResolveResponse } from '~/types/chat'
 
 const CONTEXT_LINES = 5
@@ -78,80 +76,6 @@ function extractConflictBlocks(content: string): { lines: string[]; blocks: Conf
   }
 
   return { lines, blocks }
-}
-
-/**
- * Run Claude CLI in a constrained single-turn mode for conflict resolution.
- */
-async function resolveWithCli(
-  prompt: string,
-  cwd: string,
-  modelKey?: string,
-): Promise<{ success: boolean; text?: string; error?: string }> {
-  const cliPath = getClaudeCliPath()
-  const modelId = getClaudeModelId(modelKey)
-
-  const args: string[] = [
-    '-p', prompt,
-    '--output-format', 'stream-json',
-    '--verbose',
-    '--model', modelId,
-    '--max-turns', '1',
-    '--dangerously-skip-permissions',
-  ]
-
-  const proc = spawn(cliPath, args, {
-    cwd,
-    env: { ...process.env, NODE_NO_WARNINGS: '1' },
-    stdio: ['pipe', 'pipe', 'pipe'],
-  })
-  proc.stdin.end()
-
-  let lineBuffer = ''
-  let resultText = ''
-
-  const parseLine = (line: string) => {
-    if (!line.trim()) return
-    try {
-      const msg = JSON.parse(line) as Record<string, unknown>
-      if (msg.type === 'assistant' && typeof msg.message === 'object' && msg.message) {
-        const message = msg.message as { content?: Array<{ type: string; text?: string }> }
-        if (Array.isArray(message.content)) {
-          for (const block of message.content) {
-            if (block.type === 'text' && block.text) {
-              resultText += block.text
-            }
-          }
-        }
-      }
-    } catch {
-      // ignore malformed lines
-    }
-  }
-
-  proc.stdout.on('data', (chunk: Buffer) => {
-    lineBuffer += chunk.toString()
-    const lines = lineBuffer.split('\n')
-    lineBuffer = lines.pop() || ''
-    for (const line of lines) parseLine(line)
-  })
-
-  const errorChunks: string[] = []
-  proc.stderr.on('data', (chunk: Buffer) => {
-    errorChunks.push(chunk.toString())
-  })
-
-  return await new Promise((resolve) => {
-    proc.on('close', (code) => {
-      if (lineBuffer.trim()) parseLine(lineBuffer)
-      if (code === 0) {
-        resolve({ success: true, text: resultText })
-      } else {
-        const stderr = errorChunks.join('').trim()
-        resolve({ success: false, error: `CLI exited with code ${code}: ${stderr}`, text: resultText })
-      }
-    })
-  })
 }
 
 /**
@@ -275,10 +199,19 @@ export default defineEventHandler(async (event): Promise<AiResolveResponse> => {
   const prompt = buildBlockPrompt(body.filePath, blocks, body.userGuidance)
 
   try {
-    const result = await resolveWithCli(prompt, body.worktreePath, selection.modelKey)
+    const result = await runProviderOneShot({
+      selection,
+      prompt,
+      cwd: body.worktreePath,
+      capability: 'conflictResolution',
+    })
 
     if (!result.success || !result.text) {
-      return { success: false, error: result.error || 'AI resolution failed' }
+      return {
+        success: false,
+        error: result.error || 'AI resolution failed',
+        providerId: selection.providerId,
+      }
     }
 
     // Extract resolved content for each block
@@ -307,9 +240,13 @@ export default defineEventHandler(async (event): Promise<AiResolveResponse> => {
       resultLines.splice(block.startLine, block.endLine - block.startLine + 1, ...replacementLines)
     }
 
-    return { success: true, resolvedContent: resultLines.join('\n') }
+    return {
+      success: true,
+      resolvedContent: resultLines.join('\n'),
+      providerId: selection.providerId,
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    return { success: false, error: message }
+    return { success: false, error: message, providerId: selection.providerId }
   }
 })

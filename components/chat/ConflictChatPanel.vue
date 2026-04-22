@@ -11,7 +11,7 @@ const settingsStore = useSettingsStore()
 const guidanceInput = ref('')
 const messagesContainer = ref<HTMLElement | null>(null)
 
-const messages = computed((): ConflictChatMessage[] => {
+const messages = computed((): readonly ConflictChatMessage[] => {
   return chatStore.conflictState?.chatMessages ?? []
 })
 
@@ -46,7 +46,7 @@ watch(() => messages.value.length, async () => {
 function handleResolveAll() {
   if (!chatStore.conflictState || isResolving.value) return
   // Store guidance in conflict state before triggering
-  chatStore.conflictState.userGuidance = guidanceInput.value.trim()
+  chatStore.setConflictUserGuidance(guidanceInput.value.trim())
   chatStore.aiResolveAllConflicts()
 }
 

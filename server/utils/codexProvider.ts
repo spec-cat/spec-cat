@@ -227,7 +227,7 @@ const metadata = {
     permissions: isCodexAvailable(),
     resume: isCodexAvailable(),
     autoCommit: true,
-    conflictResolution: false,
+    conflictResolution: true,
   },
 } satisfies AIProvider['metadata']
 

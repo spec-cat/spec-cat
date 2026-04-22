@@ -1470,6 +1470,8 @@ export const useChatStore = defineStore('chat', () => {
       loading: true,
       error: null,
       mode,
+      retryCount: 0,
+      strategy: 'auto',
       chatMessages: [],
       userGuidance: '',
       lifecycleState: 'detected',
@@ -1503,6 +1505,11 @@ export const useChatStore = defineStore('chat', () => {
     conflictState.value.chatMessages.push(
       createConflictChatMessage(role, content, type, fileRef),
     )
+  }
+
+  function setConflictUserGuidance(guidance: string) {
+    if (!conflictState.value) return
+    conflictState.value.userGuidance = guidance
   }
 
   /**
@@ -2052,6 +2059,7 @@ export const useChatStore = defineStore('chat', () => {
     aiResolveConflictFile,
     aiResolveAllConflicts,
     addConflictChatMessage,
+    setConflictUserGuidance,
     cancelConflictResolution,
     previewConversation,
     unpreviewConversation,
