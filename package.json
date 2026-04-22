@@ -1,6 +1,6 @@
 {
   "name": "spec-cat",
-  "version": "0.1.42",
+  "version": "0.1.43",
   "description": "Spec-driven development workbench",
   "license": "MIT",
   "keywords": [
@@ -25,7 +25,8 @@
     "node": ">=20.0.0"
   },
   "scripts": {
-    "build": "nuxt build",
+    "build": "node scripts/build-package.mjs",
+    "build:nuxt": "nuxt build",
     "dev": "nuxt dev",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
