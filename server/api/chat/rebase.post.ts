@@ -10,6 +10,7 @@ import { exec, execSync } from 'node:child_process'
 import { promisify } from 'node:util'
 import { existsSync } from 'node:fs'
 import { logger } from '~/server/utils/logger'
+import { resolveExistingBaseBranch } from '~/server/utils/baseBranch'
 import { getProjectDir } from '~/server/utils/projectDir'
 import type { RebaseSyncRequest, FinalizeResponse } from '~/types/chat'
 
@@ -47,28 +48,22 @@ export default defineEventHandler(async (event): Promise<FinalizeResponse> => {
   const projectDir = getProjectDir()
   const worktreePath = body.worktreePath || `/tmp/sc-${conversationId}`
 
-  // Resolve base branch
-  let baseBranch = body.baseBranch
+  let worktreeBranch = ''
+  if (existsSync(worktreePath)) {
+    try {
+      worktreeBranch = await git(worktreePath, 'rev-parse --abbrev-ref HEAD')
+    } catch {
+      worktreeBranch = ''
+    }
+  }
+
+  const baseBranch = await resolveExistingBaseBranch({
+    cwd: projectDir,
+    requestedBaseBranch: body.baseBranch,
+    worktreeBranch,
+  })
   if (!baseBranch) {
-    try {
-      await git(projectDir, 'rev-parse --verify main')
-      baseBranch = 'main'
-    } catch {
-      baseBranch = 'master'
-    }
-  } else {
-    // Verify the requested base branch actually exists
-    try {
-      await git(projectDir, `rev-parse --verify "${baseBranch}"`)
-    } catch {
-      logger.chat.warn('Requested baseBranch not found, falling back', { requested: baseBranch })
-      try {
-        await git(projectDir, 'rev-parse --verify main')
-        baseBranch = 'main'
-      } catch {
-        baseBranch = 'master'
-      }
-    }
+    return { success: false, error: 'Unable to resolve a valid base branch for this worktree.' }
   }
 
   logger.chat.info('Rebasing worktree onto base', { conversationId, baseBranch })

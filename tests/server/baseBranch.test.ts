@@ -9,6 +9,7 @@ vi.mock('~/server/utils/gitExec', () => ({
 }))
 
 import {
+  resolveExistingBaseBranch,
   resolveConversationBaseBranch,
   resolvePreferredBaseBranch,
 } from '~/server/utils/baseBranch'
@@ -65,6 +66,42 @@ describe('baseBranch helpers', () => {
       cwd: '/repo',
       storedBaseBranch: mergeBase,
       worktreeBranch: '018-codex-provider-integration',
+    })).resolves.toBe('main')
+  })
+
+  it('normalizes a stored base hash for sc/ worktree branches via merge-base', async () => {
+    const mergeBase = '89abcdef0123456789abcdef0123456789abcdef'
+    mockGitResponses({
+      'symbolic-ref refs/remotes/origin/HEAD': 'refs/remotes/origin/main',
+      'rev-parse --verify refs/heads/main^{commit}': 'fedcba',
+      'rev-parse --verify refs/heads/sc/conv-123^{commit}': 'worktree-head',
+      'for-each-ref --format=%(refname:short) refs/heads': 'main\nrelease/1.0\nsc/conv-123\nsc/preview',
+      'merge-base main sc/conv-123': mergeBase,
+      'merge-base release/1.0 sc/conv-123': '1111111111111111111111111111111111111111',
+    })
+
+    await expect(resolveConversationBaseBranch({
+      cwd: '/repo',
+      storedBaseBranch: mergeBase,
+      worktreeBranch: 'sc/conv-123',
+    })).resolves.toBe('main')
+  })
+
+  it('resolves hash-like requested base branches back to an existing branch', async () => {
+    const mergeBase = '89abcdef0123456789abcdef0123456789abcdef'
+    mockGitResponses({
+      'rev-parse --verify refs/heads/sc/conv-123^{commit}': 'worktree-head',
+      'symbolic-ref refs/remotes/origin/HEAD': 'refs/remotes/origin/main',
+      'rev-parse --verify refs/heads/main^{commit}': 'fedcba',
+      'for-each-ref --format=%(refname:short) refs/heads': 'main\nrelease/1.0\nsc/conv-123\nsc/preview',
+      'merge-base main sc/conv-123': mergeBase,
+      'merge-base release/1.0 sc/conv-123': '1111111111111111111111111111111111111111',
+    })
+
+    await expect(resolveExistingBaseBranch({
+      cwd: '/repo',
+      requestedBaseBranch: mergeBase,
+      worktreeBranch: 'sc/conv-123',
     })).resolves.toBe('main')
   })
 })

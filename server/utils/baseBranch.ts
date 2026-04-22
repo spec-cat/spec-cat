@@ -121,15 +121,17 @@ export async function resolveConversationBaseBranch(options: {
     return branch
   }
 
-  if (isCommitHashLike(branch) && isUsableBaseBranchName(worktreeBranch) && await branchExists(cwd, worktreeBranch)) {
+  const normalizedWorktreeBranch = worktreeBranch?.trim() || ''
+
+  if (isCommitHashLike(branch) && normalizedWorktreeBranch && await branchExists(cwd, normalizedWorktreeBranch)) {
     const defaultBranch = await detectDefaultBranch(cwd)
     const candidates = (await listLocalBranches(cwd))
-      .filter(candidate => isUsableBaseBranchName(candidate) && candidate !== worktreeBranch)
+      .filter(candidate => isUsableBaseBranchName(candidate) && candidate !== normalizedWorktreeBranch)
 
     const matches: string[] = []
     for (const candidate of candidates) {
       try {
-        const mergeBase = await execGitCommand(['merge-base', candidate, worktreeBranch], cwd)
+        const mergeBase = await execGitCommand(['merge-base', candidate, normalizedWorktreeBranch], cwd)
         if (mergeBase === branch) {
           matches.push(candidate)
         }
@@ -143,6 +145,32 @@ export async function resolveConversationBaseBranch(options: {
     }
     if (matches.length > 0) {
       return matches[0]
+    }
+  }
+
+  return resolvePreferredBaseBranch(cwd)
+}
+
+export async function resolveExistingBaseBranch(options: {
+  cwd: string
+  requestedBaseBranch?: string | null
+  worktreeBranch?: string | null
+}): Promise<string | null> {
+  const { cwd, requestedBaseBranch, worktreeBranch } = options
+  const branch = requestedBaseBranch?.trim() || ''
+
+  if (isUsableBaseBranchName(branch) && await branchExists(cwd, branch)) {
+    return branch
+  }
+
+  if (branch) {
+    const normalized = await resolveConversationBaseBranch({
+      cwd,
+      storedBaseBranch: branch,
+      worktreeBranch,
+    })
+    if (normalized && await branchExists(cwd, normalized)) {
+      return normalized
     }
   }
 

@@ -1,7 +1,12 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { CheckIcon, XMarkIcon, SparklesIcon, ChevronUpDownIcon } from '@heroicons/vue/24/outline'
 import { useWorktreeStore } from '~/stores/worktree'
+import {
+  getSelectableBaseBranchLabel,
+  isSelectableBaseBranchName,
+  resolveSelectableBaseBranch,
+} from '~/utils/baseBranchSelection'
 
 interface Props {
   baseBranch: string
@@ -20,11 +25,12 @@ const commitMessage = ref('')
 const commitCount = ref<number | null>(null)
 const loading = ref(false)
 const generating = ref(false)
-const targetBranch = ref(props.baseBranch)
+const targetBranch = ref(isSelectableBaseBranchName(props.baseBranch) ? props.baseBranch : '')
 const branches = ref<string[]>([])
 const branchesLoading = ref(false)
 const worktreeStore = useWorktreeStore()
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
+const loadingTargetLabel = computed(() => getSelectableBaseBranchLabel(targetBranch.value || props.baseBranch))
 
 async function generateMessage() {
   generating.value = true
@@ -68,14 +74,9 @@ onMounted(async () => {
         .filter(b => !b.isRemote && !b.name.startsWith('sc/'))
         .map(b => b.name)
 
-      // If the stored baseBranch was filtered out (e.g. a sc/conv-xxx branch),
-      // reset targetBranch to a valid branch from the list
-      if (branches.value.length > 0 && !branches.value.includes(targetBranch.value)) {
-        targetBranch.value = branches.value.includes('main')
-          ? 'main'
-          : branches.value.includes('master')
-            ? 'master'
-            : branches.value[0]
+      const resolvedBranch = resolveSelectableBaseBranch(targetBranch.value || props.baseBranch, branches.value)
+      if (resolvedBranch) {
+        targetBranch.value = resolvedBranch
       }
     } catch {
       branches.value = []
@@ -89,7 +90,7 @@ onMounted(async () => {
 })
 
 function handleConfirm() {
-  if (!commitMessage.value.trim()) return
+  if (!commitMessage.value.trim() || !targetBranch.value) return
   loading.value = true
   emit('confirm', commitMessage.value.trim(), targetBranch.value)
 }
@@ -121,7 +122,9 @@ function handleConfirm() {
             :disabled="loading || branchesLoading"
             class="appearance-none bg-retro-black border border-retro-border rounded px-2 py-0.5 pr-6 text-xs font-mono text-retro-cyan focus:outline-none focus:border-retro-cyan cursor-pointer disabled:opacity-40"
           >
-            <option v-if="branchesLoading" :value="baseBranch">{{ baseBranch }}</option>
+            <option v-if="branchesLoading" :value="targetBranch">
+              {{ loadingTargetLabel }}
+            </option>
             <option
               v-for="branch in branches"
               :key="branch"
@@ -166,7 +169,7 @@ function handleConfirm() {
     <div class="flex items-center gap-2">
       <button
         type="button"
-        :disabled="!commitMessage.trim() || loading"
+        :disabled="!commitMessage.trim() || !targetBranch || loading"
         class="flex items-center gap-1 px-3 py-1 text-xs font-mono rounded border transition-colors
           bg-retro-green/10 border-retro-green/50 text-retro-green
           hover:bg-retro-green/20 disabled:opacity-40 disabled:cursor-not-allowed"

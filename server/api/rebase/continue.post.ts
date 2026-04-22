@@ -8,6 +8,7 @@ import { exec } from 'node:child_process'
 import { promisify } from 'node:util'
 import { existsSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
+import { resolveExistingBaseBranch } from '~/server/utils/baseBranch'
 import { logger } from '~/server/utils/logger'
 import { getProjectDir } from '~/server/utils/projectDir'
 import type { RebaseContinueRequest, FinalizeResponse } from '~/types/chat'
@@ -38,28 +39,13 @@ export default defineEventHandler(async (event): Promise<FinalizeResponse> => {
     return { success: false, error: 'Worktree directory not found.' }
   }
 
-  // Resolve base branch
-  let baseBranch = body.baseBranch
+  const baseBranch = await resolveExistingBaseBranch({
+    cwd: projectDir,
+    requestedBaseBranch: body.baseBranch,
+    worktreeBranch: body.worktreeBranch || branchName,
+  })
   if (!baseBranch) {
-    try {
-      await git(projectDir, 'rev-parse --verify main')
-      baseBranch = 'main'
-    } catch {
-      baseBranch = 'master'
-    }
-  } else {
-    // Verify the requested base branch actually exists
-    try {
-      await git(projectDir, `rev-parse --verify "${baseBranch}"`)
-    } catch {
-      logger.chat.warn('Requested baseBranch not found, falling back', { requested: baseBranch })
-      try {
-        await git(projectDir, 'rev-parse --verify main')
-        baseBranch = 'main'
-      } catch {
-        baseBranch = 'master'
-      }
-    }
+    return { success: false, error: 'Unable to resolve a valid base branch for this worktree.' }
   }
 
   try {
