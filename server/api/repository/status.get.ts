@@ -1,8 +1,6 @@
 import type { RepositoryStatus } from '~/types/git'
-import {
-  execGitCommand,
-  isGitRepository
-} from '~/server/utils/git'
+import { isGitRepository } from '~/server/utils/git'
+import { execGitCommand } from '~/server/utils/gitExec'
 import { getProjectDir } from '~/server/utils/projectDir'
 
 export default defineEventHandler(async (event) => {

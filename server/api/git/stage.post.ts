@@ -1,5 +1,6 @@
 import type { GitStageRequest, GitStageResponse } from "~/types/git";
-import { execGitArgs, parseGitStatusPorcelain } from "~/server/utils/git";
+import { execGitArgs } from "~/server/utils/gitExec";
+import { parseGitStatusPorcelain } from "~/server/utils/gitParsers";
 import { logger } from "~/server/utils/logger";
 import {
   resolveWorkingDirectoryFromBody,

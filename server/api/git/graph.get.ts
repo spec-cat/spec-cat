@@ -1,10 +1,10 @@
 import type { GraphResponse, GraphQueryParams } from '~/types/git'
 import {
-  execGitCommand,
   getRepositoryRoot,
-  generateBranchColor,
   getCommitHistory
 } from '~/server/utils/git'
+import { execGitCommand } from '~/server/utils/gitExec'
+import { generateBranchColor } from '~/server/utils/gitParsers'
 import { resolveWorkingDirectoryFromQuery, handleGitApiError } from '~/server/utils/gitApiHelpers'
 
 const DEFAULT_COMMIT_LIMIT = 300

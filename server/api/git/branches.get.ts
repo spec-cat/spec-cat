@@ -1,9 +1,9 @@
 import type { BranchResponse } from '~/types/git'
 import {
-  execGitCommand,
-  generateBranchColor,
   getBranches
 } from '~/server/utils/git'
+import { execGitCommand } from '~/server/utils/gitExec'
+import { generateBranchColor } from '~/server/utils/gitParsers'
 import { resolveWorkingDirectoryFromQuery, handleGitApiError } from '~/server/utils/gitApiHelpers'
 
 function parseBooleanQuery(value: unknown): boolean {

@@ -1,4 +1,4 @@
-import { mergeBranch } from "~/server/utils/git";
+import { mergeBranch } from "~/server/utils/gitBranchOperations";
 import { logger } from "~/server/utils/logger";
 import {
   resolveWorkingDirectoryFromBody,

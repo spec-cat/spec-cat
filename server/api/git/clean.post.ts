@@ -1,5 +1,5 @@
 import type { CleanUntrackedRequest, GitOperationResponse } from "~/types/git";
-import { cleanUntrackedFiles } from "~/server/utils/git";
+import { cleanUntrackedFiles } from "~/server/utils/gitBranchOperations";
 import { logger } from "~/server/utils/logger";
 import { resolveWorkingDirectoryFromBody, handleGitApiError } from "~/server/utils/gitApiHelpers";
 

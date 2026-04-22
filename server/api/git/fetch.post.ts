@@ -1,4 +1,4 @@
-import { fetchBranch } from "~/server/utils/git";
+import { fetchBranch } from "~/server/utils/gitBranchOperations";
 import { logger } from "~/server/utils/logger";
 import { resolveWorkingDirectoryFromBody, handleGitApiError } from "~/server/utils/gitApiHelpers";
 

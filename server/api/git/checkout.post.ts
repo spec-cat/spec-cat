@@ -1,5 +1,5 @@
 import type { GitCheckoutResponse } from "~/types/git";
-import { execGit } from "~/server/utils/git";
+import { execGit } from "~/server/utils/gitExec";
 import { logger } from "~/server/utils/logger";
 import { resolveWorkingDirectoryFromBody, handleGitApiError } from "~/server/utils/gitApiHelpers";
 

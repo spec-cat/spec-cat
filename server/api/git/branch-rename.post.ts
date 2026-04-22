@@ -1,4 +1,4 @@
-import { renameBranch } from "~/server/utils/git";
+import { renameBranch } from "~/server/utils/gitBranchOperations";
 import { logger } from "~/server/utils/logger";
 import { resolveWorkingDirectoryFromBody, handleGitApiError } from "~/server/utils/gitApiHelpers";
 

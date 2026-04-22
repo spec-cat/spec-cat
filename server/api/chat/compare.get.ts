@@ -1,4 +1,5 @@
-import { execGitArgs, isGitRepositorySync } from '~/server/utils/git'
+import { isGitRepositorySync } from '~/server/utils/git'
+import { execGitArgs } from '~/server/utils/gitExec'
 import { logger } from '~/server/utils/logger'
 
 /**

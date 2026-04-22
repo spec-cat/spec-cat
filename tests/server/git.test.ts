@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseGitLog, parseGitStatusPorcelain, generateBranchColor, parseUnifiedDiff } from '~/server/utils/git'
+import { parseGitLog, parseGitStatusPorcelain, generateBranchColor, parseUnifiedDiff } from '~/server/utils/gitParsers'
 
 describe('parseGitLog', () => {
   it('returns empty array for blank output', () => {

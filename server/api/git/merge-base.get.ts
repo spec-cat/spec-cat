@@ -1,4 +1,5 @@
-import { getMergeBase, execGitCommand } from "~/server/utils/git";
+import { getMergeBase } from "~/server/utils/git";
+import { execGitCommand } from "~/server/utils/gitExec";
 import { logger } from "~/server/utils/logger";
 import { resolveWorkingDirectoryFromQuery, handleGitApiError } from "~/server/utils/gitApiHelpers";
 

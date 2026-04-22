@@ -23,14 +23,6 @@ import type {
   FileChangeStatus
 } from '~/types/git'
 
-// Re-export low-level helpers so existing importers of ~/server/utils/git keep working
-export {
-  execGit, execGitArgs, execGitCommand,
-  parseGitLog, parseGitStatusPorcelain, generateBranchColor, parseUnifiedDiff,
-  renameBranch, mergeBranch, rebaseBranch, pushBranch, pullBranch, fetchBranch,
-  cherryPick, revertCommit, resetBranch, cleanUntrackedFiles,
-}
-
 /**
  * Check if directory is a valid git repository
  */

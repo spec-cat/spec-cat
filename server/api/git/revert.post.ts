@@ -1,4 +1,4 @@
-import { revertCommit } from "~/server/utils/git";
+import { revertCommit } from "~/server/utils/gitBranchOperations";
 import { logger } from "~/server/utils/logger";
 import {
   resolveWorkingDirectoryFromBody,

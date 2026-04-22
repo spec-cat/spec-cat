@@ -1,5 +1,6 @@
 import type { GitStatusResponse } from "~/types/git";
-import { execGit, parseGitStatusPorcelain } from "~/server/utils/git";
+import { execGit } from "~/server/utils/gitExec";
+import { parseGitStatusPorcelain } from "~/server/utils/gitParsers";
 import {
   resolveWorkingDirectoryFromQuery,
   handleGitApiError,

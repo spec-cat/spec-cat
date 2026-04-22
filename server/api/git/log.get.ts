@@ -1,13 +1,12 @@
 import type { GitLogResponse, Branch, GitTag } from "~/types/git";
 import { GRAPH_CONSTANTS } from "~/types/git";
 import {
-  execGit,
   getBranchesSync,
   getTags,
   getCommitCount,
-  parseGitLog,
-  generateBranchColor,
 } from "~/server/utils/git";
+import { execGit } from "~/server/utils/gitExec";
+import { parseGitLog, generateBranchColor } from "~/server/utils/gitParsers";
 import { logger } from "~/server/utils/logger";
 import { resolveWorkingDirectoryFromQuery, handleGitApiError } from "~/server/utils/gitApiHelpers";
 

@@ -1,4 +1,4 @@
-import { cherryPick } from "~/server/utils/git";
+import { cherryPick } from "~/server/utils/gitBranchOperations";
 import { logger } from "~/server/utils/logger";
 import { resolveWorkingDirectoryFromBody, handleGitApiError } from "~/server/utils/gitApiHelpers";
 
