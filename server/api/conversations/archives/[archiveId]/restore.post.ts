@@ -4,6 +4,7 @@ import { promisify } from 'node:util'
 import { generateConversationId } from '~/types/chat'
 import { logger } from '~/server/utils/logger'
 import { getProjectDir } from '~/server/utils/projectDir'
+import { resolvePreferredBaseBranch } from '~/server/utils/baseBranch'
 import { readConversationStorageState, writeConversationStorageState } from '../../../../utils/conversationStore'
 
 const MAX_CONVERSATIONS = 100
@@ -49,8 +50,10 @@ export default defineEventHandler(async (event) => {
 
   let baseBranch = body.baseBranch?.trim() || ''
   if (!baseBranch) {
-    const { stdout: baseBranchRaw } = await execAsync('git rev-parse --abbrev-ref HEAD', { cwd: projectDir })
-    baseBranch = baseBranchRaw.trim()
+    baseBranch = await resolvePreferredBaseBranch(projectDir) || ''
+  }
+  if (!baseBranch) {
+    throw createError({ statusCode: 400, message: 'Unable to resolve a base branch for restore' })
   }
   if (baseBranch.startsWith('sc/')) {
     throw createError({ statusCode: 400, message: `Invalid base branch "${baseBranch}"` })

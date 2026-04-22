@@ -12,6 +12,7 @@ import type { ChatJobMessage, JobSource } from '~/server/utils/jobQueue'
 import { startPersisting } from '~/server/utils/jobPersister'
 import { getProjectDir } from '~/server/utils/projectDir'
 import { upsertConversationInStorage } from '~/server/utils/conversationStore'
+import { resolvePreferredBaseBranch } from '~/server/utils/baseBranch'
 import { generateConversationId, generateConversationTitle, STORAGE_VERSION } from '~/types/chat'
 import type { Conversation, ConversationSource } from '~/types/chat'
 
@@ -53,9 +54,10 @@ export default defineEventHandler(async (event) => {
 
   let worktreeResult: { success: boolean; worktreePath?: string; branch?: string; baseBranch?: string } = { success: false }
   try {
-    // Resolve base branch
-    const { stdout: baseBranchRaw } = await execAsync('git rev-parse --abbrev-ref HEAD', { cwd: projectDir })
-    const baseBranch = baseBranchRaw.trim()
+    const baseBranch = await resolvePreferredBaseBranch(projectDir)
+    if (!baseBranch) {
+      throw new Error('Unable to resolve base branch for server job worktree')
+    }
     const { stdout: baseHead } = await execAsync(`git rev-parse --verify "refs/heads/${baseBranch}^{commit}"`, { cwd: projectDir })
     const base = baseHead.trim()
 

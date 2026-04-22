@@ -7,6 +7,7 @@ import { exec } from 'node:child_process'
 import { promisify } from 'node:util'
 import { logger } from '~/server/utils/logger'
 import { getProjectDir } from '~/server/utils/projectDir'
+import { resolvePreferredBaseBranch } from '~/server/utils/baseBranch'
 
 const execAsync = promisify(exec)
 
@@ -54,11 +55,17 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
-    // Resolve base branch: use requested branch when provided, otherwise current branch.
+    // Resolve base branch: use requested branch when provided, otherwise infer
+    // a stable non-worktree branch from the main repository state.
     let baseBranch = requestedBaseBranch || ''
     if (!baseBranch) {
-      const { stdout: baseBranchRaw } = await execTimed('resolve-current-branch', 'git rev-parse --abbrev-ref HEAD')
-      baseBranch = baseBranchRaw.trim()
+      baseBranch = await resolvePreferredBaseBranch(projectDir) || ''
+    }
+    if (!baseBranch) {
+      return {
+        success: false,
+        error: 'Unable to resolve a base branch for this worktree',
+      }
     }
     if (baseBranch.startsWith('sc/')) {
       return {

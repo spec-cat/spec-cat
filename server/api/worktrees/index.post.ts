@@ -10,29 +10,12 @@ import { join } from 'node:path'
 import type { WorktreeCreateRequest, WorktreeCreateResponse, Worktree } from '~/types/worktree'
 import { logger } from '~/server/utils/logger'
 import { getProjectDir } from '~/server/utils/projectDir'
+import { resolvePreferredBaseBranch } from '~/server/utils/baseBranch'
 
 const execAsync = promisify(exec)
 
 function generateRandomId(): string {
   return Math.random().toString(36).substring(2, 10)
-}
-
-async function getCurrentHead(projectPath: string): Promise<string> {
-  try {
-    const { stdout } = await execAsync('git rev-parse --abbrev-ref HEAD', {
-      cwd: projectPath,
-    })
-    const branch = stdout.trim()
-    if (branch === 'HEAD') {
-      const { stdout: hash } = await execAsync('git rev-parse HEAD', {
-        cwd: projectPath,
-      })
-      return hash.trim()
-    }
-    return branch
-  } catch {
-    return 'main'
-  }
 }
 
 async function checkBranchExists(projectPath: string, branchName: string): Promise<boolean> {
@@ -119,7 +102,7 @@ export default defineEventHandler(async (event): Promise<WorktreeCreateResponse>
   try {
     const nextNumber = await getNextFeatureNumber(workingDirectory)
     const branchName = generateBranchName(body.description, body.shortName, nextNumber)
-    const baseBranch = body.baseBranch || await getCurrentHead(workingDirectory)
+    const baseBranch = body.baseBranch || await resolvePreferredBaseBranch(workingDirectory) || 'main'
 
     // Check if branch already exists
     const branchExists = await checkBranchExists(workingDirectory, branchName)

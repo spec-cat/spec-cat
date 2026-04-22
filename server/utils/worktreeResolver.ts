@@ -8,6 +8,7 @@ import { existsSync } from 'node:fs'
 import { promisify } from 'node:util'
 import { join } from 'node:path'
 import { logger } from './logger'
+import { resolvePreferredBaseBranch } from './baseBranch'
 
 const execAsync = promisify(exec)
 
@@ -29,27 +30,6 @@ interface ParsedWorktree {
  */
 function generateRandomId(): string {
   return Math.random().toString(36).substring(2, 10)
-}
-
-/**
- * Get current HEAD branch or commit hash
- */
-async function getCurrentHead(projectPath: string): Promise<string> {
-  try {
-    const { stdout } = await execAsync('git rev-parse --abbrev-ref HEAD', {
-      cwd: projectPath,
-    })
-    const branch = stdout.trim()
-    if (branch === 'HEAD') {
-      const { stdout: hash } = await execAsync('git rev-parse HEAD', {
-        cwd: projectPath,
-      })
-      return hash.trim()
-    }
-    return branch
-  } catch {
-    return 'main'
-  }
 }
 
 /**
@@ -150,7 +130,7 @@ export async function createWorktreeForFeature(
   featureId: string,
   baseBranch?: string
 ): Promise<WorktreeInfo> {
-  const base = baseBranch || await getCurrentHead(projectPath)
+  const base = baseBranch || await resolvePreferredBaseBranch(projectPath) || 'main'
   const randomId = generateRandomId()
   const branchName = featureId
   const worktreePath = `/tmp/${featureId}-${randomId}`

@@ -17,6 +17,7 @@ import { join } from 'node:path'
 import { getProjectDir } from './projectDir'
 import { upsertConversationInStorage } from './conversationStore'
 import { getSpecCatDataDir } from './specCatStore'
+import { resolvePreferredBaseBranch } from './baseBranch'
 import { generateConversationTitle, STORAGE_VERSION } from '~/types/chat'
 import type { Conversation } from '~/types/chat'
 
@@ -64,9 +65,10 @@ export async function setupConversationWorktree(options: {
   }
 
   try {
-    // Resolve base branch
-    const { stdout: baseBranchRaw } = await execAsync('git rev-parse --abbrev-ref HEAD', { cwd: projectDir })
-    const baseBranch = baseBranchRaw.trim()
+    const baseBranch = await resolvePreferredBaseBranch(projectDir)
+    if (!baseBranch) {
+      throw new Error('Unable to resolve base branch for conversation worktree')
+    }
 
     // Check if branch already exists (recovery vs creation)
     let branchExists = false

@@ -3,6 +3,8 @@ import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { STORAGE_VERSION } from '~/types/chat'
 import { getSpecCatDataDir, readSpecCatStore } from './specCatStore'
+import { getProjectDir } from './projectDir'
+import { isUsableBaseBranchName, resolveConversationBaseBranch } from './baseBranch'
 
 export interface StoredConversations {
   version: number
@@ -13,6 +15,11 @@ export interface StoredConversations {
 interface ArchivedConversationsFile {
   version: number
   archivedConversations: unknown[]
+}
+
+interface ConversationLikeRecord {
+  baseBranch?: unknown
+  worktreeBranch?: unknown
 }
 
 const LEGACY_FILENAME = 'conversations.json'
@@ -165,18 +172,78 @@ async function migrateLegacyStoreIfNeeded(
   }
 }
 
+async function normalizeBaseBranches(state: StoredConversations): Promise<StoredConversations> {
+  const projectDir = getProjectDir()
+  let activeChanged = false
+  let archivedChanged = false
+
+  const conversations = await Promise.all(state.conversations.map(async (entry) => {
+    if (!entry || typeof entry !== 'object') return entry
+    const record = entry as Record<string, unknown> & ConversationLikeRecord
+    if (typeof record.baseBranch !== 'string' || record.baseBranch.trim().length === 0) {
+      return entry
+    }
+    if (isUsableBaseBranchName(record.baseBranch)) {
+      return entry
+    }
+    const normalized = await resolveConversationBaseBranch({
+      cwd: projectDir,
+      storedBaseBranch: record.baseBranch,
+      worktreeBranch: typeof record.worktreeBranch === 'string' ? record.worktreeBranch : null,
+    })
+    if (!normalized || normalized === record.baseBranch) {
+      return entry
+    }
+    activeChanged = true
+    return { ...record, baseBranch: normalized }
+  }))
+
+  const archivedConversations = await Promise.all(state.archivedConversations.map(async (entry) => {
+    if (!entry || typeof entry !== 'object') return entry
+    const record = entry as Record<string, unknown> & ConversationLikeRecord
+    if (typeof record.baseBranch !== 'string' || record.baseBranch.trim().length === 0) {
+      return entry
+    }
+    if (isUsableBaseBranchName(record.baseBranch)) {
+      return entry
+    }
+    const normalized = await resolveConversationBaseBranch({
+      cwd: projectDir,
+      storedBaseBranch: record.baseBranch,
+    })
+    if (!normalized || normalized === record.baseBranch) {
+      return entry
+    }
+    archivedChanged = true
+    return { ...record, baseBranch: normalized }
+  }))
+
+  if (!activeChanged && !archivedChanged) {
+    return state
+  }
+
+  const normalizedState: StoredConversations = {
+    version: state.version,
+    conversations,
+    archivedConversations,
+  }
+
+  await writeConversationStorageState(normalizedState)
+  return normalizedState
+}
+
 export async function readConversationStorageState(): Promise<StoredConversations> {
   const conversationsFromFiles = await readConversationFiles()
   const archivedFromFile = await readArchivedFile()
   const migrated = await migrateLegacyStoreIfNeeded(conversationsFromFiles, archivedFromFile)
 
-  return {
+  return normalizeBaseBranches({
     version: typeof migrated.archived.version === 'number'
       ? migrated.archived.version
       : STORAGE_VERSION,
     conversations: migrated.conversations,
     archivedConversations: migrated.archived.archivedConversations,
-  }
+  })
 }
 
 export async function writeConversationStorageState(state: StoredConversations): Promise<void> {
