@@ -1,5 +1,10 @@
 const COMMIT_HASH_RE = /^[0-9a-f]{7,40}$/i
 
+type BranchLike = {
+  name?: string | null
+  ref?: string | null
+}
+
 export function isSelectableBaseBranchName(value: string | null | undefined): value is string {
   if (typeof value !== 'string') return false
   const branch = value.trim()
@@ -27,4 +32,24 @@ export function resolveSelectableBaseBranch(
 
 export function getSelectableBaseBranchLabel(value: string | null | undefined): string {
   return isSelectableBaseBranchName(value) ? value.trim() : 'Loading branches...'
+}
+
+export function getSelectableBaseBranchNameFromBranch(branch: BranchLike): string | null {
+  const candidates = [branch.name, branch.ref]
+
+  for (const rawCandidate of candidates) {
+    if (typeof rawCandidate !== 'string') continue
+    const trimmedCandidate = rawCandidate.trim()
+    if (!trimmedCandidate) continue
+
+    const normalizedCandidate = trimmedCandidate.startsWith('refs/heads/')
+      ? trimmedCandidate.slice('refs/heads/'.length)
+      : trimmedCandidate
+
+    if (isSelectableBaseBranchName(normalizedCandidate)) {
+      return normalizedCandidate
+    }
+  }
+
+  return null
 }

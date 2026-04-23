@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, onMounted } from 'vue'
 import { CheckIcon, XMarkIcon, SparklesIcon, ChevronUpDownIcon } from '@heroicons/vue/24/outline'
-import { useWorktreeStore } from '~/stores/worktree'
 import {
+  getSelectableBaseBranchNameFromBranch,
   getSelectableBaseBranchLabel,
   isSelectableBaseBranchName,
   resolveSelectableBaseBranch,
@@ -28,7 +28,6 @@ const generating = ref(false)
 const targetBranch = ref(isSelectableBaseBranchName(props.baseBranch) ? props.baseBranch : '')
 const branches = ref<string[]>([])
 const branchesLoading = ref(false)
-const worktreeStore = useWorktreeStore()
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const loadingTargetLabel = computed(() => getSelectableBaseBranchLabel(targetBranch.value || props.baseBranch))
 
@@ -66,13 +65,14 @@ onMounted(async () => {
   const branchesPromise = (async () => {
     branchesLoading.value = true
     try {
-      await worktreeStore.initialize()
+      const branchQueryCwd = props.worktreePath || (await $fetch<{ cwd: string }>('/api/cwd')).cwd
       const res = await $fetch<{ branches: Array<{ name: string; isRemote: boolean }> }>('/api/git/branches', {
-        query: { workingDirectory: worktreeStore.workingDirectory }
+        query: { workingDirectory: branchQueryCwd }
       })
       branches.value = res.branches
         .filter(b => !b.isRemote && !b.name.startsWith('sc/'))
-        .map(b => b.name)
+        .map(getSelectableBaseBranchNameFromBranch)
+        .filter((branch): branch is string => !!branch)
 
       const resolvedBranch = resolveSelectableBaseBranch(targetBranch.value || props.baseBranch, branches.value)
       if (resolvedBranch) {

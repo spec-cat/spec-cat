@@ -4,7 +4,19 @@ import {
 } from '~/server/utils/git'
 import { execGitCommand } from '~/server/utils/gitExec'
 import { generateBranchColor } from '~/server/utils/gitParsers'
+import { resolvePreferredBaseBranch } from '~/server/utils/baseBranch'
 import { resolveWorkingDirectoryFromQuery, handleGitApiError } from '~/server/utils/gitApiHelpers'
+
+const COMMIT_HASH_RE = /^[0-9a-f]{7,40}$/i
+
+export interface ParsedBranchRefRow {
+  headMarker: string
+  refName: string
+  shortName: string
+  tip: string
+  upstreamShort: string
+  commitDateRaw: string
+}
 
 function parseBooleanQuery(value: unknown): boolean {
   const raw = Array.isArray(value) ? value[0] : value
@@ -50,6 +62,39 @@ async function getBranchesOutput(cwd: string, refScopes: string[]): Promise<stri
   return ''
 }
 
+export function parseBranchRefRow(line: string): ParsedBranchRefRow | null {
+  let [headMarker = '', refName = '', shortName = '', tip = '', upstreamShort = '', commitDateRaw = ''] = line.split('\t')
+
+  // Defensive recovery for a shifted payload seen in preview mode where the
+  // full refname column is missing and fields slide left:
+  //   <HEAD>\tmain\t<hash>\tus/main\t<date>
+  if (
+    refName &&
+    !refName.startsWith('refs/') &&
+    shortName &&
+    COMMIT_HASH_RE.test(shortName)
+  ) {
+    commitDateRaw = upstreamShort
+    upstreamShort = tip
+    tip = shortName
+    shortName = refName
+    refName = `refs/heads/${shortName}`
+  }
+
+  if (!refName || !shortName || !tip) {
+    return null
+  }
+
+  return {
+    headMarker,
+    refName,
+    shortName,
+    tip,
+    upstreamShort,
+    commitDateRaw,
+  }
+}
+
 export default defineEventHandler(async (event) => {
   const query = getQuery(event)
 
@@ -74,10 +119,10 @@ export default defineEventHandler(async (event) => {
       const lines = output.split('\n').filter(Boolean)
 
       for (const line of lines) {
-        const [headMarker, refName, shortName, tip, upstreamShort, commitDateRaw] = line.split('\t')
-        if (!refName || !shortName || !tip) {
-          continue
-        }
+        const parsedRow = parseBranchRefRow(line)
+        if (!parsedRow) continue
+
+        const { headMarker, refName, shortName, tip, upstreamShort, commitDateRaw } = parsedRow
 
         const isRemote = refName.startsWith('refs/remotes/')
 
@@ -139,6 +184,30 @@ export default defineEventHandler(async (event) => {
           continue
         }
         branches.push(branch)
+      }
+    }
+
+    // Preview mode checks out `sc/preview` in the main worktree. If branch
+    // enumeration ever collapses to only sc/* refs in that state, keep chat
+    // creation/rebase/finalize selectors usable by re-injecting the preferred
+    // non-worktree local branch.
+    if (excludeSc) {
+      const hasSelectableLocalBranch = branches.some(branch => !branch.isRemote && !branch.name.startsWith('sc/'))
+      if (!hasSelectableLocalBranch) {
+        const preferredBaseBranch = await resolvePreferredBaseBranch(cwd)
+        if (preferredBaseBranch && !branches.some(branch => branch.name === preferredBaseBranch && !branch.isRemote)) {
+          branches.unshift({
+            name: preferredBaseBranch,
+            ref: `refs/heads/${preferredBaseBranch}`,
+            tip: '',
+            ahead: 0,
+            behind: 0,
+            color: generateBranchColor(preferredBaseBranch),
+            isHead: preferredBaseBranch === currentBranch,
+            isRemote: false,
+            lastCommitDate: new Date(0).toISOString(),
+          })
+        }
       }
     }
 

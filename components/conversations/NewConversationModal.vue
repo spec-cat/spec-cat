@@ -2,10 +2,11 @@
 import { computed, ref, watch } from 'vue'
 import { ChevronUpDownIcon, XMarkIcon } from '@heroicons/vue/24/outline'
 import type { BranchResponse } from '~/types/git'
-import { useWorktreeStore } from '~/stores/worktree'
-import { isSelectableBaseBranchName, resolveSelectableBaseBranch } from '~/utils/baseBranchSelection'
-
-const worktreeStore = useWorktreeStore()
+import {
+  getSelectableBaseBranchNameFromBranch,
+  isSelectableBaseBranchName,
+  resolveSelectableBaseBranch,
+} from '~/utils/baseBranchSelection'
 
 const props = defineProps<{
   show: boolean
@@ -33,14 +34,14 @@ async function loadBranches() {
   loading.value = true
   error.value = ''
   try {
-    await worktreeStore.initialize()
+    const { cwd } = await $fetch<{ cwd: string }>('/api/cwd')
     const res = await $fetch<BranchResponse>('/api/git/branches', {
-      query: { excludeSc: true, workingDirectory: worktreeStore.workingDirectory }
+      query: { excludeSc: true, workingDirectory: cwd }
     })
     const localBranches = res.branches
       .filter(b => !b.isRemote)
-      .map(b => b.name)
-      .filter(isSelectableBaseBranchName)
+      .map(getSelectableBaseBranchNameFromBranch)
+      .filter((branch): branch is string => !!branch)
     const uniqueBranches = Array.from(new Set(localBranches))
       .sort((a, b) => {
         const rank = (branch: string) => {

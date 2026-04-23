@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  getSelectableBaseBranchNameFromBranch,
   getSelectableBaseBranchLabel,
   isSelectableBaseBranchName,
   resolveSelectableBaseBranch,
@@ -28,5 +29,22 @@ describe('baseBranchSelection helpers', () => {
   it('uses a neutral loading label for non-branch values', () => {
     expect(getSelectableBaseBranchLabel('19dd6b935b45502ca71fb23915a05e420ea2e05c')).toBe('Loading branches...')
     expect(getSelectableBaseBranchLabel('main')).toBe('main')
+  })
+
+  it('recovers a selectable branch name from malformed branch API payloads', () => {
+    expect(getSelectableBaseBranchNameFromBranch({
+      name: 'b2f09ba150c403b469b653c4b676113983f611af',
+      ref: 'main',
+    })).toBe('main')
+
+    expect(getSelectableBaseBranchNameFromBranch({
+      name: 'sc/preview',
+      ref: 'refs/heads/sc/preview',
+    })).toBe(null)
+
+    expect(getSelectableBaseBranchNameFromBranch({
+      name: 'main',
+      ref: 'refs/heads/main',
+    })).toBe('main')
   })
 })
