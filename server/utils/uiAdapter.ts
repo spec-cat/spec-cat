@@ -162,6 +162,14 @@ function extractClaudeAssistantText(event: Record<string, unknown>): string {
  * Transform a Claude provider event into canonical UI events
  */
 export function transformClaudeEvent(event: Record<string, unknown>): UIStreamEvent[] {
+  const canonicalTypes: UIStreamEventType[] = [
+    'session_init', 'block_start', 'block_delta', 'block_end',
+    'tool_result', 'permission_request', 'turn_result', 'error', 'done',
+  ]
+  if (canonicalTypes.includes(event.type as UIStreamEventType)) {
+    return [event as unknown as UIStreamEvent]
+  }
+
   const sessionId = extractSessionId(event) || undefined
   const events: UIStreamEvent[] = []
 
