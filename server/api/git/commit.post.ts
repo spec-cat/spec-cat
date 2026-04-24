@@ -16,7 +16,7 @@ export default defineEventHandler(async (event): Promise<GitCommitResponse> => {
     }
 
     // Check that there are staged changes
-    const statusOutput = execGitArgs(workingDirectory, ["status", "--porcelain"]);
+    const statusOutput = execGitArgs(workingDirectory, ["status", "--porcelain"], { trim: false });
     const { stagedFiles } = parseGitStatusPorcelain(statusOutput);
     const hasStagedChanges = stagedFiles.length > 0;
 

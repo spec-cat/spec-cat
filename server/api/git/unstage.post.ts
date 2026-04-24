@@ -17,7 +17,7 @@ export default defineEventHandler(async (event): Promise<GitUnstageResponse> => 
     }
 
     // Count unstaged files after operation
-    const statusOutput = execGitArgs(workingDirectory, ["status", "--porcelain"]);
+    const statusOutput = execGitArgs(workingDirectory, ["status", "--porcelain"], { trim: false });
     const { unstagedFiles } = parseGitStatusPorcelain(statusOutput);
     const unstagedCount = unstagedFiles.length;
 

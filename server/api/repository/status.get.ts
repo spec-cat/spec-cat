@@ -19,7 +19,7 @@ export default defineEventHandler(async (event) => {
     const [currentBranch, head, status, remotes, gitDir] = await Promise.all([
       execGitCommand(['rev-parse', '--abbrev-ref', 'HEAD'], cwd).catch(() => ''),
       execGitCommand(['rev-parse', 'HEAD'], cwd).catch(() => ''),
-      execGitCommand(['status', '--porcelain'], cwd).catch(() => ''),
+      execGitCommand(['status', '--porcelain'], cwd, { trim: false }).catch(() => ''),
       execGitCommand(['remote', '-v'], cwd).catch(() => ''),
       execGitCommand(['rev-parse', '--git-dir'], cwd).catch(() => '.git')
     ])

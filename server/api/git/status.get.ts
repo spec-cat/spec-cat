@@ -14,7 +14,7 @@ export default defineEventHandler(async (event) => {
   try {
     const workingDirectory = resolveWorkingDirectoryFromQuery(event);
 
-    const output = execGit(workingDirectory, "status --porcelain");
+    const output = execGit(workingDirectory, "status --porcelain", { trim: false });
     const { stagedFiles, unstagedFiles } = parseGitStatusPorcelain(output);
 
     const response: GitStatusResponse = {

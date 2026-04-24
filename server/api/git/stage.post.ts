@@ -21,7 +21,7 @@ export default defineEventHandler(async (event): Promise<GitStageResponse> => {
     }
 
     // Count staged files after operation
-    const statusOutput = execGitArgs(workingDirectory, ["status", "--porcelain"]);
+    const statusOutput = execGitArgs(workingDirectory, ["status", "--porcelain"], { trim: false });
     const { stagedFiles } = parseGitStatusPorcelain(statusOutput);
     const stagedCount = stagedFiles.length;
 
