@@ -78,7 +78,7 @@ On resume turns, the provider copies the real `~/.codex` (or `$CODEX_HOME`) cred
 #### Codex Resume Constraints
 
 - `--sandbox workspace-write` is **only set on new turns**, not on resume turns (`codex exec resume` does not accept it).
-- Default model: `gpt-5.4`.
+- Default model: `gpt-5.5`.
 - Stream timeout: 180 seconds.
 
 ### RequestToolPayload

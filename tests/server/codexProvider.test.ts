@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildCodexExecArgs } from '~/server/utils/codexProvider'
+import codexProvider, { buildCodexExecArgs } from '~/server/utils/codexProvider'
 import type { AIProviderStreamOptions } from '~/server/utils/aiProvider'
 
 function makeOpts(overrides: Partial<AIProviderStreamOptions> = {}): AIProviderStreamOptions {
@@ -12,6 +12,11 @@ function makeOpts(overrides: Partial<AIProviderStreamOptions> = {}): AIProviderS
 }
 
 describe('buildCodexExecArgs', () => {
+  it('exposes gpt-5.5 as the current default model', () => {
+    expect(codexProvider.metadata.models.find((model) => model.default)?.key).toBe('gpt-5.5')
+    expect(codexProvider.isModelSupported('gpt-5.5')).toBe(true)
+  })
+
   it('builds a standard exec invocation for new sessions', () => {
     const args = buildCodexExecArgs(makeOpts())
     expect(args).toEqual([

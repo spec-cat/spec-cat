@@ -186,10 +186,15 @@ const metadata = {
   description: 'Codex provider metadata and model defaults for capability-gated selection.',
   models: [
     {
-      key: 'gpt-5.4',
-      label: 'gpt-5.4 (current)',
-      description: 'Latest frontier model for coding and general reasoning.',
+      key: 'gpt-5.5',
+      label: 'gpt-5.5 (current)',
+      description: 'Latest flagship model for complex reasoning and coding.',
       default: true,
+    },
+    {
+      key: 'gpt-5.4',
+      label: 'gpt-5.4',
+      description: 'Frontier model for coding and general reasoning.',
     },
     {
       key: 'gpt-5.3-codex',
