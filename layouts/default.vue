@@ -41,6 +41,17 @@ const pageTitle = computed(() =>
   projectName.value ? `spec cat :: ${projectName.value}` : 'spec cat'
 )
 
+function findInterruptedStreamingConversationIds(): string[] {
+  return chatStore.conversations
+    .filter((conversation) => {
+      const lastAssistantMessage = [...conversation.messages]
+        .reverse()
+        .find(message => message.role === 'assistant')
+      return lastAssistantMessage?.status === 'streaming'
+    })
+    .map(conversation => conversation.id)
+}
+
 useHead(() => ({
   title: pageTitle.value,
 }))
@@ -61,10 +72,13 @@ onMounted(async () => {
   await chatStore.initialize()
   await chatStore.loadConversations()
 
-  // Resume streaming if a job was active before page reload
-  if (chatStore.activeConversationId) {
-    tryResumeStreaming(chatStore.activeConversationId)
-  }
+  // Resume every conversation that was mid-stream before page reload.
+  // The per-conversation resume path verifies server job state before
+  // marking the card as streaming.
+  const streamingConversationIds = findInterruptedStreamingConversationIds()
+  await Promise.allSettled(
+    streamingConversationIds.map(conversationId => tryResumeStreaming(conversationId)),
+  )
 
   try {
     const response = await $fetch<{ cwd: string }>('/api/cwd')
