@@ -2,12 +2,14 @@ interface StreamConversationLike {
   hasWorktree?: boolean
   worktreePath?: string
   worktreeBranch?: string
+  baseBranch?: string
   featureId?: string
 }
 
 export interface StreamOpts {
   cwd?: string
   worktreeBranch?: string
+  baseBranch?: string
   featureId?: string
 }
 
@@ -43,6 +45,10 @@ export function buildStreamOptsFromConversation(
   if (canUseWorktree && conv?.worktreePath) {
     opts.cwd = conv.worktreePath
     opts.worktreeBranch = conv.worktreeBranch
+  }
+
+  if (conv?.baseBranch) {
+    opts.baseBranch = conv.baseBranch
   }
 
   if (conv?.featureId) {

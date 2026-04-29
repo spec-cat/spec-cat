@@ -49,6 +49,7 @@ interface ChatMessage {
   permissionMode?: PermissionMode
   cwd?: string
   worktreeBranch?: string
+  baseBranch?: string
   featureId?: string
   providerId?: string
   providerModelKey?: string
@@ -250,12 +251,20 @@ async function handleChatMessage(peer: any, msg: ChatMessage) {
       conversationId: msg.conversationId,
       message: msg.message,
       featureId: resolvedFeatureId,
+      baseBranch: msg.baseBranch,
       providerId: msg.providerId,
       providerModelKey: msg.providerModelKey,
     })
     if (wtResult.success) {
       resolvedCwd = wtResult.cwd
       resolvedWorktreeBranch = wtResult.worktreeBranch
+    } else if (msg.baseBranch) {
+      peer.send(JSON.stringify({
+        type: 'error',
+        error: wtResult.error || `Failed to create worktree from base branch "${msg.baseBranch}"`,
+        requestId: msg.requestId,
+      }))
+      return
     }
   }
 
@@ -272,6 +281,7 @@ async function handleChatMessage(peer: any, msg: ChatMessage) {
     permissionMode: msg.permissionMode,
     cwd: resolvedCwd,
     worktreeBranch: resolvedWorktreeBranch,
+    baseBranch: msg.baseBranch,
     featureId: resolvedFeatureId,
     providerId: msg.providerId,
     providerModelKey: msg.providerModelKey,

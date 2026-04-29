@@ -1011,7 +1011,7 @@ export function useChatStream() {
     message: string,
     messageId: string,
     conversationId: string,
-    options?: { cwd?: string; worktreeBranch?: string; featureId?: string; attachments?: ChatImageAttachment[] },
+    options?: { cwd?: string; worktreeBranch?: string; baseBranch?: string; featureId?: string; attachments?: ChatImageAttachment[] },
   ) {
     if (typeof window === 'undefined') {
       return
@@ -1058,6 +1058,7 @@ export function useChatStream() {
         conversationId,
         cwd: options?.cwd,
         worktreeBranch: options?.worktreeBranch,
+        baseBranch: options?.baseBranch,
         featureId: options?.featureId,
         providerId,
         providerModelKey,

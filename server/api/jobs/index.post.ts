@@ -5,18 +5,15 @@
  * then submits a job to the queue.
  */
 
-import { exec } from 'node:child_process'
-import { promisify } from 'node:util'
 import { jobQueue } from '~/server/utils/jobQueue'
 import type { ChatJobMessage, JobSource } from '~/server/utils/jobQueue'
 import { startPersisting } from '~/server/utils/jobPersister'
 import { getProjectDir } from '~/server/utils/projectDir'
 import { upsertConversationInStorage } from '~/server/utils/conversationStore'
-import { resolvePreferredBaseBranch } from '~/server/utils/baseBranch'
+import { isUsableBaseBranchName, resolvePreferredBaseBranch } from '~/server/utils/baseBranch'
+import { execGitCommand } from '~/server/utils/gitExec'
 import { generateConversationId, generateConversationTitle, STORAGE_VERSION } from '~/types/chat'
 import type { Conversation, ConversationSource } from '~/types/chat'
-
-const execAsync = promisify(exec)
 
 interface SubmitJobRequest {
   message: string
@@ -26,6 +23,7 @@ interface SubmitJobRequest {
   permissionMode?: 'plan' | 'ask' | 'auto' | 'bypass'
   cwd?: string
   featureId?: string
+  baseBranch?: string
   providerId?: string
   providerModelKey?: string
 }
@@ -52,31 +50,46 @@ export default defineEventHandler(async (event) => {
     ? `/tmp/sc-${body.featureId}-${conversationId}`
     : `/tmp/sc-${conversationId}`
 
+  const requestedBaseBranch = body.baseBranch?.trim()
+  if (requestedBaseBranch && !isUsableBaseBranchName(requestedBaseBranch)) {
+    throw createError({ statusCode: 400, statusMessage: `Invalid base branch "${requestedBaseBranch}"` })
+  }
+
   let worktreeResult: { success: boolean; worktreePath?: string; branch?: string; baseBranch?: string } = { success: false }
   try {
-    const baseBranch = await resolvePreferredBaseBranch(projectDir)
+    const baseBranch = requestedBaseBranch || await resolvePreferredBaseBranch(projectDir)
     if (!baseBranch) {
       throw new Error('Unable to resolve base branch for server job worktree')
     }
-    const { stdout: baseHead } = await execAsync(`git rev-parse --verify "refs/heads/${baseBranch}^{commit}"`, { cwd: projectDir })
-    const base = baseHead.trim()
+    const base = await execGitCommand(
+      ['rev-parse', '--verify', `refs/heads/${baseBranch}^{commit}`],
+      projectDir,
+    ).catch(() => {
+      if (requestedBaseBranch) {
+        throw createError({ statusCode: 400, statusMessage: `Base branch "${baseBranch}" does not exist` })
+      }
+      throw new Error(`Base branch "${baseBranch}" does not exist`)
+    })
 
     // Check if branch already exists (for feature branches)
     if (body.featureId) {
       try {
-        await execAsync(`git rev-parse --verify "${branchName}"`, { cwd: projectDir })
+        await execGitCommand(['rev-parse', '--verify', branchName], projectDir)
         // Branch exists — skip worktree creation
         console.log(`[jobs.post] Branch "${branchName}" already exists, skipping worktree creation`)
       } catch {
         // Branch doesn't exist — create worktree
-        await execAsync(`git worktree add -b "${branchName}" "${worktreePath}" "${base}"`, { cwd: projectDir })
+        await execGitCommand(['worktree', 'add', '-b', branchName, worktreePath, base], projectDir)
         worktreeResult = { success: true, worktreePath, branch: branchName, baseBranch }
       }
     } else {
-      await execAsync(`git worktree add -b "${branchName}" "${worktreePath}" "${base}"`, { cwd: projectDir })
+      await execGitCommand(['worktree', 'add', '-b', branchName, worktreePath, base], projectDir)
       worktreeResult = { success: true, worktreePath, branch: branchName, baseBranch }
     }
   } catch (err) {
+    if (requestedBaseBranch && typeof err === 'object' && err && 'statusCode' in err) {
+      throw err
+    }
     console.warn('[jobs.post] Failed to create worktree for server job:', err instanceof Error ? err.message : err)
   }
 
@@ -109,6 +122,7 @@ export default defineEventHandler(async (event) => {
     requestId: `req-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
     permissionMode: body.permissionMode || 'bypass',
     cwd: conversationCwd,
+    baseBranch: worktreeResult.baseBranch || requestedBaseBranch,
     featureId: body.featureId,
     providerId: body.providerId,
     providerModelKey: body.providerModelKey,

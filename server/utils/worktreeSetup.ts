@@ -9,25 +9,23 @@
  * that POST /api/jobs and the client UI already perform.
  */
 
-import { exec } from 'node:child_process'
-import { promisify } from 'node:util'
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { getProjectDir } from './projectDir'
 import { upsertConversationInStorage } from './conversationStore'
 import { getSpecCatDataDir } from './specCatStore'
-import { resolvePreferredBaseBranch } from './baseBranch'
+import { isUsableBaseBranchName, resolvePreferredBaseBranch } from './baseBranch'
+import { execGitCommand } from './gitExec'
 import { generateConversationTitle, STORAGE_VERSION } from '~/types/chat'
 import type { Conversation } from '~/types/chat'
-
-const execAsync = promisify(exec)
 
 export interface WorktreeSetupResult {
   success: boolean
   cwd: string
   worktreeBranch?: string
   baseBranch?: string
+  error?: string
 }
 
 /**
@@ -42,6 +40,7 @@ export async function setupConversationWorktree(options: {
   conversationId: string
   message: string
   featureId?: string
+  baseBranch?: string
   providerId?: string
   providerModelKey?: string
 }): Promise<WorktreeSetupResult> {
@@ -65,15 +64,27 @@ export async function setupConversationWorktree(options: {
   }
 
   try {
-    const baseBranch = await resolvePreferredBaseBranch(projectDir)
+    const requestedBaseBranch = options.baseBranch?.trim()
+    if (requestedBaseBranch && !isUsableBaseBranchName(requestedBaseBranch)) {
+      throw new Error(`Invalid base branch "${requestedBaseBranch}"`)
+    }
+
+    const baseBranch = requestedBaseBranch || await resolvePreferredBaseBranch(projectDir)
     if (!baseBranch) {
       throw new Error('Unable to resolve base branch for conversation worktree')
     }
 
+    const baseHead = await execGitCommand(
+      ['rev-parse', '--verify', `refs/heads/${baseBranch}^{commit}`],
+      projectDir,
+    ).catch(() => {
+      throw new Error(`Base branch "${baseBranch}" does not exist`)
+    })
+
     // Check if branch already exists (recovery vs creation)
     let branchExists = false
     try {
-      await execAsync(`git rev-parse --verify "${branchName}"`, { cwd: projectDir })
+      await execGitCommand(['rev-parse', '--verify', branchName], projectDir)
       branchExists = true
     } catch {
       // Branch doesn't exist
@@ -81,18 +92,11 @@ export async function setupConversationWorktree(options: {
 
     if (branchExists) {
       // Recovery: branch exists but directory was cleaned up
-      await execAsync('git worktree prune', { cwd: projectDir })
-      await execAsync(`git worktree add "${worktreePath}" "${branchName}"`, { cwd: projectDir })
+      await execGitCommand(['worktree', 'prune'], projectDir)
+      await execGitCommand(['worktree', 'add', worktreePath, branchName], projectDir)
     } else {
       // Creation: new branch + worktree
-      const { stdout: baseHead } = await execAsync(
-        `git rev-parse --verify "refs/heads/${baseBranch}^{commit}"`,
-        { cwd: projectDir },
-      )
-      await execAsync(
-        `git worktree add -b "${branchName}" "${worktreePath}" "${baseHead.trim()}"`,
-        { cwd: projectDir },
-      )
+      await execGitCommand(['worktree', 'add', '-b', branchName, worktreePath, baseHead], projectDir)
     }
 
     console.log('[worktreeSetup] Worktree ready:', { conversationId, worktreePath, branchName, branchExists })
@@ -102,8 +106,9 @@ export async function setupConversationWorktree(options: {
 
     return { success: true, cwd: worktreePath, worktreeBranch: branchName, baseBranch }
   } catch (err) {
-    console.warn('[worktreeSetup] Failed:', err instanceof Error ? err.message : err)
-    return { success: false, cwd: projectDir }
+    const error = err instanceof Error ? err.message : String(err)
+    console.warn('[worktreeSetup] Failed:', error)
+    return { success: false, cwd: projectDir, error }
   }
 }
 
@@ -116,6 +121,7 @@ async function ensureConversationWorktreeInfo(
     conversationId: string
     message: string
     featureId?: string
+    baseBranch?: string
     providerId?: string
     providerModelKey?: string
   },

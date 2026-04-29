@@ -46,6 +46,7 @@ export interface ChatJobMessage {
   permissionMode?: PermissionMode
   cwd?: string
   worktreeBranch?: string
+  baseBranch?: string
   featureId?: string
   providerId?: string
   providerModelKey?: string
