@@ -22,7 +22,7 @@ const chatStore = useChatStore()
 const gitGraphStore = useGitGraphStore()
 const { isDark, toggleTheme } = useTheme()
 const { tryResumeStreaming } = useChatStream()
-useGlobalNotifications()
+const { resumeActiveServerJobs } = useGlobalNotifications()
 
 const isDiffViewerOpen = computed(() => gitGraphStore.diffViewerFile !== null)
 const isChatFullscreen = computed(() => layoutStore.isChatFullscreen)
@@ -79,6 +79,7 @@ onMounted(async () => {
   await Promise.allSettled(
     streamingConversationIds.map(conversationId => tryResumeStreaming(conversationId)),
   )
+  await resumeActiveServerJobs()
 
   try {
     const response = await $fetch<{ cwd: string }>('/api/cwd')

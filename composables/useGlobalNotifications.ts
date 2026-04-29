@@ -550,8 +550,8 @@ export function useGlobalNotifications() {
   }
 
   /**
-   * After connecting, check for active server-initiated jobs that were
-   * running before a page reload and resume streaming for them.
+   * After the initial conversation load, check for server-initiated jobs that
+   * were running before a page reload and resume streaming for them.
    */
   async function resumeActiveServerJobs() {
     try {
@@ -567,7 +567,7 @@ export function useGlobalNotifications() {
       const activeServerJobs = allJobs.filter(j =>
         j.source !== 'user'
         && (j.status === 'running' || j.status === 'waiting_permission' || j.status === 'queued'
-          || (j.status === 'completed' && j.eventCount > 0))
+          || (j.status === 'done' && j.eventCount > 0))
       )
 
       if (activeServerJobs.length === 0) return
@@ -602,13 +602,11 @@ export function useGlobalNotifications() {
 
   onMounted(() => {
     connect()
-    // Check for server jobs that were running before page reload
-    resumeActiveServerJobs()
   })
 
   onUnmounted(() => {
     disconnect()
   })
 
-  return { connect, disconnect }
+  return { connect, disconnect, resumeActiveServerJobs }
 }
