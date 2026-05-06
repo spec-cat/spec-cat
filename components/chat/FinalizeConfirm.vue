@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, onMounted } from 'vue'
-import { CheckIcon, XMarkIcon, SparklesIcon, ChevronUpDownIcon } from '@heroicons/vue/24/outline'
+import { CheckIcon, XMarkIcon, SparklesIcon, ChevronUpDownIcon, StopCircleIcon } from '@heroicons/vue/24/outline'
 import {
   getSelectableBaseBranchNameFromBranch,
   getSelectableBaseBranchLabel,
@@ -25,6 +25,9 @@ const commitMessage = ref('')
 const commitCount = ref<number | null>(null)
 const loading = ref(false)
 const generating = ref(false)
+const generateStatus = ref<'idle' | 'running' | 'done' | 'error' | 'aborted'>('idle')
+const generateError = ref('')
+const generateAbortController = ref<AbortController | null>(null)
 const targetBranch = ref(isSelectableBaseBranchName(props.baseBranch) ? props.baseBranch : '')
 const branches = ref<string[]>([])
 const branchesLoading = ref(false)
@@ -32,20 +35,47 @@ const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const loadingTargetLabel = computed(() => getSelectableBaseBranchLabel(targetBranch.value || props.baseBranch))
 
 async function generateMessage() {
+  if (generating.value) return
   generating.value = true
+  generateStatus.value = 'running'
+  generateError.value = ''
+  const controller = new AbortController()
+  generateAbortController.value = controller
   try {
     const res = await $fetch<{ success: boolean; message?: string; error?: string }>('/api/chat/generate-commit-message', {
       method: 'POST',
-      body: { conversationId: props.worktreePath.split('/').pop()?.replace('sc-', '') || '', worktreePath: props.worktreePath },
+      signal: controller.signal,
+      body: {
+        conversationId: props.worktreePath.split('/').pop()?.replace('sc-', '') || '',
+        worktreePath: props.worktreePath,
+        worktreeBranch: props.worktreeBranch,
+        baseBranch: targetBranch.value || props.baseBranch,
+      },
     })
     if (res.success && res.message) {
       commitMessage.value = res.message
+      generateStatus.value = 'done'
+    } else {
+      generateStatus.value = 'error'
+      generateError.value = res.error || 'Failed to generate commit message'
     }
-  } catch {
-    // silently fail — user can still type manually
+  } catch (err) {
+    if (controller.signal.aborted) {
+      generateStatus.value = 'aborted'
+    } else {
+      generateStatus.value = 'error'
+      generateError.value = err instanceof Error ? err.message : String(err)
+    }
   } finally {
     generating.value = false
+    if (generateAbortController.value === controller) {
+      generateAbortController.value = null
+    }
   }
+}
+
+function abortGenerateMessage() {
+  generateAbortController.value?.abort()
 }
 
 onMounted(async () => {
@@ -156,12 +186,49 @@ function handleConfirm() {
       />
       <button
         type="button"
-        :disabled="loading || generating"
+        :disabled="loading || generating || branchesLoading || !targetBranch"
         class="absolute right-1.5 top-1.5 p-0.5 rounded text-retro-muted hover:text-retro-cyan transition-colors disabled:opacity-40"
         title="Generate commit message"
         @click="generateMessage"
       >
         <SparklesIcon class="w-4 h-4" :class="{ 'animate-spin': generating }" />
+      </button>
+    </div>
+
+    <div
+      v-if="generateStatus !== 'idle'"
+      class="flex items-center justify-between gap-3 rounded border border-retro-border bg-retro-black px-2 py-1.5 text-xs font-mono"
+    >
+      <div class="min-w-0">
+        <div class="flex items-center gap-2">
+          <SparklesIcon
+            class="w-3.5 h-3.5 text-retro-cyan shrink-0"
+            :class="{ 'animate-spin': generateStatus === 'running' }"
+          />
+          <span class="text-retro-text truncate">
+            {{
+              generateStatus === 'running'
+                ? `Generating from ${targetBranch}...`
+                : generateStatus === 'done'
+                  ? 'Commit message generated'
+                  : generateStatus === 'aborted'
+                    ? 'Generation stopped'
+                    : 'Generation failed'
+            }}
+          </span>
+        </div>
+        <div v-if="generateError" class="mt-0.5 text-retro-red truncate">
+          {{ generateError }}
+        </div>
+      </div>
+      <button
+        v-if="generateStatus === 'running'"
+        type="button"
+        class="shrink-0 p-0.5 rounded text-retro-muted hover:text-retro-red transition-colors"
+        title="Stop generation"
+        @click="abortGenerateMessage"
+      >
+        <StopCircleIcon class="w-4 h-4" />
       </button>
     </div>
 

@@ -16,7 +16,8 @@ import { readSpecCatStore } from './specCatStore'
 export async function sendMessage(
   prompt: string,
   workingDirectory: string,
-  modelKey?: string
+  modelKey?: string,
+  abortSignal?: AbortSignal,
 ): Promise<{ success: boolean; text?: string; error?: string }> {
   try {
     const modelId = getClaudeModelId(modelKey)
@@ -25,6 +26,7 @@ export async function sendMessage(
       prompt,
       modelId,
       includePartial: false,
+      abortSignal,
     })
 
     if (result.success) {
