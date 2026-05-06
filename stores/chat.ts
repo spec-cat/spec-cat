@@ -259,6 +259,7 @@ export const useChatStore = defineStore('chat', () => {
         archivedConversations.value = Array.isArray(response.archivedConversations)
           ? response.archivedConversations
           : [response.archived, ...archivedConversations.value]
+        sortConversations()
         sortArchivedConversations()
 
         if (previewingConversationId.value === id) {

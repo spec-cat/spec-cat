@@ -330,3 +330,58 @@ describe('chat store — session state', () => {
     expect(store.lastError).toBe('boom')
   })
 })
+
+describe('chat store — conversations', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.unstubAllGlobals()
+  })
+
+  it('keeps active conversations sorted by createdAt desc after archive', async () => {
+    const store = useChatStore() as any
+    const oldConversation = makeConversation({
+      id: 'old',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    })
+    const archivedConversation = makeConversation({
+      id: 'archived',
+      createdAt: '2026-01-02T00:00:00.000Z',
+      updatedAt: '2026-01-02T00:00:00.000Z',
+    })
+    const newConversation = makeConversation({
+      id: 'new',
+      createdAt: '2026-01-03T00:00:00.000Z',
+      updatedAt: '2026-01-03T00:00:00.000Z',
+    })
+
+    store.conversations.push(newConversation, archivedConversation, oldConversation)
+    store.activeConversationId = archivedConversation.id
+
+    vi.stubGlobal('$fetch', vi.fn(async (url: string) => {
+      if (url === `/api/conversations/${archivedConversation.id}/archive`) {
+        return {
+          success: true,
+          archived: {
+            id: 'archive-1',
+            sourceConversationId: archivedConversation.id,
+            title: archivedConversation.title,
+            messages: [],
+            createdAt: archivedConversation.createdAt,
+            updatedAt: archivedConversation.updatedAt,
+            archivedAt: '2026-01-04T00:00:00.000Z',
+            cwd: archivedConversation.cwd,
+          },
+          conversations: [oldConversation, newConversation],
+          archivedConversations: [],
+        }
+      }
+      return { success: true }
+    }))
+
+    await expect(store.archiveConversation(archivedConversation.id)).resolves.toEqual({ success: true })
+
+    expect(store.conversations.map((conversation: Conversation) => conversation.id)).toEqual(['new', 'old'])
+    expect(store.activeConversationId).toBe('new')
+  })
+})
