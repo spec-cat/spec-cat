@@ -5,9 +5,9 @@ import { processCodexJsonLine } from '~/server/utils/codexStreamParser'
 import { accessSync, constants, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync } from 'node:fs'
 import { execSync, spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { transformCodexEvent } from '~/server/utils/uiAdapter'
+import { ensureSpecCatTmpDir } from '~/server/utils/worktreePaths'
 
 function detectCodexCli(): string | null {
   if (typeof process.env.CODEX_CLI_PATH === 'string' && process.env.CODEX_CLI_PATH.length > 0 && existsSync(process.env.CODEX_CLI_PATH)) {
@@ -124,13 +124,13 @@ function resolveCodexHomeForSpawn(ephemeral: boolean): string | null {
   // rollout/session records in ~/.codex cannot poison the retry attempt.
   if (ephemeral) {
     try {
-      const tempHome = mkdtempSync(join(tmpdir(), 'spec-cat-codex-home-'))
+      const tempHome = mkdtempSync(join(ensureSpecCatTmpDir(), 'codex-home-'))
       seedCodexAuth(tempHome)
       return tempHome
     } catch {
       // Fall back to shared temp path if mkdtemp fails.
-      const fallbackEphemeralHome = '/tmp/spec-cat-codex-home'
       try {
+        const fallbackEphemeralHome = join(ensureSpecCatTmpDir(), 'codex-home')
         mkdirSync(fallbackEphemeralHome, { recursive: true })
         seedCodexAuth(fallbackEphemeralHome)
         return fallbackEphemeralHome
@@ -170,8 +170,8 @@ function resolveCodexHomeForSpawn(ephemeral: boolean): string | null {
     // Fall through to a writable fallback.
   }
 
-  const fallbackCodexHome = '/tmp/spec-cat-codex-home'
   try {
+    const fallbackCodexHome = join(ensureSpecCatTmpDir(), 'codex-home')
     mkdirSync(fallbackCodexHome, { recursive: true })
     seedCodexAuth(fallbackCodexHome)
     return fallbackCodexHome

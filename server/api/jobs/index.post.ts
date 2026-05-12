@@ -12,6 +12,7 @@ import { getProjectDir } from '~/server/utils/projectDir'
 import { upsertConversationInStorage } from '~/server/utils/conversationStore'
 import { isUsableBaseBranchName, resolvePreferredBaseBranch } from '~/server/utils/baseBranch'
 import { execGitCommand } from '~/server/utils/gitExec'
+import { getChatWorktreePath } from '~/server/utils/worktreePaths'
 import { generateConversationId, generateConversationTitle, STORAGE_VERSION } from '~/types/chat'
 import type { Conversation, ConversationSource } from '~/types/chat'
 
@@ -46,9 +47,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Invalid featureId format (alphanumeric, hyphens, underscores only)' })
   }
   const branchName = body.featureId || `sc/${conversationId}`
-  const worktreePath = body.featureId
-    ? `/tmp/sc-${body.featureId}-${conversationId}`
-    : `/tmp/sc-${conversationId}`
+  const worktreePath = getChatWorktreePath(conversationId, body.featureId)
 
   const requestedBaseBranch = body.baseBranch?.trim()
   if (requestedBaseBranch && !isUsableBaseBranchName(requestedBaseBranch)) {

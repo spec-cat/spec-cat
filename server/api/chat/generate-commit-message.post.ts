@@ -12,6 +12,7 @@ import { logger } from '~/server/utils/logger'
 import { getProjectDir } from '~/server/utils/projectDir'
 import { guardServerProviderCapability } from '~/server/utils/aiProviderSelection'
 import { resolveExistingBaseBranch } from '~/server/utils/baseBranch'
+import { getChatWorktreePath } from '~/server/utils/worktreePaths'
 
 const execFileAsync = promisify(execFile)
 
@@ -33,7 +34,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const { conversationId } = body
-  const worktreePath = body.worktreePath || `/tmp/sc-${conversationId}`
+  const worktreePath = body.worktreePath || getChatWorktreePath(conversationId)
   const projectDir = getProjectDir()
   const abortController = new AbortController()
   const abortRequest = () => abortController.abort()

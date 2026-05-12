@@ -9,6 +9,7 @@ import { promisify } from 'node:util'
 import { join } from 'node:path'
 import { logger } from './logger'
 import { resolvePreferredBaseBranch } from './baseBranch'
+import { getFeatureWorktreePath } from './worktreePaths'
 
 const execAsync = promisify(exec)
 
@@ -133,7 +134,7 @@ export async function createWorktreeForFeature(
   const base = baseBranch || await resolvePreferredBaseBranch(projectPath) || 'main'
   const randomId = generateRandomId()
   const branchName = featureId
-  const worktreePath = `/tmp/${featureId}-${randomId}`
+  const worktreePath = getFeatureWorktreePath(featureId, randomId)
   const existingBranch = await branchExists(projectPath, branchName)
 
   logger.git.info('Creating worktree', {

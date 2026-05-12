@@ -13,6 +13,7 @@ import { jobQueue, normalizeImageAttachments } from '~/server/utils/jobQueue'
 import type { ChatJobMessage } from '~/server/utils/jobQueue'
 import { startPersisting } from '~/server/utils/jobPersister'
 import { setupConversationWorktree } from '~/server/utils/worktreeSetup'
+import { isSpecCatWorktreePath } from '~/server/utils/worktreePaths'
 import { getProjectDir } from '~/server/utils/projectDir'
 
 type PermissionMode = 'plan' | 'ask' | 'auto' | 'bypass'
@@ -246,7 +247,7 @@ async function handleChatMessage(peer: any, msg: ChatMessage) {
   // external WS clients may not, so we handle it here.
   let resolvedCwd = msg.cwd
   let resolvedWorktreeBranch = msg.worktreeBranch
-  if (!resolvedCwd || !resolvedCwd.startsWith('/tmp/sc-')) {
+  if (!resolvedCwd || !isSpecCatWorktreePath(resolvedCwd)) {
     const wtResult = await setupConversationWorktree({
       conversationId: msg.conversationId,
       message: msg.message,

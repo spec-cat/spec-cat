@@ -17,6 +17,7 @@ import { upsertConversationInStorage } from './conversationStore'
 import { getSpecCatDataDir } from './specCatStore'
 import { isUsableBaseBranchName, resolvePreferredBaseBranch } from './baseBranch'
 import { execGitCommand } from './gitExec'
+import { getChatWorktreePath } from './worktreePaths'
 import { generateConversationTitle, STORAGE_VERSION } from '~/types/chat'
 import type { Conversation } from '~/types/chat'
 
@@ -54,9 +55,7 @@ export async function setupConversationWorktree(options: {
   }
 
   const branchName = featureId || `sc/${conversationId}`
-  const worktreePath = featureId
-    ? `/tmp/sc-${featureId}-${conversationId}`
-    : `/tmp/sc-${conversationId}`
+  const worktreePath = getChatWorktreePath(conversationId, featureId)
 
   // If directory already exists, just return it
   if (existsSync(worktreePath)) {

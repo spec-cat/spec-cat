@@ -8,6 +8,7 @@ import { promisify } from 'node:util'
 import { logger } from '~/server/utils/logger'
 import { getProjectDir } from '~/server/utils/projectDir'
 import { resolvePreferredBaseBranch } from '~/server/utils/baseBranch'
+import { getChatWorktreePath } from '~/server/utils/worktreePaths'
 
 const execAsync = promisify(exec)
 
@@ -28,9 +29,7 @@ export default defineEventHandler(async (event) => {
   // Feature-originated conversations use the featureId as branch name (e.g. "001-auth")
   // New chat conversations use sc/conv-xxx branches
   const branchName = featureId || `sc/${conversationId}`
-  const worktreePath = featureId
-    ? `/tmp/sc-${featureId}-${conversationId}`
-    : `/tmp/sc-${conversationId}`
+  const worktreePath = getChatWorktreePath(conversationId, featureId)
 
   logger.chat.info('Creating chat worktree', { conversationId, branchName, worktreePath })
   const requestStart = process.hrtime.bigint()

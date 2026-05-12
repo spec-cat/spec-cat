@@ -8,6 +8,7 @@ import { existsSync } from 'node:fs'
 import { eventBus, GLOBAL_CHANNEL, type JobEvent } from './eventBus'
 import { getProjectDir } from './projectDir'
 import { ensureChatWorktree } from './ensureChatWorktree'
+import { isSpecCatWorktreePath } from './worktreePaths'
 import { loadSpecContext } from './specContext'
 import { guardProviderCapability, resolveServerProviderSelection } from './aiProviderSelection'
 import type { AIProviderStreamController } from './aiProvider'
@@ -461,8 +462,8 @@ class ChatJobQueue {
       }
     }
 
-    // Recover worktree if /tmp was wiped
-    if (workingDirectory.startsWith('/tmp/sc-') && !existsSync(workingDirectory)) {
+    // Recover worktree if the spec-cat tmp directory was wiped
+    if (isSpecCatWorktreePath(workingDirectory) && !existsSync(workingDirectory)) {
       const result = await ensureChatWorktree(projectDir, workingDirectory, msg.worktreeBranch)
       if (result.recovered) {
         this.emitAndBuffer(job, { type: 'worktree_recovered' })

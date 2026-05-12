@@ -11,6 +11,7 @@ import { rm } from 'node:fs/promises'
 import { resolveExistingBaseBranch } from '~/server/utils/baseBranch'
 import { logger } from '~/server/utils/logger'
 import { getProjectDir } from '~/server/utils/projectDir'
+import { getChatWorktreePath } from '~/server/utils/worktreePaths'
 import type { RebaseContinueRequest, FinalizeResponse } from '~/types/chat'
 
 const execAsync = promisify(exec)
@@ -33,7 +34,7 @@ export default defineEventHandler(async (event): Promise<FinalizeResponse> => {
   const { conversationId, commitMessage } = body
   const projectDir = getProjectDir()
   const branchName = body.worktreeBranch || `sc/${conversationId}`
-  const worktreePath = body.worktreePath || `/tmp/sc-${conversationId}`
+  const worktreePath = body.worktreePath || getChatWorktreePath(conversationId)
 
   if (!existsSync(worktreePath)) {
     return { success: false, error: 'Worktree directory not found.' }

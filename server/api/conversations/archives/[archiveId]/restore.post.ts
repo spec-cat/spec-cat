@@ -5,6 +5,7 @@ import { generateConversationId } from '~/types/chat'
 import { logger } from '~/server/utils/logger'
 import { getProjectDir } from '~/server/utils/projectDir'
 import { resolvePreferredBaseBranch } from '~/server/utils/baseBranch'
+import { getChatWorktreePath } from '~/server/utils/worktreePaths'
 import { readConversationStorageState, writeConversationStorageState } from '../../../../utils/conversationStore'
 
 const MAX_CONVERSATIONS = 100
@@ -46,7 +47,7 @@ export default defineEventHandler(async (event) => {
   const projectDir = getProjectDir()
   const restoredId = generateConversationId()
   const worktreeBranch = `sc/${restoredId}`
-  const worktreePath = `/tmp/sc-${restoredId}`
+  const worktreePath = getChatWorktreePath(restoredId)
 
   let baseBranch = body.baseBranch?.trim() || ''
   if (!baseBranch) {

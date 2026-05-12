@@ -1,14 +1,14 @@
 import { existsSync, realpathSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
+import { getSpecCatTmpDir } from './worktreePaths'
 
-const ALLOWED_ROOT_PREFIXES = ['/tmp/', '/private/tmp/'] as const
 const ALLOWED_WORKTREE_NAME_PATTERNS = [
   /^sc-[a-z0-9-]+$/, // Chat worktrees: sc-<conversationId> or sc-<featureId>-<conversationId>
   /^[a-z0-9][a-z0-9-]*-[a-z0-9]{8}$/, // Feature worktrees: <feature-or-branch-name>-<randomId>
 ] as const
 
 function hasAllowedRootPrefix(path: string): boolean {
-  return ALLOWED_ROOT_PREFIXES.some(prefix => path.startsWith(prefix))
+  return path.startsWith(`${resolve(getSpecCatTmpDir())}/`)
 }
 
 function hasAllowedWorktreeName(path: string): boolean {
@@ -26,7 +26,7 @@ export function validateWorktreePath(worktreePath: string): void {
     throw createError({ statusCode: 404, message: 'Worktree not found' })
   }
 
-  // Resolve symlinks to avoid rejecting valid tmp aliases (e.g. /tmp -> /private/tmp on macOS).
+  // Resolve symlinks to prevent accepting paths outside the spec-cat tmp directory.
   let normalizedRealPath = normalizedInputPath
   try {
     normalizedRealPath = realpathSync(normalizedInputPath)

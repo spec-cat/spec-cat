@@ -11,6 +11,7 @@ import type { WorktreeCreateRequest, WorktreeCreateResponse, Worktree } from '~/
 import { logger } from '~/server/utils/logger'
 import { getProjectDir } from '~/server/utils/projectDir'
 import { resolvePreferredBaseBranch } from '~/server/utils/baseBranch'
+import { getFeatureWorktreePath } from '~/server/utils/worktreePaths'
 
 const execAsync = promisify(exec)
 
@@ -118,7 +119,7 @@ export default defineEventHandler(async (event): Promise<WorktreeCreateResponse>
 
     // Create worktree
     const randomId = generateRandomId()
-    const worktreePath = `/tmp/${branchName}-${randomId}`
+    const worktreePath = getFeatureWorktreePath(branchName, randomId)
 
     await execAsync(`git worktree add "${worktreePath}" "${branchName}"`, {
       cwd: workingDirectory,

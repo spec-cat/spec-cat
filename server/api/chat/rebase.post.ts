@@ -12,6 +12,7 @@ import { existsSync } from 'node:fs'
 import { logger } from '~/server/utils/logger'
 import { resolveExistingBaseBranch } from '~/server/utils/baseBranch'
 import { getProjectDir } from '~/server/utils/projectDir'
+import { getChatWorktreePath } from '~/server/utils/worktreePaths'
 import type { RebaseSyncRequest, FinalizeResponse } from '~/types/chat'
 
 const execAsync = promisify(exec)
@@ -46,7 +47,7 @@ export default defineEventHandler(async (event): Promise<FinalizeResponse> => {
 
   const { conversationId } = body
   const projectDir = getProjectDir()
-  const worktreePath = body.worktreePath || `/tmp/sc-${conversationId}`
+  const worktreePath = body.worktreePath || getChatWorktreePath(conversationId)
 
   let worktreeBranch = ''
   if (existsSync(worktreePath)) {

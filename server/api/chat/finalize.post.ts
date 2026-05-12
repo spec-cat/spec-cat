@@ -14,6 +14,7 @@ import { resolveExistingBaseBranch } from '~/server/utils/baseBranch'
 import { logger } from '~/server/utils/logger'
 import { getProjectDir } from '~/server/utils/projectDir'
 import { guardServerProviderCapability } from '~/server/utils/aiProviderSelection'
+import { getChatWorktreePath } from '~/server/utils/worktreePaths'
 import type { FinalizeRequest, FinalizeResponse } from '~/types/chat'
 
 const execAsync = promisify(exec)
@@ -57,7 +58,7 @@ export default defineEventHandler(async (event): Promise<FinalizeResponse> => {
 
   const projectDir = getProjectDir()
   const branchName = body.worktreeBranch || `sc/${conversationId}`
-  const worktreePath = body.worktreePath || `/tmp/sc-${conversationId}`
+  const worktreePath = body.worktreePath || getChatWorktreePath(conversationId)
 
   logger.chat.info('Finalizing conversation', { conversationId, branchName })
 

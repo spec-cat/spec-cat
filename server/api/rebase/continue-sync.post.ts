@@ -8,6 +8,7 @@ import { exec } from 'node:child_process'
 import { promisify } from 'node:util'
 import { existsSync } from 'node:fs'
 import { logger } from '~/server/utils/logger'
+import { getChatWorktreePath } from '~/server/utils/worktreePaths'
 import type { RebaseSyncRequest, FinalizeResponse } from '~/types/chat'
 
 const execAsync = promisify(exec)
@@ -28,7 +29,7 @@ export default defineEventHandler(async (event): Promise<FinalizeResponse> => {
   }
 
   const { conversationId } = body
-  const worktreePath = body.worktreePath || `/tmp/sc-${conversationId}`
+  const worktreePath = body.worktreePath || getChatWorktreePath(conversationId)
 
   if (!existsSync(worktreePath)) {
     return { success: false, error: 'Worktree directory not found.' }
