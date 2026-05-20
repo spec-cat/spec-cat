@@ -3,7 +3,6 @@ import { GRAPH_CONSTANTS } from "~/types/git";
 import {
   getBranchesSync,
   getTags,
-  getCommitCount,
 } from "~/server/utils/git";
 import { execGit } from "~/server/utils/gitExec";
 import { parseGitLog, generateBranchColor } from "~/server/utils/gitParsers";
@@ -20,7 +19,7 @@ export default defineEventHandler(async (event) => {
     // Get branches and tags first (needed for decoration parsing)
     const branchNames = getBranchesSync(workingDirectory);
     const tagNames = getTags(workingDirectory);
-    const totalCount = getCommitCount(workingDirectory);
+    const totalCount = getVisibleCommitCount(workingDirectory);
 
     // Get HEAD commit hash
     const headHash = execGit(workingDirectory, "rev-parse HEAD").trim();
@@ -35,7 +34,7 @@ export default defineEventHandler(async (event) => {
     // Format: hash|shortHash|author|email|timestamp|message|parentHashes|decorations
     const logOutput = execGit(
       workingDirectory,
-      `log --all --format="%H|%h|%an|%ae|%at|%s|%P" --skip=${offset} -n ${limit}`
+      `log --exclude=refs/stash --all --topo-order --format="%H|%h|%an|%ae|%at|%s|%P" --skip=${offset} -n ${limit}`
     );
 
     const commits = parseGitLog(logOutput, branchNames, tagNames);
@@ -140,6 +139,15 @@ function getBranchCommitMap(cwd: string): { branchMap: Map<string, string>; loca
   }
 
   return { branchMap, localBranches };
+}
+
+function getVisibleCommitCount(cwd: string): number {
+  try {
+    const output = execGit(cwd, 'rev-list --exclude=refs/stash --all --count')
+    return parseInt(output, 10) || 0
+  } catch {
+    return 0
+  }
 }
 
 /**

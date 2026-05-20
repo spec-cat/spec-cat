@@ -478,7 +478,7 @@ export interface GraphRowData {
   lane: number             // Lane index (0 = mainline)
   color: string            // Lane color
   nodeType: 'regular' | 'merge' | 'head' | 'stash' | 'uncommitted'
-  isMainline: boolean      // Whether this commit is on HEAD's first-parent chain (FR-011)
+  isMainline: boolean      // Whether this commit is on the visible first-parent chain (FR-011)
   connections: GraphSegment[]
 }
 

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { parseGitLog, parseGitStatusPorcelain, generateBranchColor, parseUnifiedDiff } from '~/server/utils/gitParsers'
+import { getBranchesSync } from '~/server/utils/git'
 
 describe('parseGitLog', () => {
   it('returns empty array for blank output', () => {
@@ -97,6 +102,25 @@ describe('generateBranchColor', () => {
     }
     // Expect at least several distinct colors from a 12-color palette
     expect(colors.size).toBeGreaterThan(3)
+  })
+})
+
+describe('getBranchesSync', () => {
+  it('omits remote HEAD aliases from branch names', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'spec-cat-git-'))
+
+    try {
+      execFileSync('git', ['init', '-b', 'main'], { cwd: repo })
+      execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: repo })
+      execFileSync('git', ['config', 'user.name', 'Test User'], { cwd: repo })
+      execFileSync('git', ['commit', '--allow-empty', '-m', 'initial'], { cwd: repo })
+      execFileSync('git', ['update-ref', 'refs/remotes/origin/main', 'HEAD'], { cwd: repo })
+      execFileSync('git', ['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main'], { cwd: repo })
+
+      expect(getBranchesSync(repo)).toEqual(['main', 'origin/main'])
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
   })
 })
 

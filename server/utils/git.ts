@@ -293,8 +293,17 @@ export function isGitRepositorySync(cwd: string): boolean {
  */
 export function getBranchesSync(cwd: string): string[] {
   try {
-    const output = execGit(cwd, "branch -a --format='%(refname:short)'")
-    return output.split('\n').filter(Boolean)
+    const output = execGit(cwd, "branch -a --format='%(refname) %(refname:short)'")
+    return output.split('\n').filter(Boolean).flatMap((line) => {
+      const spaceIndex = line.indexOf(' ')
+      if (spaceIndex < 0) return []
+
+      const fullRef = line.substring(0, spaceIndex)
+      const shortName = line.substring(spaceIndex + 1)
+      if (fullRef.endsWith('/HEAD') || !shortName) return []
+
+      return [shortName]
+    })
   } catch {
     return []
   }

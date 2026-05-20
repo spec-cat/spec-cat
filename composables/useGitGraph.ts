@@ -39,7 +39,9 @@ export function useGitGraph() {
     const result = new Map<string, GraphRowData>();
     if (commits.length === 0) return result;
 
-    // Step 1: Build mainline set by following first-parent chain from HEAD
+    // Step 1: Build the visible mainline by following the first-parent chain
+    // from the first row returned by git log. This keeps lane 0 aligned with
+    // the displayed history order even when HEAD is not the newest visible ref.
     const mainlineSet = new Set<string>();
     const commitMap = new Map<string, GitLogCommit>();
 
@@ -47,9 +49,9 @@ export function useGitGraph() {
       commitMap.set(commit.hash, commit);
     }
 
-    const headCommit = commits.find((c) => c.isHead) || commits[0];
-    if (headCommit) {
-      let current: GitLogCommit | undefined = headCommit;
+    const mainlineStart = commits[0];
+    if (mainlineStart) {
+      let current: GitLogCommit | undefined = mainlineStart;
       while (current) {
         mainlineSet.add(current.hash);
         const firstParentHash: string | undefined = current.parents?.[0];
