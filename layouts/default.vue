@@ -1,6 +1,14 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, computed } from 'vue'
-import { Cog6ToothIcon, SunIcon, MoonIcon } from '@heroicons/vue/24/outline'
+import { onMounted, onUnmounted, ref, computed, watch } from 'vue'
+import {
+  ChatBubbleLeftRightIcon,
+  CodeBracketSquareIcon,
+  Cog6ToothIcon,
+  DocumentTextIcon,
+  MoonIcon,
+  QueueListIcon,
+  SunIcon,
+} from '@heroicons/vue/24/outline'
 import FeaturesPanel from '~/components/features/FeaturesPanel.vue'
 import ConversationsPanel from '~/components/conversations/ConversationsPanel.vue'
 import ChatPanel from '~/components/chat/ChatPanel.vue'
@@ -25,12 +33,32 @@ const { tryResumeStreaming } = useChatStream()
 const { resumeActiveServerJobs } = useGlobalNotifications()
 
 const isDiffViewerOpen = computed(() => gitGraphStore.diffViewerFile !== null)
+const isMobile = computed(() => layoutStore.isMobile)
 const isChatFullscreen = computed(() => layoutStore.isChatFullscreen)
 const rightColumnsHidden = computed(() => isChatFullscreen.value)
 const chatColumnFlex = computed(() => (isChatFullscreen.value ? 7 : 3))
 
 const showSettings = ref(false)
 const workingDirectory = ref('')
+
+type MobilePanelId = 'git' | 'features' | 'conversations' | 'chat'
+
+const activeMobilePanel = ref<MobilePanelId>('chat')
+const mobileTabs: Array<{
+  id: MobilePanelId
+  label: string
+  icon: typeof CodeBracketSquareIcon
+}> = [
+  { id: 'git', label: 'Git', icon: CodeBracketSquareIcon },
+  { id: 'features', label: 'Specs', icon: DocumentTextIcon },
+  { id: 'conversations', label: 'Threads', icon: QueueListIcon },
+  { id: 'chat', label: 'Chat', icon: ChatBubbleLeftRightIcon },
+]
+
+const activeMobilePanelLabel = computed(() =>
+  mobileTabs.find(tab => tab.id === activeMobilePanel.value)?.label ?? 'Chat'
+)
+
 const projectName = computed(() => {
   if (!workingDirectory.value) return ''
   const segments = workingDirectory.value.replace(/\/+$/, '').split('/')
@@ -61,6 +89,26 @@ const handleResize = () => {
     layoutStore.updateViewport(window.innerWidth)
   }
 }
+
+watch(isMobile, (mobile) => {
+  if (mobile && isChatFullscreen.value) {
+    layoutStore.setChatFullscreen(false)
+  }
+})
+
+watch(
+  () => chatStore.activeConversationId,
+  (conversationId, previousConversationId) => {
+    if (
+      isMobile.value
+      && activeMobilePanel.value === 'conversations'
+      && conversationId
+      && conversationId !== previousConversationId
+    ) {
+      activeMobilePanel.value = 'chat'
+    }
+  },
+)
 
 onMounted(async () => {
   if (typeof window !== 'undefined') {
@@ -97,9 +145,111 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="flex h-screen min-w-[320px] overflow-x-auto bg-retro-black text-retro-text">
-    <!-- Column 1: Git Tree (flex: 3 = 30%) -->
-    <div class="flex flex-col overflow-hidden" style="flex: 3">
+  <div class="h-screen min-w-[320px] overflow-hidden bg-retro-black text-retro-text">
+    <div v-if="isMobile" class="flex h-full flex-col overflow-hidden">
+      <header class="flex-shrink-0 border-b border-retro-border bg-retro-panel">
+        <div class="flex h-14 items-center justify-between gap-3 px-3">
+          <div class="flex items-center gap-2 min-w-0">
+            <img alt="SpecCat" src="/app-logo.svg" class="w-5 h-5 text-retro-cyan mb-1" />
+            <div class="min-w-0">
+              <div class="text-xs font-bold text-retro-cyan font-mono uppercase tracking-wider">SPECCAT</div>
+              <div class="text-[11px] text-retro-muted font-mono truncate">
+                {{ projectName ? `${projectName} / ${activeMobilePanelLabel}` : activeMobilePanelLabel }}
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center gap-1">
+            <button
+              type="button"
+              class="p-2 rounded transition-colors text-retro-muted hover:text-retro-text hover:bg-retro-black"
+              :title="isDark ? 'Switch to light theme' : 'Switch to dark theme'"
+              @click="toggleTheme"
+            >
+              <SunIcon v-if="isDark" class="w-5 h-5" />
+              <MoonIcon v-else class="w-5 h-5" />
+            </button>
+            <button
+              type="button"
+              class="p-2 rounded transition-colors text-retro-muted hover:text-retro-text hover:bg-retro-black"
+              title="Settings"
+              @click="showSettings = true"
+            >
+              <Cog6ToothIcon class="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main class="relative flex-1 min-h-0 overflow-hidden">
+        <section
+          v-show="activeMobilePanel === 'git'"
+          class="absolute inset-0 flex flex-col overflow-hidden"
+          aria-label="Git"
+        >
+          <GitGraph :working-directory="workingDirectory" :is-active="activeMobilePanel === 'git'" />
+        </section>
+        <section
+          v-show="activeMobilePanel === 'features'"
+          class="absolute inset-0 flex flex-col overflow-hidden"
+          aria-label="Specs"
+        >
+          <FeaturesPanel />
+        </section>
+        <section
+          v-show="activeMobilePanel === 'conversations'"
+          class="absolute inset-0 flex flex-col overflow-hidden"
+          aria-label="Conversations"
+        >
+          <ConversationsPanel />
+        </section>
+        <section
+          v-show="activeMobilePanel === 'chat'"
+          class="absolute inset-0 flex flex-col overflow-hidden"
+          aria-label="Chat"
+        >
+          <ChatPanel />
+        </section>
+
+        <div
+          v-if="isDiffViewerOpen"
+          class="absolute inset-0 z-30 flex flex-col overflow-hidden bg-retro-black"
+        >
+          <GitFileDiffViewer
+            :file="gitGraphStore.diffViewerFile!"
+            :commit-hash="gitGraphStore.diffViewerCommitHash!"
+            :content="gitGraphStore.diffViewerContent"
+            :loading="gitGraphStore.diffViewerLoading"
+            @close="gitGraphStore.closeFileDiff()"
+          />
+        </div>
+      </main>
+
+      <nav
+        class="flex-shrink-0 border-t border-retro-border bg-retro-panel"
+        aria-label="Mobile primary navigation"
+      >
+        <div class="grid h-16 grid-cols-4">
+          <button
+            v-for="tab in mobileTabs"
+            :key="tab.id"
+            type="button"
+            class="flex min-w-0 flex-col items-center justify-center gap-1 px-1 text-[11px] font-mono transition-colors"
+            :class="activeMobilePanel === tab.id
+              ? 'text-retro-cyan bg-retro-cyan/10'
+              : 'text-retro-muted hover:text-retro-text hover:bg-retro-black'"
+            :aria-current="activeMobilePanel === tab.id ? 'page' : undefined"
+            @click="activeMobilePanel = tab.id"
+          >
+            <component :is="tab.icon" class="h-5 w-5 flex-shrink-0" />
+            <span class="truncate">{{ tab.label }}</span>
+          </button>
+        </div>
+      </nav>
+    </div>
+
+    <div v-else class="flex h-full overflow-x-auto">
+      <!-- Column 1: Git Tree (flex: 3 = 30%) -->
+      <div class="flex flex-col overflow-hidden" style="flex: 3">
       <div class="flex-shrink-0 h-14 flex items-center justify-between px-4 border-b border-retro-border bg-retro-panel">
         <div class="flex items-center gap-2 min-w-0">
           <img alt="SpecCat" src="/app-logo.svg" class="w-5 h-5 text-retro-cyan mb-1" />
@@ -173,6 +323,7 @@ onUnmounted(() => {
         />
       </div>
     </div>
+    </div>
 
     <!-- Settings modal -->
     <SettingsModal v-if="showSettings" @close="showSettings = false" />
@@ -185,6 +336,5 @@ onUnmounted(() => {
 
     <!-- Nuxt page outlet for route content -->
     <slot />
-
   </div>
 </template>

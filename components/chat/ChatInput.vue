@@ -669,8 +669,8 @@ watch(() => chatStore.activeConversationId, () => {
 <template>
   <div class="flex-shrink-0 flex-grow-0 border-t border-retro-border bg-retro-dark p-3">
     <!-- Model + Mode selector -->
-    <div class="flex items-center gap-2 mb-2">
-      <div class="relative min-w-0 flex-1 max-w-[154px] model-selector">
+    <div class="flex flex-wrap items-center gap-2 mb-2">
+      <div class="relative min-w-0 flex-1 max-w-full sm:max-w-[154px] model-selector">
         <button
           :disabled="disabled || chatStore.isActiveConversationStreaming || hasPendingPermission || hasPendingPlanApproval || providersLoading || modelOptions.length === 0"
           class="flex items-center justify-between gap-1.5 w-full px-2 py-1 rounded border border-retro-border/50
@@ -751,7 +751,7 @@ watch(() => chatStore.activeConversationId, () => {
         </div>
       </div>
 
-      <span class="text-xs font-mono text-retro-muted">
+      <span class="hidden text-xs font-mono text-retro-muted sm:inline">
         {{ chatStore.permissionMode === 'plan' ? 'Plan only' :
            chatStore.permissionMode === 'ask' ? 'Ask before actions' :
            chatStore.permissionMode === 'auto' ? 'Auto approve' :
@@ -761,7 +761,7 @@ watch(() => chatStore.activeConversationId, () => {
 
     <!-- Permission request UI -->
     <div v-if="hasPendingPermission" class="mb-3 p-3 bg-retro-yellow/10 border border-retro-yellow/50 rounded">
-      <div class="flex items-center justify-between gap-3">
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div class="flex-1 min-w-0">
           <div class="text-xs font-mono text-retro-yellow font-bold mb-1">
             Permission Required
@@ -776,7 +776,7 @@ watch(() => chatStore.activeConversationId, () => {
             </span>
           </div>
         </div>
-        <div class="flex gap-2 flex-shrink-0">
+        <div class="flex flex-shrink-0 gap-2">
           <button
             class="px-3 py-1.5 text-xs font-mono rounded
                    bg-retro-green/20 text-retro-green border border-retro-green/50
@@ -799,7 +799,7 @@ watch(() => chatStore.activeConversationId, () => {
 
     <!-- Plan approval UI (ExitPlanMode) -->
     <div v-if="hasPendingPlanApproval" class="mb-3 p-3 bg-retro-cyan/10 border border-retro-cyan/50 rounded">
-      <div class="flex items-center justify-between gap-3">
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div class="flex-1 min-w-0">
           <div class="text-xs font-mono text-retro-cyan font-bold mb-1">
             Plan Ready for Review
@@ -808,7 +808,7 @@ watch(() => chatStore.activeConversationId, () => {
             Approve to switch to Auto mode and start implementation.
           </div>
         </div>
-        <div class="flex gap-2 flex-shrink-0">
+        <div class="flex flex-shrink-0 gap-2">
           <button
             class="px-3 py-1.5 text-xs font-mono rounded
                    bg-retro-green/20 text-retro-green border border-retro-green/50
@@ -971,7 +971,7 @@ watch(() => chatStore.activeConversationId, () => {
     </div>
 
     <!-- Hint text -->
-    <div class="mt-1 text-xs font-mono text-retro-muted">
+    <div class="mt-1 hidden text-xs font-mono text-retro-muted sm:block">
       Press Enter to send (or queue while AI is responding), Shift+Enter for new line. Slash commands: `/context`, `/reset`, `/new`, `/clear`, `/spec-search`.
     </div>
   </div>
