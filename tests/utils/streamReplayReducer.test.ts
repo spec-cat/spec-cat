@@ -161,6 +161,20 @@ describe('reduceReplayEvents', () => {
     expect((result.contentBlocks[0] as ToolUseBlock).status).toBe('complete')
   })
 
+  it('done with awaitingUserInput leaves pending question tools pending', () => {
+    const result = reduceReplayEvents([
+      uiEvent({ type: 'block_start', blockId: 't', blockType: 'tool_use', index: 0, name: 'AskUserQuestion', toolUseId: 'u' }),
+      uiEvent({ type: 'block_delta', blockId: 't', index: 0, partialJson: '{"prompt":"Continue?"}' }),
+      uiEvent({ type: 'block_end', blockId: 't', index: 0 }),
+      { type: 'done', awaitingUserInput: true },
+    ])
+    expect(result.finalStatus).toBe('complete')
+    expect(result.isDone).toBe(true)
+    const tool = result.contentBlocks[0] as ToolUseBlock
+    expect(tool.status).toBe('pending')
+    expect(tool.input).toEqual({ prompt: 'Continue?' })
+  })
+
   it('done with denied=true sets status to stopped and marks tools error', () => {
     const result = reduceReplayEvents([
       uiEvent({ type: 'block_start', blockId: 't', blockType: 'tool_use', index: 0, name: 'R', toolUseId: 'u' }),

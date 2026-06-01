@@ -10,6 +10,7 @@ export interface BufferedResponse {
   type: string
   event?: unknown
   denied?: boolean
+  awaitingUserInput?: boolean
 }
 
 export interface ConnectionState<T extends BufferedResponse = BufferedResponse> {

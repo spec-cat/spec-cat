@@ -257,6 +257,48 @@ describe('codexStreamParser', () => {
     })
   })
 
+  it('maps request_user_input function calls into tool_use blocks', () => {
+    const line = JSON.stringify({
+      type: 'response.output_item.done',
+      thread_id: 'thread-user-input-1',
+      item: {
+        type: 'function_call',
+        call_id: 'call_user_input_1',
+        name: 'request_user_input',
+        arguments: JSON.stringify({
+          questions: [
+            {
+              header: 'Decision',
+              id: 'scope',
+              question: 'Which scope should Codex implement?',
+            },
+          ],
+        }),
+      },
+    })
+
+    const result = processCodexJsonLine(line)
+    expect(result.mappedEvents).toHaveLength(3)
+    expect(result.mappedEvents[0]).toMatchObject({
+      type: 'block_start',
+      sessionId: 'thread-user-input-1',
+      blockType: 'tool_use',
+      toolUseId: 'call_user_input_1',
+      name: 'request_user_input',
+    })
+    expect(result.mappedEvents[1]).toMatchObject({
+      type: 'block_delta',
+      sessionId: 'thread-user-input-1',
+    })
+    expect(JSON.parse((result.mappedEvents[1] as any).partialJson)).toMatchObject({
+      questions: [
+        {
+          question: 'Which scope should Codex implement?',
+        },
+      ],
+    })
+  })
+
   it('maps response.output_text.delta into stream text delta events', () => {
     const line = JSON.stringify({
       type: 'response.output_text.delta',

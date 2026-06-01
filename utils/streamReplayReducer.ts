@@ -24,6 +24,7 @@ export interface ReplayInputEvent {
   type: 'ui_event' | 'done' | 'error' | string
   event?: UIStreamEvent
   denied?: boolean
+  awaitingUserInput?: boolean
 }
 
 export interface ReplayReduction {
@@ -62,6 +63,8 @@ export function reduceReplayEvents(
       if (response.denied) {
         markToolBlocks(contentBlocks, 'error')
         finalStatus = 'stopped'
+      } else if (response.awaitingUserInput) {
+        finalStatus = 'complete'
       } else if (finalStatus === 'error' || finalStatus === 'stopped') {
         markToolBlocks(contentBlocks, 'error')
       } else {

@@ -118,6 +118,8 @@ function handleEvent(acc: JobAccumulator, event: JobEvent): void {
       if (event.denied || event.aborted) {
         markRemainingToolBlocks(acc, 'error')
         acc.status = 'stopped'
+      } else if (event.awaitingUserInput) {
+        acc.status = 'complete'
       } else {
         markRemainingToolBlocks(acc, 'complete')
         acc.status = 'complete'

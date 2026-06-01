@@ -24,6 +24,10 @@ import {
   approveTools,
   deriveApprovalRequestFromEvent,
   deriveApprovalRequestFromProcessOutput,
+  isUserInputToolName,
+  parseToolInputJson,
+  trackStreamingToolInput,
+  type StreamingToolInput,
 } from './providerApprovalPolicy'
 
 // ── Types ──────────────────────────────────────────────
@@ -507,6 +511,7 @@ class ChatJobQueue {
     let permissionRequested = false
     let emittedRenderableContent = false
     let emittedTerminalErrorEvent = false
+    const activeToolInputs = new Map<string, StreamingToolInput>()
 
     const attachments = msg.attachments || []
     const providerMessage = buildProviderMessage(msg.message, attachments)
@@ -528,6 +533,10 @@ class ChatJobQueue {
             const events = provider.toCanonicalEvents(parsed)
 
             for (const event of events) {
+              const completedToolInput = event.type === 'block_start' || event.type === 'block_delta' || event.type === 'block_end'
+                ? trackStreamingToolInput(event, activeToolInputs)
+                : null
+
               if (event.sessionId) {
                 convState.providerSessionId = event.sessionId
               }
@@ -536,6 +545,21 @@ class ChatJobQueue {
               }
               if (event.type === 'error' || (event.type === 'turn_result' && event.subtype !== 'success')) {
                 emittedTerminalErrorEvent = true
+              }
+
+              if (completedToolInput && isUserInputToolName(completedToolInput.name)) {
+                permissionRequested = true
+                this.setJobStatus(job, 'done')
+                this.emitAndBuffer(job, { type: 'ui_event', event })
+                this.emitAndBuffer(job, {
+                  type: 'done',
+                  requestId: msg.requestId,
+                  awaitingUserInput: true,
+                  tool: completedToolInput.name,
+                  input: parseToolInputJson(completedToolInput.inputJson),
+                })
+                procState.proc?.kill()
+                return
               }
 
               // Permission interception

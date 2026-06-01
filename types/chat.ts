@@ -325,6 +325,7 @@ export interface UIStreamDoneEvent extends UIStreamEventBase {
   type: 'done'
   requestId?: string
   denied?: boolean
+  awaitingUserInput?: boolean
 }
 
 export type UIStreamEvent =

@@ -62,8 +62,10 @@ interface WSResponse {
   text?: string  // For permission_prompt
   tool?: string  // For permission_request
   description?: string  // For permission_request
+  input?: Record<string, unknown>
   reason?: string  // For session_reset
   denied?: boolean  // For done after permission denial
+  awaitingUserInput?: boolean  // For done after interactive user-input tools
   jobId?: string  // For subscribe/replay responses and notifications
   jobStatus?: string  // For subscribe/replay responses
   eventCount?: number  // For replay_start
@@ -685,6 +687,19 @@ export function useChatStream() {
       markRunningToolBlocks(conn.currentMessageId, conversationId, 'error')
       chatStore.updateMessage(conn.currentMessageId, { status: 'stopped' }, conversationId)
       finalizeTurn(conn, conversationId)
+      return
+    }
+
+    // Interactive clarification tools intentionally pause the provider and
+    // leave the question block pending so the next user message can answer it.
+    if (response.awaitingUserInput) {
+      chatStore.completeMessageWithSave(conn.currentMessageId, conversationId)
+      chatStore.endSession(conversationId)
+      chatStore.endConversationStreaming(conversationId)
+      notifyChatCompleted(conversationId)
+      chatStore.clearPendingPermission(conversationId)
+      chatStore.saveConversation(conversationId, true)
+      conn.activeTools.clear()
       return
     }
 
