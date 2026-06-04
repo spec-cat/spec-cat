@@ -184,6 +184,16 @@ describe('reduceReplayEvents', () => {
     expect((result.contentBlocks[0] as ToolUseBlock).status).toBe('error')
   })
 
+  it('done with aborted=true sets status to stopped and marks tools error', () => {
+    const result = reduceReplayEvents([
+      uiEvent({ type: 'block_start', blockId: 't', blockType: 'tool_use', index: 0, name: 'R', toolUseId: 'u' }),
+      { type: 'done', aborted: true },
+    ])
+    expect(result.finalStatus).toBe('stopped')
+    expect(result.isDone).toBe(true)
+    expect((result.contentBlocks[0] as ToolUseBlock).status).toBe('error')
+  })
+
   it('error response sets finalStatus to error and marks tool blocks error', () => {
     const result = reduceReplayEvents([
       uiEvent({ type: 'block_start', blockId: 't', blockType: 'tool_use', index: 0, name: 'R', toolUseId: 'u' }),

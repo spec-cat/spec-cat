@@ -101,7 +101,7 @@ class WSHandlerTestHarness {
     }
 
     if (msg.type === 'abort') {
-      this.handleAbort(peer)
+      this.handleAbort(peer, msg)
       return
     }
 
@@ -140,10 +140,11 @@ class WSHandlerTestHarness {
     this.permissionResponses.push({ conversationId: conn.conversationId, allow: msg.allow })
   }
 
-  private handleAbort(peer: any) {
+  private handleAbort(peer: any, msg: any) {
     const conn = this.getPeerConnection(peer.id)
-    if (conn.conversationId) {
-      this.abortedConversations.push(conn.conversationId)
+    const conversationId = msg.conversationId || conn.conversationId
+    if (conversationId) {
+      this.abortedConversations.push(conversationId)
     }
     peer.send(JSON.stringify({ type: 'aborted' }))
   }
@@ -412,6 +413,15 @@ describe('WS Handler (_ws)', () => {
       const sent = JSON.parse(peer.send.mock.calls[0][0])
       expect(sent.type).toBe('aborted')
       expect(harness.abortedConversations).toHaveLength(0)
+    })
+
+    it('aborts the explicit conversation even before peer context is established', () => {
+      const peer = createMockPeer()
+      harness.message(peer, JSON.stringify({ type: 'abort', conversationId: 'conv-direct' }))
+
+      expect(harness.abortedConversations).toEqual(['conv-direct'])
+      const sent = JSON.parse(peer.send.mock.calls[0][0])
+      expect(sent.type).toBe('aborted')
     })
   })
 

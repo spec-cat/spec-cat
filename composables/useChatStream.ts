@@ -66,6 +66,7 @@ interface WSResponse {
   reason?: string  // For session_reset
   denied?: boolean  // For done after permission denial
   awaitingUserInput?: boolean  // For done after interactive user-input tools
+  aborted?: boolean  // For done after user abort
   jobId?: string  // For subscribe/replay responses and notifications
   jobStatus?: string  // For subscribe/replay responses
   eventCount?: number  // For replay_start
@@ -682,8 +683,8 @@ export function useChatStream() {
     const currentStatus = getMessageStatus(conversationId, conn.currentMessageId)
     rolloutRecoveryAttempts.delete(buildRecoveryKey(conversationId, conn.currentMessageId))
 
-    // Permission denial: stopped state, not a successful completion.
-    if (response.denied) {
+    // Permission denial/user abort: stopped state, not a successful completion.
+    if (response.denied || response.aborted) {
       markRunningToolBlocks(conn.currentMessageId, conversationId, 'error')
       chatStore.updateMessage(conn.currentMessageId, { status: 'stopped' }, conversationId)
       finalizeTurn(conn, conversationId)
@@ -1233,7 +1234,7 @@ export function useChatStream() {
     const conn = connections.get(convId)
     if (conn) {
       if (conn.ws.readyState === WebSocket.OPEN) {
-        const payload = { type: 'abort' }
+        const payload = { type: 'abort', conversationId: convId }
         chatStore.pushDebugEvent({
           direction: 'out',
           channel: 'ws',

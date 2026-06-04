@@ -67,6 +67,7 @@ interface PermissionResponse {
 
 interface AbortMessage {
   type: 'abort'
+  conversationId?: string
 }
 
 interface ResetContextMessage {
@@ -185,7 +186,7 @@ export default defineWebSocketHandler({
     }
 
     if (msg.type === 'abort') {
-      handleAbort(peer)
+      handleAbort(peer, msg)
       return
     }
 
@@ -304,14 +305,15 @@ function handlePermissionResponse(peer: any, msg: PermissionResponse) {
   jobQueue.respondToPermission(conn.conversationId, msg.allow)
 }
 
-function handleAbort(peer: any) {
+function handleAbort(peer: any, msg: AbortMessage) {
   const conn = getPeerConnection(peer.id)
+  const conversationId = msg.conversationId || conn.conversationId
 
-  console.log('[WS] Abort requested for peer:', peer.id, 'conversationId:', conn.conversationId)
+  console.log('[WS] Abort requested for peer:', peer.id, 'conversationId:', conversationId)
 
-  if (conn.conversationId) {
-    jobQueue.abort(conn.conversationId)
-    console.log('[WS] jobQueue.abort() called for conversation:', conn.conversationId)
+  if (conversationId) {
+    jobQueue.abort(conversationId)
+    console.log('[WS] jobQueue.abort() called for conversation:', conversationId)
   } else {
     console.warn('[WS] Abort skipped — no conversationId bound to this peer!')
   }
