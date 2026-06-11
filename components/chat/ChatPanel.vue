@@ -21,7 +21,7 @@ import {
 
 const chatStore = useChatStore()
 const layoutStore = useLayoutStore()
-const { disconnectConversation } = useChatStream()
+const { disconnectConversation, abort } = useChatStream()
 
 onMounted(async () => {
   try {
@@ -58,6 +58,11 @@ async function handleNewConversation() {
   showDeleteConfirm.value = false
   const currentId = chatStore.activeConversationId
   if (currentId) {
+    // Abort first when streaming so the server job is told to stop and the
+    // streaming flag is cleared — disconnect alone leaks both.
+    if (chatStore.isConversationStreaming(currentId)) {
+      abort(currentId)
+    }
     disconnectConversation(currentId)
     await chatStore.deleteConversation(currentId)
   }
@@ -84,13 +89,16 @@ const isReadOnly = computed(() => isFinalized.value)
 const baseCompare = ref<{ ahead: number; behind: number } | null>(null)
 const baseCompareLoading = ref(false)
 
+let baseCompareSeq = 0
 async function refreshBaseCompare() {
   const conv = chatStore.activeConversation
   if (!conv?.worktreePath || !conv?.baseBranch) {
+    baseCompareSeq++
     baseCompare.value = null
     return
   }
 
+  const seq = ++baseCompareSeq
   baseCompareLoading.value = true
   try {
     const res = await $fetch<{ ahead: number; behind: number }>('/api/chat/compare', {
@@ -99,11 +107,14 @@ async function refreshBaseCompare() {
         baseBranch: conv.baseBranch,
       },
     })
+    // Ignore stale responses that resolved after a newer request started.
+    if (seq !== baseCompareSeq) return
     baseCompare.value = res
   } catch {
+    if (seq !== baseCompareSeq) return
     baseCompare.value = null
   } finally {
-    baseCompareLoading.value = false
+    if (seq === baseCompareSeq) baseCompareLoading.value = false
   }
 }
 

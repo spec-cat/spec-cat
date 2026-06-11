@@ -120,8 +120,10 @@ export default defineEventHandler(async (event) => {
   res.setHeader('X-Accel-Buffering', 'no') // Disable nginx buffering
   res.flushHeaders()
 
-  // Helper to write and flush
+  // Helper to write and flush. Guards against writing to a socket that the
+  // client already closed (write-after-end throws ERR_STREAM_WRITE_AFTER_END).
   const writeChunk = (data: string) => {
+    if (res.writableEnded || res.destroyed) return
     res.write(data)
     // Force flush if available
     if (typeof (res as any).flush === 'function') {
@@ -129,11 +131,23 @@ export default defineEventHandler(async (event) => {
     }
   }
 
+  const endResponse = () => {
+    if (res.writableEnded || res.destroyed) return
+    try {
+      res.end()
+    } catch { /* socket already torn down */ }
+  }
+
   const isUnexpectedExit = (exitCode: number | null) => exitCode !== 0 && exitCode !== null
 
   // Return a promise that resolves when the process ends
   return new Promise<void>((resolve, reject) => {
     let controller: { kill: () => void } | null = null
+    // Set when the client disconnects. If the provider controller has not been
+    // assigned yet (streamChatWithProvider is async and awaits provider init),
+    // we record the intent so the controller is killed the moment it arrives —
+    // otherwise the spawned CLI process is orphaned.
+    let clientGone = false
     const runStream = (resumeSessionId: string | undefined, isRetry = false, forceEphemeral = false) => {
       streamChatWithProvider(
         {
@@ -194,23 +208,27 @@ export default defineEventHandler(async (event) => {
             } else {
               writeChunk(doneEvent())
             }
-            res.end()
+            endResponse()
             resolve()
           },
           onError(error) {
             console.error('[Chat API] Process error:', error)
             writeChunk(errorEvent(error.message))
-            res.end()
+            endResponse()
             reject(error)
           },
         },
       )
         .then((activeController) => {
           controller = activeController
+          // The client may have disconnected during provider init — kill now.
+          if (clientGone) {
+            controller.kill()
+          }
         })
         .catch((error) => {
           writeChunk(errorEvent(error instanceof Error ? error.message : String(error)))
-          res.end()
+          endResponse()
           reject(error)
         })
     }
@@ -218,6 +236,7 @@ export default defineEventHandler(async (event) => {
     runStream(chatRequest.sessionId)
 
     res.on('close', () => {
+      clientGone = true
       controller?.kill()
     })
   })

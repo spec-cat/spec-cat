@@ -87,7 +87,23 @@ let composableRefCount = 0
 
 // Per-conversation cascade state
 const cascadeRegistry = createCascadeRegistry()
+// Pending post-completion cascade timers, keyed by conversationId, so abort /
+// disableCascade can cancel a step that was scheduled but has not fired yet.
+const cascadeTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const rolloutRecoveryAttempts = new Set<string>()
+
+function clearCascadeTimer(conversationId?: string) {
+  if (conversationId) {
+    const timer = cascadeTimers.get(conversationId)
+    if (timer) {
+      clearTimeout(timer)
+      cascadeTimers.delete(conversationId)
+    }
+  } else {
+    for (const timer of cascadeTimers.values()) clearTimeout(timer)
+    cascadeTimers.clear()
+  }
+}
 
 // Health check constants
 const HEALTH_CHECK_INTERVAL_MS = 30_000  // Check every 30s
@@ -149,6 +165,14 @@ export function useChatStream() {
     conn.healthCheckInterval = setInterval(() => {
       const convId = conn.conversationId
 
+      // Identity guard: if this connection has been replaced (or evicted) for
+      // its conversation, stop. Otherwise a leaked interval from a closed socket
+      // could tear down the *new* connection's streaming state.
+      if (connections.get(convId) !== conn) {
+        clearHealthCheck(conn)
+        return
+      }
+
       // WebSocket no longer open — clean up streaming state
       if (conn.ws.readyState !== WebSocket.OPEN) {
         console.warn(`[useChatStream] Health check: WebSocket not open for ${convId}`)
@@ -192,7 +216,9 @@ export function useChatStream() {
     const conn = connections.get(conversationId)
     if (!conn) return
     clearHealthCheck(conn)
-    if (closeSocket && conn.ws.readyState === WebSocket.OPEN) {
+    // Close any socket that is not already closed — including a CONNECTING one,
+    // which would otherwise finish connecting with no map entry (orphaned).
+    if (closeSocket && conn.ws.readyState !== WebSocket.CLOSED && conn.ws.readyState !== WebSocket.CLOSING) {
       conn.ws.close()
     }
     connections.delete(conversationId)
@@ -269,6 +295,7 @@ export function useChatStream() {
         return
       }
       if (existing.kind === 'stale') {
+        clearHealthCheck(existing.conn)
         existing.conn.ws.close()
         connections.delete(conversationId)
       }
@@ -575,6 +602,16 @@ export function useChatStream() {
         tb.status = 'pending'
       }
     }, conversationId)
+
+    // Remove the finalized tool from activeTools. Content-block indexes restart
+    // at 0 for each assistant message in a multi-step turn, so a lingering entry
+    // would wrongly match a later text/thinking block_end at the same index.
+    for (const [key, entry] of conn.activeTools) {
+      if (entry === tool) {
+        conn.activeTools.delete(key)
+        break
+      }
+    }
   }
 
   /**
@@ -724,10 +761,14 @@ export function useChatStream() {
     const nextCascade = cascadeRegistry.popNextStep(conversationId)
     if (nextCascade) {
       commitPromise.then(() => {
-        // Small delay to let auto-commit settle
-        setTimeout(() => {
+        // Small delay to let auto-commit settle. Tracked so an abort or
+        // disableCascade during this window actually cancels the step.
+        const timer = setTimeout(() => {
+          cascadeTimers.delete(conversationId)
           sendCascadeStep(conversationId, nextCascade.featureId, nextCascade.step)
         }, 1500)
+        clearCascadeTimer(conversationId)
+        cascadeTimers.set(conversationId, timer)
       })
     }
 
@@ -1143,6 +1184,7 @@ export function useChatStream() {
    * Disable cascade for a specific conversation
    */
   function disableCascade(conversationId?: string) {
+    clearCascadeTimer(conversationId)
     cascadeRegistry.disable(conversationId)
   }
 
@@ -1150,12 +1192,18 @@ export function useChatStream() {
    * Send the next cascade step as a follow-up message in the same conversation
    */
   async function sendCascadeStep(conversationId: string, featureId: string, step: string) {
+    const conv = chatStore.conversations.find((c: { id: string }) => c.id === conversationId)
+    // Bail if the conversation was deleted during the scheduling window —
+    // otherwise we'd recreate stream state for a nonexistent conversation.
+    if (!conv) {
+      disableCascade(conversationId)
+      return
+    }
+
     // Make sure the conversation is still selected
     if (chatStore.activeConversationId !== conversationId) {
       chatStore.selectConversation(conversationId)
     }
-
-    const conv = chatStore.conversations.find((c: { id: string }) => c.id === conversationId)
 
     // Support skill: prefixed steps (e.g. 'skill:better-spec') — fetch rendered prompt from API
     let prompt: string
@@ -1233,6 +1281,7 @@ export function useChatStream() {
 
     const conn = connections.get(convId)
     if (conn) {
+      clearHealthCheck(conn)
       if (conn.ws.readyState === WebSocket.OPEN) {
         const payload = { type: 'abort', conversationId: convId }
         chatStore.pushDebugEvent({
@@ -1242,20 +1291,41 @@ export function useChatStream() {
           payload,
         }, convId)
         conn.ws.send(JSON.stringify(payload))
-        conn.ws.close()
       }
-      if (conn.currentMessageId) {
-        markRunningToolBlocks(conn.currentMessageId, convId, 'error')
-        chatStore.updateMessage(conn.currentMessageId, { status: 'stopped' }, convId)
-        chatStore.endSession(convId)
-        chatStore.saveConversation(convId, true)
+      // Close any non-closed socket (CONNECTING included) to avoid orphans.
+      if (conn.ws.readyState !== WebSocket.CLOSED && conn.ws.readyState !== WebSocket.CLOSING) {
+        conn.ws.close()
       }
       connections.delete(convId)
     }
 
+    // Finalize the assistant message even when the connection was already
+    // evicted (health-check/error path) — otherwise it stays stuck 'streaming'.
+    const streamingMessageId = conn?.currentMessageId ?? findStreamingMessageId(convId)
+    if (streamingMessageId) {
+      markRunningToolBlocks(streamingMessageId, convId, 'error')
+      chatStore.updateMessage(streamingMessageId, { status: 'stopped' }, convId)
+    }
+
+    chatStore.endSession(convId)
     chatStore.endConversationStreaming(convId)
     chatStore.clearPendingPermission(convId)
     disableCascade(convId)
+    chatStore.saveConversation(convId, true)
+  }
+
+  /**
+   * Find the id of the last assistant message still in 'streaming' status for a
+   * conversation. Used to finalize state when no live connection is available.
+   */
+  function findStreamingMessageId(conversationId: string): string | null {
+    const conv = chatStore.conversations.find((c: { id: string }) => c.id === conversationId)
+    if (!conv) return null
+    for (let i = conv.messages.length - 1; i >= 0; i--) {
+      const msg = conv.messages[i]
+      if (msg.role === 'assistant' && msg.status === 'streaming') return msg.id
+    }
+    return null
   }
 
   /**
@@ -1268,6 +1338,7 @@ export function useChatStream() {
       conn.ws.close()
       connections.delete(conversationId)
     }
+    clearCascadeTimer(conversationId)
     cascadeRegistry.disable(conversationId)
   }
 
@@ -1280,6 +1351,7 @@ export function useChatStream() {
       conn.ws.close()
       connections.delete(id)
     }
+    clearCascadeTimer()
     cascadeRegistry.disable()
   }
 

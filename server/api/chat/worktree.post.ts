@@ -3,14 +3,17 @@
  * Creates an isolated git worktree for a chat conversation.
  */
 
-import { exec } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { logger } from '~/server/utils/logger'
 import { getProjectDir } from '~/server/utils/projectDir'
 import { resolvePreferredBaseBranch } from '~/server/utils/baseBranch'
 import { getChatWorktreePath } from '~/server/utils/worktreePaths'
+import { assertSafeBranchName } from '~/server/utils/chatGit'
+import { withLock } from '~/server/utils/asyncLock'
 
-const execAsync = promisify(exec)
+const execFileAsync = promisify(execFile)
+const CONVERSATION_ID_PATTERN = /^[A-Za-z0-9._-]+$/
 
 export default defineEventHandler(async (event) => {
   const body = await readBody<{ conversationId: string; featureId?: string; baseBranch?: string }>(event)
@@ -23,22 +26,25 @@ export default defineEventHandler(async (event) => {
   }
 
   const { conversationId, featureId } = body
+  if (!CONVERSATION_ID_PATTERN.test(conversationId)) {
+    throw createError({ statusCode: 400, message: 'Invalid conversationId' })
+  }
   const requestedBaseBranch = body.baseBranch?.trim()
   const projectDir = getProjectDir()
 
   // Feature-originated conversations use the featureId as branch name (e.g. "001-auth")
   // New chat conversations use sc/conv-xxx branches
-  const branchName = featureId || `sc/${conversationId}`
+  const branchName = assertSafeBranchName(featureId || `sc/${conversationId}`, 'branch')
   const worktreePath = getChatWorktreePath(conversationId, featureId)
 
   logger.chat.info('Creating chat worktree', { conversationId, branchName, worktreePath })
   const requestStart = process.hrtime.bigint()
   const stepDurations: Record<string, number> = {}
 
-  async function execTimed(step: string, command: string, options?: { logFailure?: boolean }) {
+  async function execTimed(step: string, args: string[], options?: { logFailure?: boolean }) {
     const start = process.hrtime.bigint()
     try {
-      const result = await execAsync(command, { cwd: projectDir })
+      const result = await execFileAsync('git', args, { cwd: projectDir })
       const durationMs = Number(process.hrtime.bigint() - start) / 1_000_000
       stepDurations[step] = durationMs
       logger.chat.debug('Chat worktree step completed', { conversationId, step, durationMs })
@@ -53,7 +59,8 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  try {
+  return withLock(projectDir, async () => {
+   try {
     // Resolve base branch: use requested branch when provided, otherwise infer
     // a stable non-worktree branch from the main repository state.
     let baseBranch = requestedBaseBranch || ''
@@ -75,7 +82,7 @@ export default defineEventHandler(async (event) => {
     // Resolve and verify selected base branch HEAD commit in one step.
     let base = ''
     try {
-      const { stdout: head } = await execTimed('resolve-base-head', `git rev-parse --verify "refs/heads/${baseBranch}^{commit}"`)
+      const { stdout: head } = await execTimed('resolve-base-head', ['rev-parse', '--verify', `refs/heads/${baseBranch}^{commit}`])
       base = head.trim()
     } catch {
       return {
@@ -87,7 +94,7 @@ export default defineEventHandler(async (event) => {
     // Feature branches must not already exist — each feature gets one branch
     if (featureId) {
       try {
-        await execTimed('check-feature-branch-exists', `git rev-parse --verify "${branchName}"`, { logFailure: false })
+        await execTimed('check-feature-branch-exists', ['rev-parse', '--verify', branchName], { logFailure: false })
         // Branch exists — error
         return {
           success: false,
@@ -99,7 +106,7 @@ export default defineEventHandler(async (event) => {
     }
 
     // Create worktree with new branch
-    await execTimed('worktree-add', `git worktree add -b "${branchName}" "${worktreePath}" "${base}"`)
+    await execTimed('worktree-add', ['worktree', 'add', '-b', branchName, worktreePath, base])
 
     const totalDurationMs = Number(process.hrtime.bigint() - requestStart) / 1_000_000
     logger.chat.info('Chat worktree created', {
@@ -131,5 +138,6 @@ export default defineEventHandler(async (event) => {
       success: false,
       error: errorMessage,
     }
-  }
+   }
+  })
 })

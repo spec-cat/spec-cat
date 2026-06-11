@@ -151,6 +151,14 @@ export function reduceReplayEvents(
             tb.inputSummary = formatToolInputSummary(input)
             tb.status = 'pending'
           }
+          // Drop the finalized tool so a later block_end reusing the same index
+          // (indexes restart per assistant message) is treated as text/thinking.
+          for (const [key, entry] of activeTools) {
+            if (entry === tool) {
+              activeTools.delete(key)
+              break
+            }
+          }
         }
         break
       }

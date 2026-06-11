@@ -57,10 +57,13 @@ export async function writeResolvedFile(params: {
   worktreePath: string
   filePath: string
   content: string
+  signal?: AbortSignal
 }): Promise<{ success: boolean; error?: string }> {
+  const { signal, ...body } = params
   return $fetch<{ success: boolean; error?: string }>('/api/rebase/resolve', {
     method: 'PUT',
-    body: params,
+    body,
+    signal,
   })
 }
 
@@ -103,9 +106,12 @@ export async function aiResolveConflictApi(params: {
   filePath: string
   conflictContent: string
   userGuidance?: string
+  signal?: AbortSignal
 }): Promise<AiResolveResponse> {
+  const { signal, ...body } = params
   return $fetch<AiResolveResponse>('/api/rebase/ai-resolve', {
     method: 'POST',
-    body: params,
+    body,
+    signal,
   })
 }

@@ -92,6 +92,30 @@ describe('reduceReplayEvents', () => {
     expect(tool.status).toBe('pending')
   })
 
+  it('does not let a completed tool match a later block_end that reuses its index', () => {
+    // Content-block indexes restart at 0 for each assistant message in a
+    // multi-step turn. Message 1: tool at index 0, completed via tool_result.
+    // Message 2: a text block also at index 0. The text block_end must NOT be
+    // attributed to the finished tool (which would flip it back to 'pending').
+    const result = reduceReplayEvents([
+      uiEvent({ type: 'block_start', blockId: 'tu1', blockType: 'tool_use', index: 0, name: 'Read', toolUseId: 'u-1' }),
+      uiEvent({ type: 'block_delta', blockId: 'tu1', index: 0, partialJson: '{"path":"/a"}' }),
+      uiEvent({ type: 'block_end', blockId: 'tu1', index: 0 }),
+      uiEvent({ type: 'tool_result', toolUseId: 'u-1', content: 'ok', isError: false }),
+      // Second assistant message reuses index 0 for a text block.
+      uiEvent({ type: 'block_start', blockId: 'tx1', blockType: 'text', index: 0, text: '' }),
+      uiEvent({ type: 'block_delta', blockId: 'tx1', index: 0, text: 'done' }),
+      uiEvent({ type: 'block_end', blockId: 'tx1', index: 0 }),
+    ])
+
+    const tool = result.contentBlocks.find(b => b.type === 'tool_use') as ToolUseBlock
+    const text = result.contentBlocks.find(b => b.type === 'text') as TextBlock
+    expect(tool.status).toBe('complete')
+    expect(text.text).toBe('done')
+    // The text block must have closed cleanly (currentTextBlockId cleared).
+    expect(result.currentTextBlockId).toBeNull()
+  })
+
   it('gracefully handles invalid JSON in tool input (falls back to empty object)', () => {
     const result = reduceReplayEvents([
       uiEvent({ type: 'block_start', blockId: 'tu1', blockType: 'tool_use', index: 0, name: 'X', toolUseId: 'u1' }),

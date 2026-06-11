@@ -28,11 +28,14 @@ const branches = ref<string[]>([])
 const branchesLoading = ref(false)
 const loadingTargetLabel = computed(() => getSelectableBaseBranchLabel(targetBranch.value || props.baseBranch))
 
+let commitCountSeq = 0
 async function fetchCommitCount(targetBranchName: string) {
   if (!targetBranchName) {
+    commitCountSeq++
     commitCount.value = null
     return
   }
+  const seq = ++commitCountSeq
   try {
     const res = await $fetch<{ ahead: number; behind: number }>('/api/chat/compare', {
       params: {
@@ -40,8 +43,11 @@ async function fetchCommitCount(targetBranchName: string) {
         baseBranch: targetBranchName,
       },
     })
+    // Ignore responses for a branch that is no longer selected.
+    if (seq !== commitCountSeq) return
     commitCount.value = res.ahead
   } catch {
+    if (seq !== commitCountSeq) return
     commitCount.value = null
   }
 }

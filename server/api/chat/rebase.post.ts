@@ -6,34 +6,16 @@
  * Conflict handling: same as finalize — returns conflict file list for UI resolution.
  */
 
-import { exec, execSync } from 'node:child_process'
-import { promisify } from 'node:util'
 import { existsSync } from 'node:fs'
 import { logger } from '~/server/utils/logger'
 import { resolveExistingBaseBranch } from '~/server/utils/baseBranch'
 import { getProjectDir } from '~/server/utils/projectDir'
 import { getChatWorktreePath } from '~/server/utils/worktreePaths'
+import { validateWorktreePath } from '~/server/utils/validateWorktree'
+import { assertSafeBranchName, git } from '~/server/utils/chatGit'
+import { autoCommitChanges } from '~/server/utils/claudeService'
+import { withLock } from '~/server/utils/asyncLock'
 import type { RebaseSyncRequest, FinalizeResponse } from '~/types/chat'
-
-const execAsync = promisify(exec)
-
-async function git(cwd: string, cmd: string): Promise<string> {
-  const { stdout } = await execAsync(`git ${cmd}`, { cwd })
-  return stdout.trim()
-}
-
-/**
- * Auto-commit any uncommitted changes in the worktree
- */
-async function autoCommitChanges(worktreePath: string): Promise<boolean> {
-  const status = await git(worktreePath, 'status --porcelain')
-  if (!status) return false
-
-  await git(worktreePath, 'add -A')
-  // Use stdin (-F -) to safely handle any special characters
-  execSync('git commit -F -', { cwd: worktreePath, input: 'auto-commit uncommitted changes', encoding: 'utf-8' })
-  return true
-}
 
 export default defineEventHandler(async (event): Promise<FinalizeResponse> => {
   const body = await readBody<RebaseSyncRequest>(event)
@@ -49,10 +31,14 @@ export default defineEventHandler(async (event): Promise<FinalizeResponse> => {
   const projectDir = getProjectDir()
   const worktreePath = body.worktreePath || getChatWorktreePath(conversationId)
 
+  if (existsSync(worktreePath)) {
+    validateWorktreePath(worktreePath)
+  }
+
   let worktreeBranch = ''
   if (existsSync(worktreePath)) {
     try {
-      worktreeBranch = await git(worktreePath, 'rev-parse --abbrev-ref HEAD')
+      worktreeBranch = await git(worktreePath, ['rev-parse', '--abbrev-ref', 'HEAD'])
     } catch {
       worktreeBranch = ''
     }
@@ -66,53 +52,56 @@ export default defineEventHandler(async (event): Promise<FinalizeResponse> => {
   if (!baseBranch) {
     return { success: false, error: 'Unable to resolve a valid base branch for this worktree.' }
   }
+  assertSafeBranchName(baseBranch, 'base branch')
 
   logger.chat.info('Rebasing worktree onto base', { conversationId, baseBranch })
 
-  try {
-    // 0. Ensure worktree exists
-    if (!existsSync(worktreePath)) {
-      return { success: false, error: 'Worktree directory not found. It may have been cleaned up.' }
-    }
-
-    // 1. Auto-commit any uncommitted changes
-    await autoCommitChanges(worktreePath)
-
-    // 2. Rebase onto latest base branch (no squash)
+  return withLock(projectDir, async (): Promise<FinalizeResponse> => {
     try {
-      await git(worktreePath, `rebase ${baseBranch}`)
-    } catch {
-      // Conflict detected — return conflict file list
-      logger.chat.warn('Rebase conflict during sync', { conversationId })
+      // 0. Ensure worktree exists
+      if (!existsSync(worktreePath)) {
+        return { success: false, error: 'Worktree directory not found. It may have been cleaned up.' }
+      }
 
-      let conflictFiles: string[] = []
+      // 1. Auto-commit any uncommitted changes
+      await autoCommitChanges(worktreePath)
+
+      // 2. Rebase onto latest base branch (no squash)
       try {
-        const diffOutput = await git(worktreePath, 'diff --name-only --diff-filter=U')
-        conflictFiles = diffOutput.split('\n').filter(Boolean)
+        await git(worktreePath, ['rebase', baseBranch])
       } catch {
+        // Conflict detected — return conflict file list
+        logger.chat.warn('Rebase conflict during sync', { conversationId })
+
+        let conflictFiles: string[] = []
         try {
-          const statusOutput = await git(worktreePath, 'status --porcelain')
-          conflictFiles = statusOutput
-            .split('\n')
-            .filter(line => /^(UU|AA|DU|UD|UA|AU|DD)\s/.test(line))
-            .map(line => line.substring(3).trim())
-        } catch { /* ignore */ }
+          const diffOutput = await git(worktreePath, ['diff', '--name-only', '--diff-filter=U'])
+          conflictFiles = diffOutput.split('\n').filter(Boolean)
+        } catch {
+          try {
+            const statusOutput = await git(worktreePath, ['status', '--porcelain'])
+            conflictFiles = statusOutput
+              .split('\n')
+              .filter(line => /^(UU|AA|DU|UD|UA|AU|DD)\s/.test(line))
+              .map(line => line.substring(3).trim())
+          } catch { /* ignore */ }
+        }
+
+        return {
+          success: false,
+          error: `Rebase conflict with "${baseBranch}". Resolve conflicts to continue.`,
+          conflictFiles,
+          rebaseInProgress: true,
+        }
       }
 
-      return {
-        success: false,
-        error: `Rebase conflict with "${baseBranch}". Resolve conflicts to continue.`,
-        conflictFiles,
-        rebaseInProgress: true,
-      }
+      logger.chat.info('Worktree rebased successfully', { conversationId, baseBranch })
+
+      return { success: true }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      logger.chat.error('Rebase sync failed', { conversationId, error: errorMessage })
+      return { success: false, error: errorMessage }
     }
-
-    logger.chat.info('Worktree rebased successfully', { conversationId, baseBranch })
-
-    return { success: true }
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error)
-    logger.chat.error('Rebase sync failed', { conversationId, error: errorMessage })
-    return { success: false, error: errorMessage }
-  }
+  })
 })

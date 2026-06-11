@@ -2,10 +2,10 @@ import type { AIProvider } from '~/server/utils/aiProvider'
 import { registerProvider } from '~/server/utils/aiProviderRegistry'
 import type { AIProviderStreamCallbacks, AIProviderStreamController, AIProviderStreamOptions } from '~/server/utils/aiProvider'
 import { processCodexJsonLine } from '~/server/utils/codexStreamParser'
-import { accessSync, constants, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync } from 'node:fs'
+import { accessSync, constants, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { execSync, spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { transformCodexEvent } from '~/server/utils/uiAdapter'
 import { ensureSpecCatTmpDir } from '~/server/utils/worktreePaths'
 
@@ -331,6 +331,22 @@ const codexProvider: AIProvider = {
   streamChat(opts: AIProviderStreamOptions, callbacks: AIProviderStreamCallbacks): AIProviderStreamController {
     const cliPath = getCodexCliPath()
     const fallbackCodexHome = resolveCodexHomeForSpawn(!!opts.ephemeral)
+    // Ephemeral retries get a per-run mkdtemp home (basename "codex-home-<rand>").
+    // Remove it once the process ends so retries don't leak temp dirs that hold
+    // a copy of the user's Codex credentials.
+    const disposableCodexHome = fallbackCodexHome && basename(fallbackCodexHome).startsWith('codex-home-')
+      ? fallbackCodexHome
+      : null
+    let codexHomeCleaned = false
+    const cleanupCodexHome = () => {
+      if (codexHomeCleaned || !disposableCodexHome) return
+      codexHomeCleaned = true
+      try {
+        rmSync(disposableCodexHome, { recursive: true, force: true })
+      } catch {
+        // Best-effort cleanup only.
+      }
+    }
     const args = buildCodexExecArgs(opts)
     const prompt = buildCodexPrompt(opts)
 
@@ -442,10 +458,12 @@ const codexProvider: AIProvider = {
       }
       flushTail(stdoutBuffer)
       flushTail(stderrBuffer)
+      cleanupCodexHome()
       callbacks.onClose({ exitCode, signal, nonJsonOutput })
     })
 
     proc.on('error', (error) => {
+      cleanupCodexHome()
       callbacks.onError(error)
     })
 

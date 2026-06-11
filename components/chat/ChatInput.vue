@@ -499,6 +499,10 @@ async function processQueue() {
   const queue = messageQueues.value[conversationId] ?? []
   if (queue.length === 0) return
   if (chatStore.isActiveConversationStreaming || isSending.value) return
+  // A permission request / plan approval pauses the provider but flips the
+  // streaming flag off. Don't drain the queue into that pause — the queued
+  // message would race the pending approval and target the wrong turn.
+  if (chatStore.pendingPermission || chatStore.pendingPlanApproval) return
 
   const [next, ...rest] = queue
   setQueueForConversation(conversationId, rest)
@@ -640,16 +644,27 @@ function focusInput() {
 
 watch(inputText, scheduleAutoResize)
 
-// Auto-focus when streaming ends; process queued messages
-watch(() => chatStore.isActiveConversationStreaming, (streaming, wasStreaming) => {
-  if (wasStreaming && !streaming) {
-    if (messageQueue.value.length > 0) {
-      nextTick(() => processQueue())
-    } else {
-      focusInput()
+// Auto-focus when streaming ends; process queued messages.
+// Also re-run when a pending permission/plan approval clears, since those pause
+// the turn without the streaming flag transitioning.
+watch(
+  () => [
+    chatStore.isActiveConversationStreaming,
+    chatStore.pendingPermission !== null,
+    chatStore.pendingPlanApproval !== null,
+  ] as const,
+  ([streaming, hasPermission, hasPlan], prev) => {
+    const wasPaused = prev ? (prev[0] || prev[1] || prev[2]) : false
+    const isPaused = streaming || hasPermission || hasPlan
+    if (wasPaused && !isPaused) {
+      if (messageQueue.value.length > 0) {
+        nextTick(() => processQueue())
+      } else {
+        focusInput()
+      }
     }
-  }
-})
+  },
+)
 
 // Auto-focus when active conversation changes (new conversation created or switched)
 watch(() => chatStore.activeConversationId, () => {

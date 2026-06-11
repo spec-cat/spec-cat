@@ -4,13 +4,14 @@
  * Called automatically after each streaming turn completes.
  */
 
-import { exec } from 'node:child_process'
-import { promisify } from 'node:util'
+import { existsSync } from 'node:fs'
 import { autoCommitChanges } from '~/server/utils/claudeService'
 import { logger } from '~/server/utils/logger'
 import { getProjectDir } from '~/server/utils/projectDir'
+import { validateWorktreePath } from '~/server/utils/validateWorktree'
+import { isSafeBranchName, git } from '~/server/utils/chatGit'
+import { withLock } from '~/server/utils/asyncLock'
 
-const execAsync = promisify(exec)
 const PROTECTED_BRANCHES = new Set(['main', 'master', 'develop', 'dev'])
 
 export default defineEventHandler(async (event) => {
@@ -29,7 +30,12 @@ export default defineEventHandler(async (event) => {
 
   const { worktreePath, conversationId, previousBranch } = body
 
-  try {
+  if (existsSync(worktreePath)) {
+    validateWorktreePath(worktreePath)
+  }
+
+  return withLock(getProjectDir(), async () => {
+   try {
     const result = await autoCommitChanges(worktreePath)
     let deletedPreviousBranch = false
 
@@ -40,9 +46,9 @@ export default defineEventHandler(async (event) => {
         previousBranch !== result.currentBranch,
       )
 
-      if (branchChanged && previousBranch && !PROTECTED_BRANCHES.has(previousBranch)) {
+      if (branchChanged && previousBranch && !PROTECTED_BRANCHES.has(previousBranch) && isSafeBranchName(previousBranch)) {
         try {
-          await execAsync(`git branch -D "${previousBranch}"`, { cwd: getProjectDir() })
+          await git(getProjectDir(), ['branch', '-D', previousBranch])
           deletedPreviousBranch = true
           logger.chat.info('Deleted previous worktree branch after branch switch', {
             conversationId,
@@ -83,5 +89,6 @@ export default defineEventHandler(async (event) => {
     })
 
     return { success: false, error: errorMessage }
-  }
+   }
+  })
 })

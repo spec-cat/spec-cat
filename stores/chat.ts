@@ -1342,6 +1342,7 @@ export const useChatStore = defineStore('chat', () => {
 
     // Clean up stream state
     conversationStreamStates.delete(id)
+    streamingConversations.value.delete(id)
     saveScheduler.cancel(id)
 
     // If deleted conversation was active, clear the panel
@@ -1516,14 +1517,18 @@ export const useChatStore = defineStore('chat', () => {
   /**
    * Resolve a single conflict file: write content and mark as resolved
    */
-  async function resolveConflictFile(filePath: string, content: string): Promise<boolean> {
+  async function resolveConflictFile(filePath: string, content: string, signal?: AbortSignal): Promise<boolean> {
     if (!conflictState.value) return false
+    // Don't write a resolution that completed after the rebase was aborted —
+    // it would clobber files git already restored.
+    if (signal?.aborted) return false
 
     try {
       const res = await writeResolvedFile({
         worktreePath: conflictState.value.worktreePath,
         filePath,
         content,
+        signal,
       })
       if (res.success && conflictState.value) {
         conflictState.value.resolvedFiles.add(filePath)
@@ -1617,8 +1622,9 @@ export const useChatStore = defineStore('chat', () => {
   /**
    * AI-resolve a single conflict file using settings-configured model [FR-004]
    */
-  async function aiResolveConflictFile(filePath: string): Promise<boolean> {
+  async function aiResolveConflictFile(filePath: string, signal?: AbortSignal): Promise<boolean> {
     if (!conflictState.value) return false
+    if (signal?.aborted) return false
 
     const file = conflictState.value.files.find(f => f.path === filePath)
     if (!file) return false
@@ -1629,11 +1635,15 @@ export const useChatStore = defineStore('chat', () => {
         filePath,
         conflictContent: file.content,
         userGuidance: conflictState.value.userGuidance || undefined,
+        signal,
       })
+
+      // The rebase may have been aborted while this AI call was in flight.
+      if (signal?.aborted) return false
 
       if (res.success && res.resolvedContent !== undefined) {
         file.content = res.resolvedContent
-        const resolved = await resolveConflictFile(filePath, res.resolvedContent)
+        const resolved = await resolveConflictFile(filePath, res.resolvedContent, signal)
         if (resolved) {
           addConflictChatMessage('assistant', `Resolved: ${filePath}`, 'success', filePath)
         } else {
@@ -1668,8 +1678,9 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     // Set up abort controller for cancellation
-    conflictResolveAbort = new AbortController()
-    const signal = conflictResolveAbort.signal
+    const controller = new AbortController()
+    conflictResolveAbort = controller
+    const signal = controller.signal
 
     conflictState.value.lifecycleState = 'resolving'
 
@@ -1692,7 +1703,7 @@ export const useChatStore = defineStore('chat', () => {
       }
 
       const results = await Promise.all(
-        batch.map(file => aiResolveConflictFile(file.path)),
+        batch.map(file => aiResolveConflictFile(file.path, signal)),
       )
 
       for (const ok of results) {
@@ -1701,7 +1712,10 @@ export const useChatStore = defineStore('chat', () => {
       }
     }
 
-    conflictResolveAbort = null
+    // Only clear if no newer resolution run replaced this controller.
+    if (conflictResolveAbort === controller) {
+      conflictResolveAbort = null
+    }
 
     if (!conflictState.value) return
 
@@ -1728,7 +1742,7 @@ export const useChatStore = defineStore('chat', () => {
       conflictResolveAbort = null
     }
 
-    const { conversationId, worktreePath, baseBranch, commitMessage, mode } = conflictState.value
+    const { worktreePath } = conflictState.value
 
     addConflictChatMessage('system', 'Resolution cancelled. Resetting conflict state...', 'info')
 
@@ -1739,12 +1753,8 @@ export const useChatStore = defineStore('chat', () => {
       // abort may fail if no rebase in progress — that's ok
     }
 
-    // Clear current state fully
+    // Clear current state fully. The caller (modal) handles post-abort UI.
     conflictState.value = null
-
-    // If there was an ongoing rebase/finalize operation, the caller (modal) handles
-    // the post-abort state. We just ensure everything is clean.
-    addConflictChatMessage('system', 'Conflict resolution aborted and reset.', 'info')
   }
 
   /**

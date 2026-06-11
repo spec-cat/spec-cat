@@ -1,6 +1,8 @@
 import { isGitRepositorySync } from '~/server/utils/git'
 import { execGitArgs } from '~/server/utils/gitExec'
 import { logger } from '~/server/utils/logger'
+import { validateWorktreePath } from '~/server/utils/validateWorktree'
+import { assertSafeBranchName } from '~/server/utils/chatGit'
 
 /**
  * GET /api/chat/compare
@@ -19,6 +21,9 @@ export default defineEventHandler(async (event) => {
         statusMessage: 'worktreePath and baseBranch are required',
       })
     }
+
+    validateWorktreePath(worktreePath)
+    assertSafeBranchName(baseBranch, 'base branch')
 
     if (!isGitRepositorySync(worktreePath)) {
       throw createError({

@@ -49,8 +49,15 @@ function detectLanguage(filePath: string): string {
   return langMap[ext] || 'text'
 }
 
+// Generation counter: each highlight run captures its id and only commits its
+// result if it is still the latest. Prevents a slow run for a previous file
+// from overwriting the current file's highlighted output (per-line awaits make
+// a single run take seconds for large files).
+let highlightSeq = 0
+
 /** Generate syntax-highlighted HTML with conflict section coloring */
 async function highlightContent() {
+  const seq = ++highlightSeq
   isHighlighting.value = true
   try {
     const { codeToHtml } = await import('shiki')
@@ -107,15 +114,17 @@ async function highlightContent() {
       lineHtml += `<div class="conflict-line ${sectionClass}" data-line="${lineNum}"><span class="line-number">${lineNum}</span><span class="line-content">${highlighted}</span></div>\n`
     }
 
+    if (seq !== highlightSeq) return
     highlightedHtml.value = lineHtml
   } catch {
+    if (seq !== highlightSeq) return
     const lines = props.file.content.split('\n')
     highlightedHtml.value = lines.map((line, i) => {
       const num = i + 1
       return `<div class="conflict-line" data-line="${num}"><span class="line-number">${num}</span><span class="line-content">${escapeHtml(line)}</span></div>`
     }).join('\n')
   } finally {
-    isHighlighting.value = false
+    if (seq === highlightSeq) isHighlighting.value = false
   }
 }
 

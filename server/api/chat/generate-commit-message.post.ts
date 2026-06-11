@@ -13,6 +13,7 @@ import { getProjectDir } from '~/server/utils/projectDir'
 import { guardServerProviderCapability } from '~/server/utils/aiProviderSelection'
 import { resolveExistingBaseBranch } from '~/server/utils/baseBranch'
 import { getChatWorktreePath } from '~/server/utils/worktreePaths'
+import { validateWorktreePath } from '~/server/utils/validateWorktree'
 
 const execFileAsync = promisify(execFile)
 
@@ -44,6 +45,7 @@ export default defineEventHandler(async (event) => {
     if (!existsSync(worktreePath)) {
       throw createError({ statusCode: 404, message: 'Worktree not found' })
     }
+    validateWorktreePath(worktreePath)
 
     const providerGuard = await guardServerProviderCapability(
       'autoCommit',

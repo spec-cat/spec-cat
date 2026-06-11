@@ -1,13 +1,16 @@
 /**
  * POST /api/chat/finalize
- * Squash all worktree commits into one, rebase onto base branch,
+ * Rebase all worktree commits onto the base branch, squash them into one,
  * update the base branch pointer, then clean up worktree + temp branch.
  *
- * Conflict handling: abort rebase, return conflict file list, keep worktree.
+ * Order matters: we rebase BEFORE squashing so that a rebase conflict leaves
+ * the original per-turn commit history intact (the rebase is left in progress
+ * for UI resolution). Squashing first would destroy that history on conflict.
+ *
+ * Conflict handling: leave rebase in progress, return conflict file list, keep worktree.
  */
 
-import { exec, execSync } from 'node:child_process'
-import { promisify } from 'node:util'
+import { execSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { resolveExistingBaseBranch } from '~/server/utils/baseBranch'
@@ -15,26 +18,27 @@ import { logger } from '~/server/utils/logger'
 import { getProjectDir } from '~/server/utils/projectDir'
 import { guardServerProviderCapability } from '~/server/utils/aiProviderSelection'
 import { getChatWorktreePath } from '~/server/utils/worktreePaths'
+import { validateWorktreePath } from '~/server/utils/validateWorktree'
+import { assertSafeBranchName, git } from '~/server/utils/chatGit'
+import { autoCommitChanges } from '~/server/utils/claudeService'
+import { withLock } from '~/server/utils/asyncLock'
 import type { FinalizeRequest, FinalizeResponse } from '~/types/chat'
 
-const execAsync = promisify(exec)
-
-async function git(cwd: string, cmd: string): Promise<string> {
-  const { stdout } = await execAsync(`git ${cmd}`, { cwd })
-  return stdout.trim()
-}
-
-/**
- * Auto-commit any uncommitted changes in the worktree
- */
-async function autoCommitChanges(worktreePath: string): Promise<boolean> {
-  const status = await git(worktreePath, 'status --porcelain')
-  if (!status) return false
-
-  await git(worktreePath, 'add -A')
-  // Use stdin (-F -) to safely handle any special characters
-  execSync('git commit -F -', { cwd: worktreePath, input: 'auto-commit uncommitted changes', encoding: 'utf-8' })
-  return true
+async function collectConflictFiles(worktreePath: string): Promise<string[]> {
+  try {
+    const diffOutput = await git(worktreePath, ['diff', '--name-only', '--diff-filter=U'])
+    const files = diffOutput.split('\n').filter(Boolean)
+    if (files.length > 0) return files
+  } catch { /* fall through to status parsing */ }
+  try {
+    const statusOutput = await git(worktreePath, ['status', '--porcelain'])
+    return statusOutput
+      .split('\n')
+      .filter(line => /^(UU|AA|DU|UD|UA|AU|DD)\s/.test(line))
+      .map(line => line.substring(3).trim())
+  } catch {
+    return []
+  }
 }
 
 export default defineEventHandler(async (event): Promise<FinalizeResponse> => {
@@ -57,8 +61,13 @@ export default defineEventHandler(async (event): Promise<FinalizeResponse> => {
   }
 
   const projectDir = getProjectDir()
-  const branchName = body.worktreeBranch || `sc/${conversationId}`
+  const branchName = assertSafeBranchName(body.worktreeBranch || `sc/${conversationId}`, 'branch')
   const worktreePath = body.worktreePath || getChatWorktreePath(conversationId)
+  const previewBranch = body.previewBranch ? assertSafeBranchName(body.previewBranch, 'preview branch') : undefined
+
+  if (existsSync(worktreePath)) {
+    validateWorktreePath(worktreePath)
+  }
 
   logger.chat.info('Finalizing conversation', { conversationId, branchName })
 
@@ -70,135 +79,115 @@ export default defineEventHandler(async (event): Promise<FinalizeResponse> => {
   if (!baseBranch) {
     return { success: false, error: 'Unable to resolve a valid base branch for this worktree.' }
   }
+  assertSafeBranchName(baseBranch, 'base branch')
 
-  try {
-    // 0. Ensure worktree exists
-    if (!existsSync(worktreePath)) {
-      return { success: false, error: 'Worktree directory not found. It may have been cleaned up.' }
-    }
-
-    // 1. Auto-commit any uncommitted changes
-    await autoCommitChanges(worktreePath)
-
-    // 2. Count commits ahead of base branch
-    let commitCount: number
+  return withLock(projectDir, async (): Promise<FinalizeResponse> => {
     try {
-      const countStr = await git(worktreePath, `rev-list --count ${baseBranch}..HEAD`)
-      commitCount = parseInt(countStr, 10)
-    } catch {
-      return { success: false, error: `Cannot compare with base branch "${baseBranch}". It may not exist.` }
-    }
+      // 0. Ensure worktree exists
+      if (!existsSync(worktreePath)) {
+        return { success: false, error: 'Worktree directory not found. It may have been cleaned up.' }
+      }
 
-    if (commitCount === 0) {
-      return { success: false, error: 'No commits to finalize.' }
-    }
+      // 1. Auto-commit any uncommitted changes
+      await autoCommitChanges(worktreePath)
 
-    // 3. Find merge-base (fork point)
-    const mergeBase = await git(worktreePath, `merge-base ${baseBranch} HEAD`)
-
-    // 4. Squash: soft-reset to merge-base then commit
-    await git(worktreePath, `reset --soft ${mergeBase}`)
-    // Use stdin (-F -) to safely handle messages starting with "-" or containing special characters
-    execSync('git commit -F -', { cwd: worktreePath, input: commitMessage, encoding: 'utf-8' })
-
-    // 5. Rebase onto latest base branch
-    try {
-      await git(worktreePath, `rebase ${baseBranch}`)
-    } catch (rebaseError) {
-      // Conflict detected — abort and report
-      logger.chat.warn('Rebase conflict during finalize', { conversationId })
-
-      // Get conflicting files before aborting
-      let conflictFiles: string[] = []
+      // 2. Count commits ahead of base branch
+      let commitCount: number
       try {
-        const diffOutput = await git(worktreePath, 'diff --name-only --diff-filter=U')
-        conflictFiles = diffOutput.split('\n').filter(Boolean)
+        const countStr = await git(worktreePath, ['rev-list', '--count', `${baseBranch}..HEAD`])
+        commitCount = parseInt(countStr, 10)
       } catch {
-        // Fallback: try status
+        return { success: false, error: `Cannot compare with base branch "${baseBranch}". It may not exist.` }
+      }
+
+      if (commitCount === 0) {
+        return { success: false, error: 'No commits to finalize.' }
+      }
+
+      // 3. Rebase onto latest base branch FIRST (before any history rewrite).
+      //    On conflict the original commits are still intact and the rebase is
+      //    left in progress for the user to resolve via the UI.
+      try {
+        await git(worktreePath, ['rebase', baseBranch])
+      } catch {
+        logger.chat.warn('Rebase conflict during finalize', { conversationId })
+        const conflictFiles = await collectConflictFiles(worktreePath)
+        return {
+          success: false,
+          error: `Rebase conflict with "${baseBranch}". Resolve conflicts to continue.`,
+          conflictFiles,
+          rebaseInProgress: true,
+        }
+      }
+
+      // 4. Squash: soft-reset onto base branch tip and commit a single commit.
+      //    After the rebase, base branch is the direct ancestor of HEAD.
+      await git(worktreePath, ['reset', '--soft', baseBranch])
+      // Use stdin (-F -) to safely handle messages starting with "-" or special characters
+      execSync('git commit -F -', { cwd: worktreePath, input: commitMessage, encoding: 'utf-8' })
+
+      // 5. Always checkout baseBranch in main worktree before update-ref.
+      //    If a preview branch is still checked out, update-ref will fail or leave
+      //    the working directory in a dirty state. Switching to baseBranch first
+      //    ensures a clean slate, and the preview branch can be deleted afterwards.
+      try {
+        const currentBranch = await git(projectDir, ['rev-parse', '--abbrev-ref', 'HEAD'])
+        if (currentBranch !== baseBranch) {
+          await git(projectDir, ['checkout', baseBranch])
+        }
+      } catch { /* ignore — main worktree might be in detached HEAD or other state */ }
+
+      // 6. Update base branch ref to point to the squashed+rebased commit
+      const newHead = await git(worktreePath, ['rev-parse', 'HEAD'])
+      await git(projectDir, ['update-ref', `refs/heads/${baseBranch}`, newHead])
+
+      // 6-1. Sync working directory if main worktree is on baseBranch
+      try {
+        const mainBranch = await git(projectDir, ['rev-parse', '--abbrev-ref', 'HEAD'])
+        if (mainBranch === baseBranch) {
+          await git(projectDir, ['reset', '--hard', 'HEAD'])
+        }
+      } catch { /* detached HEAD or other state — skip */ }
+
+      logger.chat.info('Base branch updated', { baseBranch, newHead })
+
+      // 7. Cleanup: remove worktree and delete temp branch + preview branch
+      try {
+        await git(projectDir, ['worktree', 'remove', worktreePath, '--force'])
+      } catch {
         try {
-          const statusOutput = await git(worktreePath, 'status --porcelain')
-          conflictFiles = statusOutput
-            .split('\n')
-            .filter(line => /^(UU|AA|DU|UD|UA|AU|DD)\s/.test(line))
-            .map(line => line.substring(3).trim())
+          await rm(worktreePath, { recursive: true, force: true })
         } catch { /* ignore */ }
       }
 
-      // Keep rebase in progress so user can resolve conflicts via UI
+      await git(projectDir, ['worktree', 'prune']).catch(() => {})
+
+      try {
+        await git(projectDir, ['branch', '-D', branchName])
+      } catch {
+        logger.chat.warn('Failed to delete temp branch', { branchName })
+      }
+
+      if (previewBranch) {
+        try {
+          await git(projectDir, ['branch', '-D', previewBranch])
+        } catch { /* preview branch may not exist — fine */ }
+      }
+
+      logger.chat.info('Conversation finalized', { conversationId, newCommit: newHead })
+
+      return {
+        success: true,
+        newCommit: newHead,
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      logger.chat.error('Finalize failed', { conversationId, error: errorMessage })
+
       return {
         success: false,
-        error: `Rebase conflict with "${baseBranch}". Resolve conflicts to continue.`,
-        conflictFiles,
-        rebaseInProgress: true,
+        error: errorMessage,
       }
     }
-
-    // 6. Always checkout baseBranch in main worktree before update-ref.
-    //    If a preview branch is still checked out, update-ref will fail or leave
-    //    the working directory in a dirty state. Switching to baseBranch first
-    //    ensures a clean slate, and the preview branch can be deleted afterwards.
-    const previewBranch = body.previewBranch
-    try {
-      const currentBranch = await git(projectDir, 'rev-parse --abbrev-ref HEAD')
-      if (currentBranch !== baseBranch) {
-        await git(projectDir, `checkout "${baseBranch}"`)
-      }
-    } catch { /* ignore — main worktree might be in detached HEAD or other state */ }
-
-    // 7. Update base branch ref to point to the squashed+rebased commit
-    const newHead = await git(worktreePath, 'rev-parse HEAD')
-    await git(projectDir, `update-ref refs/heads/${baseBranch} ${newHead}`)
-
-    // 7-1. Sync working directory if main worktree is on baseBranch
-    // update-ref only moves the ref pointer — working dir & index stay stale,
-    // causing reverse uncommitted changes without this reset.
-    try {
-      const mainBranch = await git(projectDir, 'rev-parse --abbrev-ref HEAD')
-      if (mainBranch === baseBranch) {
-        await git(projectDir, 'reset --hard HEAD')
-      }
-    } catch { /* detached HEAD or other state — skip */ }
-
-    logger.chat.info('Base branch updated', { baseBranch, newHead })
-
-    // 8. Cleanup: remove worktree and delete temp branch + preview branch
-    try {
-      await execAsync(`git worktree remove "${worktreePath}" --force`, { cwd: projectDir })
-    } catch {
-      // Fallback: direct removal
-      try {
-        await rm(worktreePath, { recursive: true, force: true })
-      } catch { /* ignore */ }
-    }
-
-    await execAsync('git worktree prune', { cwd: projectDir }).catch(() => {})
-
-    try {
-      await git(projectDir, `branch -D "${branchName}"`)
-    } catch {
-      logger.chat.warn('Failed to delete temp branch', { branchName })
-    }
-
-    // Delete preview branch if it exists
-    if (previewBranch) {
-      try {
-        await git(projectDir, `branch -D "${previewBranch}"`)
-      } catch { /* preview branch may not exist — fine */ }
-    }
-
-    logger.chat.info('Conversation finalized', { conversationId, newCommit: newHead })
-
-    return {
-      success: true,
-      newCommit: newHead,
-    }
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error)
-    logger.chat.error('Finalize failed', { conversationId, error: errorMessage })
-
-    return {
-      success: false,
-      error: errorMessage,
-    }
-  }
+  })
 })
