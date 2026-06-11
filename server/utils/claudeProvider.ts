@@ -57,7 +57,7 @@ function extractSessionId(event: Record<string, unknown>): string | undefined {
 const metadata = {
   id: 'claude',
   name: 'Claude Code CLI',
-  description: 'Local Claude CLI session (Sonnet/Opus/Haiku) via @anthropic-ai/claude-code.',
+  description: 'Local Claude CLI session (Fable/Sonnet/Opus/Haiku) via @anthropic-ai/claude-code.',
   models: CLAUDE_MODELS.map((model) => ({
     key: model.value,
     label: model.label,

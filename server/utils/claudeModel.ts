@@ -4,13 +4,14 @@ import { readSpecCatStore } from './specCatStore'
 const DEFAULT_MODEL: ClaudeModel = 'sonnet'
 
 const MODEL_IDS: Record<ClaudeModel, string> = {
+  fable: 'claude-fable-5',
   sonnet: 'claude-sonnet-4-20250514',
   opus: 'claude-opus-4-20250514',
   haiku: 'claude-3-5-haiku-20241022',
 }
 
 function isClaudeModel(value: unknown): value is ClaudeModel {
-  return value === 'sonnet' || value === 'opus' || value === 'haiku'
+  return value === 'fable' || value === 'sonnet' || value === 'opus' || value === 'haiku'
 }
 
 export async function getConfiguredClaudeModel(): Promise<ClaudeModel> {
