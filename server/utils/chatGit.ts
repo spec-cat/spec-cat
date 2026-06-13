@@ -32,6 +32,10 @@ export function assertSafeBranchName(value: unknown, label = 'branch'): string {
   return value
 }
 
+export function localBranchRef(branch: string, label = 'branch'): string {
+  return `refs/heads/${assertSafeBranchName(branch, label)}`
+}
+
 /**
  * Run a git command (argv form, no shell) in the given working directory and
  * return its trimmed stdout. Drop-in replacement for the per-endpoint

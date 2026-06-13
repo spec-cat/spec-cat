@@ -19,7 +19,7 @@ import { getProjectDir } from '~/server/utils/projectDir'
 import { guardServerProviderCapability } from '~/server/utils/aiProviderSelection'
 import { getChatWorktreePath } from '~/server/utils/worktreePaths'
 import { validateWorktreePath } from '~/server/utils/validateWorktree'
-import { assertSafeBranchName, git } from '~/server/utils/chatGit'
+import { assertSafeBranchName, git, localBranchRef } from '~/server/utils/chatGit'
 import { autoCommitChanges } from '~/server/utils/claudeService'
 import { withLock } from '~/server/utils/asyncLock'
 import type { FinalizeRequest, FinalizeResponse } from '~/types/chat'
@@ -79,7 +79,7 @@ export default defineEventHandler(async (event): Promise<FinalizeResponse> => {
   if (!baseBranch) {
     return { success: false, error: 'Unable to resolve a valid base branch for this worktree.' }
   }
-  assertSafeBranchName(baseBranch, 'base branch')
+  const baseBranchRef = localBranchRef(baseBranch, 'base branch')
 
   return withLock(projectDir, async (): Promise<FinalizeResponse> => {
     try {
@@ -94,7 +94,7 @@ export default defineEventHandler(async (event): Promise<FinalizeResponse> => {
       // 2. Count commits ahead of base branch
       let commitCount: number
       try {
-        const countStr = await git(worktreePath, ['rev-list', '--count', `${baseBranch}..HEAD`])
+        const countStr = await git(worktreePath, ['rev-list', '--count', `${baseBranchRef}..HEAD`])
         commitCount = parseInt(countStr, 10)
       } catch {
         return { success: false, error: `Cannot compare with base branch "${baseBranch}". It may not exist.` }
@@ -108,7 +108,7 @@ export default defineEventHandler(async (event): Promise<FinalizeResponse> => {
       //    On conflict the original commits are still intact and the rebase is
       //    left in progress for the user to resolve via the UI.
       try {
-        await git(worktreePath, ['rebase', baseBranch])
+        await git(worktreePath, ['rebase', baseBranchRef])
       } catch {
         logger.chat.warn('Rebase conflict during finalize', { conversationId })
         const conflictFiles = await collectConflictFiles(worktreePath)
@@ -122,7 +122,7 @@ export default defineEventHandler(async (event): Promise<FinalizeResponse> => {
 
       // 4. Squash: soft-reset onto base branch tip and commit a single commit.
       //    After the rebase, base branch is the direct ancestor of HEAD.
-      await git(worktreePath, ['reset', '--soft', baseBranch])
+      await git(worktreePath, ['reset', '--soft', baseBranchRef])
       // Use stdin (-F -) to safely handle messages starting with "-" or special characters
       execSync('git commit -F -', { cwd: worktreePath, input: commitMessage, encoding: 'utf-8' })
 
@@ -133,7 +133,7 @@ export default defineEventHandler(async (event): Promise<FinalizeResponse> => {
       try {
         const currentBranch = await git(projectDir, ['rev-parse', '--abbrev-ref', 'HEAD'])
         if (currentBranch !== baseBranch) {
-          await git(projectDir, ['checkout', baseBranch])
+          await git(projectDir, ['switch', baseBranch])
         }
       } catch { /* ignore — main worktree might be in detached HEAD or other state */ }
 

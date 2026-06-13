@@ -6,7 +6,7 @@ vi.mock('~/server/utils/gitExec', () => ({
   execGitCommand: vi.fn(),
 }))
 
-import { isSafeBranchName, assertSafeBranchName } from '~/server/utils/chatGit'
+import { isSafeBranchName, assertSafeBranchName, localBranchRef } from '~/server/utils/chatGit'
 
 describe('isSafeBranchName', () => {
   it('accepts ordinary branch names', () => {
@@ -50,5 +50,16 @@ describe('assertSafeBranchName', () => {
 
   it('throws for an invalid branch', () => {
     expect(() => assertSafeBranchName('a; rm -rf /')).toThrow()
+  })
+})
+
+describe('localBranchRef', () => {
+  it('returns an explicit heads ref for branch revision arguments', () => {
+    expect(localBranchRef('f-client')).toBe('refs/heads/f-client')
+    expect(localBranchRef('feature/f-client')).toBe('refs/heads/feature/f-client')
+  })
+
+  it('rejects invalid branch names', () => {
+    expect(() => localBranchRef('a b')).toThrow()
   })
 })
