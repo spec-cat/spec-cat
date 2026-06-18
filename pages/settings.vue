@@ -37,7 +37,7 @@ const handleProviderSelection = (selection: AIProviderSelection) => {
       <section>
         <h2 class="text-lg font-mono text-retro-text mb-4">AI Provider</h2>
         <p class="text-sm text-retro-muted mb-4">
-          Select the provider and model that should power new conversations.
+          Select the provider that should power new conversations.
         </p>
 
         <ProviderSelector

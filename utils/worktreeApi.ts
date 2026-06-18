@@ -33,6 +33,7 @@ export async function createWorktree(params: {
 export async function deleteWorktree(params: {
   worktreePath: string
   branch: string
+  conversationId?: string
 }): Promise<void> {
   await $fetch('/api/chat/worktree', {
     method: 'DELETE',

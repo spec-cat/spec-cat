@@ -13,9 +13,6 @@ import {
 } from '@heroicons/vue/24/outline'
 import { PERMISSION_MODE_LABELS, type PermissionMode, type ChatImageAttachment } from '~/types/chat'
 import type { SearchMode, SearchResponse } from '~/types/specSearch'
-import type { AIProviderMetadata, AIProviderSelection } from '~/types/aiProvider'
-import { DEFAULT_MODEL_KEY, DEFAULT_PROVIDER_ID } from '~/types/aiProvider'
-import { useSettingsStore } from '~/stores/settings'
 import { buildStreamOptsFromConversation } from '~/utils/chatStream'
 import {
   buildContextQuery,
@@ -26,14 +23,6 @@ import {
   type ContextDiagnostics,
   type SpecSearchCommand,
 } from '~/utils/chatCommands'
-import {
-  buildModelOptions,
-  findOptionForSelection,
-  getSelectionKey,
-  groupModelOptions,
-  type ModelOption,
-  type ModelOptionGroup,
-} from '~/utils/modelOptions'
 import {
   MAX_IMAGE_ATTACHMENTS,
   MAX_IMAGE_SIZE_BYTES,
@@ -53,7 +42,6 @@ const props = defineProps<{
 }>()
 
 const chatStore = useChatStore()
-const settingsStore = useSettingsStore()
 const { sendMessage: streamMessage, sendPermissionResponse, approvePlan, rejectPlan, abort, resetContext } = useChatStream()
 
 const inputText = ref('')
@@ -61,10 +49,8 @@ const inputRef = ref<HTMLTextAreaElement | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const isSending = ref(false)
 const showModeMenu = ref(false)
-const showModelMenu = ref(false)
 const pendingAttachments = ref<ChatImageAttachment[]>([])
 let pendingResizeRaf: number | null = null
-const pendingConversationSelection = ref<AIProviderSelection | null>(null)
 
 const messageQueues = ref<Record<string, QueuedMessage[]>>({})
 
@@ -82,69 +68,6 @@ function setQueueForConversation(conversationId: string, queue: QueuedMessage[])
     messageQueues.value = { ...messageQueues.value, [conversationId]: queue }
   }
 }
-
-const { data: providerResponse, pending: providersLoading } = useAsyncData<{ providers: AIProviderMetadata[] }>(
-  'chat-input-ai-providers',
-  () => $fetch<{ providers: AIProviderMetadata[] }>('/api/ai/providers'),
-  { server: false, default: () => ({ providers: [] }) },
-)
-
-const providers = computed(() => providerResponse.value?.providers ?? [])
-
-const requiresPermissions = computed(() => chatStore.permissionMode === 'ask' || chatStore.permissionMode === 'plan')
-const modelOptions = computed<ModelOption[]>(() =>
-  buildModelOptions(providers.value, requiresPermissions.value),
-)
-const modelOptionGroups = computed<ModelOptionGroup[]>(() => groupModelOptions(modelOptions.value))
-
-const currentSelection = computed<AIProviderSelection>(() => {
-  const conv = chatStore.activeConversation
-  if (conv?.providerId && conv.providerModelKey) {
-    return { providerId: conv.providerId, modelKey: conv.providerModelKey }
-  }
-  if (pendingConversationSelection.value) {
-    return pendingConversationSelection.value
-  }
-  return settingsStore.providerSelection
-})
-
-const selectedModelKey = computed(() => getSelectionKey(currentSelection.value))
-const selectedModelOption = computed(() =>
-  findOptionForSelection(modelOptions.value, currentSelection.value),
-)
-const selectedModelLabel = computed(() => selectedModelOption.value?.label || 'Select model')
-
-function applyConversationSelection(conversationId: string, selection: AIProviderSelection) {
-  chatStore.setConversationProviderSelection(conversationId, selection.providerId, selection.modelKey)
-  chatStore.clearProviderSession(conversationId)
-  chatStore.saveConversation(conversationId, true)
-}
-
-function applyPendingConversationSelectionIfNeeded(conversationId: string) {
-  if (!pendingConversationSelection.value) return
-  applyConversationSelection(conversationId, pendingConversationSelection.value)
-  pendingConversationSelection.value = null
-}
-
-function selectModel(option: ModelOption) {
-  if (!option || !option.compatible) return
-
-  const selection: AIProviderSelection = {
-    providerId: option.providerId,
-    modelKey: option.modelKey,
-  }
-
-  const conversationId = chatStore.activeConversationId
-  if (conversationId) {
-    applyConversationSelection(conversationId, selection)
-    pendingConversationSelection.value = null
-    showModelMenu.value = false
-    return
-  }
-  pendingConversationSelection.value = selection
-  showModelMenu.value = false
-}
-
 
 const modeIcons = {
   plan: ClipboardDocumentListIcon,
@@ -171,14 +94,10 @@ function handleClickOutside(e: MouseEvent) {
   if (!target.closest('.mode-selector')) {
     showModeMenu.value = false
   }
-  if (!target.closest('.model-selector')) {
-    showModelMenu.value = false
-  }
 }
 
 onMounted(() => {
   document.addEventListener('click', handleClickOutside)
-  void settingsStore.hydrate()
 })
 
 onUnmounted(() => {
@@ -394,7 +313,6 @@ async function sendMessage(overrideText?: string, overrideAttachments?: ChatImag
   const message = (overrideText ?? inputText.value).trim()
   const attachments = overrideAttachments ?? [...pendingAttachments.value]
   if ((message.length === 0 && attachments.length === 0) || chatStore.isActiveConversationStreaming || isSending.value || props.disabled) return
-  const hadActiveConversation = !!chatStore.activeConversationId
   let conversationId: string | null = null
   let assistantMessageId: string | null = null
 
@@ -430,10 +348,6 @@ async function sendMessage(overrideText?: string, overrideAttachments?: ChatImag
     if (!conversationId) {
       throw new Error('Failed to create or select a conversation')
     }
-    if (!hadActiveConversation) {
-      applyPendingConversationSelectionIfNeeded(conversationId)
-    }
-
     const assistantMessage = startAssistantStreamingTurn(conversationId)
     assistantMessageId = assistantMessage.id
 
@@ -668,9 +582,6 @@ watch(
 
 // Auto-focus when active conversation changes (new conversation created or switched)
 watch(() => chatStore.activeConversationId, () => {
-  if (chatStore.activeConversationId) {
-    pendingConversationSelection.value = null
-  }
   clearPendingAttachments()
   focusInput()
   // Resume processing a persisted queue when switching back to a conversation
@@ -683,55 +594,8 @@ watch(() => chatStore.activeConversationId, () => {
 
 <template>
   <div class="flex-shrink-0 flex-grow-0 border-t border-retro-border bg-retro-dark p-3">
-    <!-- Model + Mode selector -->
+    <!-- Mode selector -->
     <div class="flex flex-wrap items-center gap-2 mb-2">
-      <div class="relative min-w-0 flex-1 max-w-full sm:max-w-[154px] model-selector">
-        <button
-          :disabled="disabled || chatStore.isActiveConversationStreaming || hasPendingPermission || hasPendingPlanApproval || providersLoading || modelOptions.length === 0"
-          class="flex items-center justify-between gap-1.5 w-full px-2 py-1 rounded border border-retro-border/50
-                 hover:border-retro-border text-xs font-mono text-retro-muted transition-colors
-                 disabled:opacity-60 disabled:cursor-not-allowed"
-          @click="showModelMenu = !showModelMenu"
-        >
-          <span class="truncate text-left">{{ selectedModelLabel }}</span>
-          <ChevronDownIcon class="w-3 h-3 flex-shrink-0" />
-        </button>
-
-        <div
-          v-if="showModelMenu"
-          class="absolute bottom-full left-0 mb-1 py-1 bg-retro-dark border border-retro-border rounded shadow-lg z-10 min-w-[220px] max-w-[280px]"
-        >
-          <div
-            v-if="modelOptions.length === 0"
-            class="px-3 py-1.5 text-xs font-mono text-retro-muted"
-          >
-            Loading models...
-          </div>
-          <div
-            v-for="group in modelOptionGroups"
-            :key="group.providerId"
-            class="py-0.5"
-          >
-            <div class="px-3 py-1 text-[11px] font-mono uppercase tracking-wide text-retro-cyan/80 select-none">
-              {{ group.providerName }}
-            </div>
-            <button
-              v-for="option in group.options"
-              :key="option.key"
-              :disabled="!option.compatible"
-              class="flex items-center gap-2 w-full px-3 py-1.5 text-xs font-mono text-left
-                     hover:bg-retro-panel transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              :class="selectedModelKey === option.key ? 'bg-retro-panel text-retro-text' : 'text-retro-muted'"
-              @click="selectModel(option)"
-            >
-              <span class="truncate">
-                {{ option.modelLabel }}{{ option.compatible ? '' : ' (unsupported for current permission mode)' }}
-              </span>
-            </button>
-          </div>
-        </div>
-      </div>
-
       <div class="relative mode-selector">
         <button
           class="flex items-center gap-1.5 px-2 py-1 rounded border border-retro-border/50

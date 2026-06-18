@@ -9,11 +9,11 @@ import { jobQueue } from '~/server/utils/jobQueue'
 import type { ChatJobMessage, JobSource } from '~/server/utils/jobQueue'
 import { startPersisting } from '~/server/utils/jobPersister'
 import { getProjectDir } from '~/server/utils/projectDir'
-import { upsertConversationInStorage } from '~/server/utils/conversationStore'
+import { readConversationFromStorage, upsertConversationInStorage } from '~/server/utils/conversationStore'
 import { isUsableBaseBranchName, resolvePreferredBaseBranch } from '~/server/utils/baseBranch'
 import { execGitCommand } from '~/server/utils/gitExec'
 import { getChatWorktreePath } from '~/server/utils/worktreePaths'
-import { generateConversationId, generateConversationTitle, STORAGE_VERSION } from '~/types/chat'
+import { generateConversationId, generateConversationTitle, sanitizeConversationTitle, STORAGE_VERSION } from '~/types/chat'
 import type { Conversation, ConversationSource } from '~/types/chat'
 
 interface SubmitJobRequest {
@@ -92,19 +92,32 @@ export default defineEventHandler(async (event) => {
     console.warn('[jobs.post] Failed to create worktree for server job:', err instanceof Error ? err.message : err)
   }
 
-  // Create a minimal conversation record in the store
+  // Create or update a minimal conversation record in the store.
+  // Existing conversations keep their messages and provider session so server
+  // jobs can continue the same Claude/Codex context after a restart.
   const conversationCwd = worktreeResult.success ? worktreeResult.worktreePath! : (body.cwd || projectDir)
+  const existingConversationRaw = body.conversationId
+    ? await readConversationFromStorage(conversationId)
+    : null
+  const existingConversation = existingConversationRaw && typeof existingConversationRaw === 'object'
+    ? existingConversationRaw as Partial<Conversation>
+    : null
+
   const conversation: Conversation = {
+    ...existingConversation,
     id: conversationId,
-    title: body.title || generateConversationTitle(body.message),
-    messages: [],
-    createdAt: now,
+    title: body.title
+      ? sanitizeConversationTitle(body.title)
+      : existingConversation?.title || generateConversationTitle(body.message),
+    messages: Array.isArray(existingConversation?.messages) ? existingConversation.messages : [],
+    createdAt: typeof existingConversation?.createdAt === 'string' ? existingConversation.createdAt : now,
     updatedAt: now,
     cwd: conversationCwd,
     source: source as ConversationSource,
-    featureId: body.featureId,
-    providerId: body.providerId,
-    providerModelKey: body.providerModelKey,
+    featureId: body.featureId ?? existingConversation?.featureId,
+    providerId: body.providerId ?? existingConversation?.providerId,
+    providerModelKey: body.providerModelKey ?? existingConversation?.providerModelKey,
+    providerSessionId: existingConversation?.providerSessionId,
     ...(worktreeResult.success && {
       worktreePath: worktreeResult.worktreePath,
       worktreeBranch: worktreeResult.branch,
@@ -119,6 +132,7 @@ export default defineEventHandler(async (event) => {
     message: body.message,
     conversationId,
     requestId: `req-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+    sessionId: conversation.providerSessionId,
     permissionMode: body.permissionMode || 'bypass',
     cwd: conversationCwd,
     baseBranch: worktreeResult.baseBranch || requestedBaseBranch,

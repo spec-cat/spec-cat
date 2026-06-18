@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AIProvider } from '~/server/utils/aiProvider'
-import type { UIStreamEvent } from '~/types/chat'
 
 const registryState = vi.hoisted(() => ({
   provider: null as AIProvider | null,
+}))
+
+const interactiveState = vi.hoisted(() => ({
+  query: vi.fn(),
 }))
 
 vi.mock('~/server/utils/aiProviderRegistry', () => ({
@@ -14,6 +17,10 @@ vi.mock('~/server/utils/aiProviderRegistry', () => ({
     }
     return undefined
   }),
+}))
+
+vi.mock('~/server/utils/interactiveProviderQuery', () => ({
+  queryInteractiveProvider: interactiveState.query,
 }))
 
 import { runProviderOneShot } from '~/server/utils/providerOneShot'
@@ -40,30 +47,6 @@ function makeProvider(overrides: Partial<AIProvider> = {}): AIProvider {
         conflictResolution: true,
       },
     },
-    toCanonicalEvents(data) {
-      return [data as UIStreamEvent]
-    },
-    streamChat(_opts, callbacks) {
-      callbacks.onProviderJson({
-        type: 'block_start',
-        blockId: 'blk-1',
-        blockType: 'text',
-        text: 'resolved ',
-      } as UIStreamEvent)
-      callbacks.onProviderJson({
-        type: 'block_delta',
-        blockId: 'blk-1',
-        text: 'content',
-      } as UIStreamEvent)
-      callbacks.onClose({
-        exitCode: 0,
-        signal: null,
-        nonJsonOutput: [],
-      })
-      return {
-        kill: vi.fn(),
-      }
-    },
     isModelSupported(modelKey: string) {
       return modelKey === 'gpt-5.4'
     },
@@ -87,39 +70,12 @@ function makeProvider(overrides: Partial<AIProvider> = {}): AIProvider {
 describe('runProviderOneShot', () => {
   beforeEach(() => {
     registryState.provider = null
+    interactiveState.query.mockReset()
   })
 
-  it('runs against the selected provider and collects text output', async () => {
-    const captured: Array<Record<string, unknown>> = []
-    registryState.provider = makeProvider({
-      streamChat(opts, callbacks) {
-        captured.push({
-          providerId: opts.selection.providerId,
-          modelKey: opts.selection.modelKey,
-          permissionMode: opts.permissionMode,
-          ephemeral: opts.ephemeral,
-        })
-        callbacks.onProviderJson({
-          type: 'block_start',
-          blockId: 'blk-1',
-          blockType: 'text',
-          text: 'resolved ',
-        } as UIStreamEvent)
-        callbacks.onProviderJson({
-          type: 'block_delta',
-          blockId: 'blk-1',
-          text: 'content',
-        } as UIStreamEvent)
-        callbacks.onClose({
-          exitCode: 0,
-          signal: null,
-          nonJsonOutput: [],
-        })
-        return {
-          kill: vi.fn(),
-        }
-      },
-    })
+  it('runs the prompt through the interactive PTY session and returns its text', async () => {
+    registryState.provider = makeProvider()
+    interactiveState.query.mockResolvedValue({ success: true, text: 'resolved content' })
 
     const result = await runProviderOneShot({
       selection: { providerId: 'codex', modelKey: 'gpt-5.4' },
@@ -128,18 +84,18 @@ describe('runProviderOneShot', () => {
       capability: 'conflictResolution',
     })
 
-    expect(result).toEqual({
-      success: true,
-      text: 'resolved content',
-    })
-    expect(captured).toEqual([
-      {
+    expect(result).toEqual({ success: true, text: 'resolved content' })
+    expect(interactiveState.query).toHaveBeenCalledTimes(1)
+    expect(interactiveState.query).toHaveBeenCalledWith(
+      expect.objectContaining({
         providerId: 'codex',
         modelKey: 'gpt-5.4',
-        permissionMode: 'bypass',
-        ephemeral: true,
-      },
-    ])
+        cwd: '/tmp/worktree',
+        prompt: 'resolve this conflict',
+        bracketedPaste: true,
+        cleanChrome: false,
+      }),
+    )
   })
 
   it('fails explicitly when the selected provider lacks conflict resolution capability', async () => {
@@ -177,5 +133,6 @@ describe('runProviderOneShot', () => {
       success: false,
       error: 'Provider "codex" does not support AI conflict resolution.',
     })
+    expect(interactiveState.query).not.toHaveBeenCalled()
   })
 })

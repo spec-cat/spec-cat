@@ -7,13 +7,22 @@
 import { existsSync } from 'node:fs'
 import { eventBus, GLOBAL_CHANNEL, type JobEvent } from './eventBus'
 import { getProjectDir } from './projectDir'
+import { readConversationFromStorage, updateConversationProviderSessionInStorage } from './conversationStore'
 import { ensureChatWorktree } from './ensureChatWorktree'
 import { isSpecCatWorktreePath } from './worktreePaths'
 import { loadSpecContext } from './specContext'
 import { guardProviderCapability, resolveServerProviderSelection } from './aiProviderSelection'
 import type { AIProviderStreamController } from './aiProvider'
-import { streamChatWithProvider } from './aiProvider'
 import { getProvider } from './aiProviderRegistry'
+import { startCliHookMonitor } from './cliHookMonitor'
+import {
+  buildTerminalSessionId,
+  disposeTerminalSession,
+  getOrCreateTerminalSession,
+  subscribeTerminalSession,
+  writeTerminalInput,
+  type TerminalSession,
+} from './terminalSessions'
 import {
   hasCodexMissingRolloutPathError,
   hasCodexPermissionError,
@@ -88,6 +97,18 @@ interface ConversationState {
 
 const MAX_ATTACHMENT_COUNT = 4
 const MAX_ATTACHMENT_SIZE_BYTES = 5 * 1024 * 1024
+// Hard cap on a single PTY turn before it is force-failed. Generous so genuine
+// long-running turns are unaffected; exists only to stop a job leaking forever
+// when the Stop hook never fires.
+const PTY_TURN_TIMEOUT_MS = 30 * 60_000
+// Fallback turn-completion signal for when the CLI Stop hook never lands (hook
+// not honored, spool race, reused session without hooks). The interactive TUI
+// streams output continuously while working (animated spinner/status line), so a
+// sustained gap of zero PTY output after the prompt is submitted means the TUI
+// is idle at the composer = the turn finished. Long enough that a healthy Stop
+// hook (which fires within ~1s of completion) always wins; short enough that a
+// broken hook recovers in seconds instead of hanging for PTY_TURN_TIMEOUT_MS.
+const PTY_IDLE_FINALIZE_MS = 8000
 const SPECKIT_AUTONOMY_DIRECTIVE = [
   'Speckit Execution Mode (MANDATORY):',
   '- Do not ask the user for confirmation, follow-up, or permission to proceed.',
@@ -157,6 +178,25 @@ function buildProviderMessage(baseMessage: string, attachments: ChatImageAttachm
 
 function generateJobId(): string {
   return `job-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
+}
+
+function getStoredProviderSessionId(conversation: unknown): string | null {
+  if (!conversation || typeof conversation !== 'object') return null
+  const record = conversation as Record<string, unknown>
+  const value = record.providerSessionId ?? record.claudeSessionId
+  return typeof value === 'string' && value.length > 0 ? value : null
+}
+
+function getStoredProviderSelection(conversation: unknown): { providerId: string; providerModelKey: string } | null {
+  if (!conversation || typeof conversation !== 'object') return null
+  const record = conversation as Record<string, unknown>
+  const providerId = record.providerId
+  if (typeof providerId !== 'string' || providerId.length === 0) return null
+  const providerModelKey = record.providerModelKey
+  return {
+    providerId,
+    providerModelKey: typeof providerModelKey === 'string' ? providerModelKey : '',
+  }
 }
 
 // ── JobQueue Implementation ────────────────────────────
@@ -280,7 +320,7 @@ class ChatJobQueue {
       message: msg.message,
     })
 
-    this.runProvider(job, false, false)
+    this.runProvider(job, false)
     return job.id
   }
 
@@ -314,7 +354,7 @@ class ChatJobQueue {
       // Resume with original permission mode
       const resumeMode: PermissionMode = job.message.permissionMode || 'ask'
       job.message = { ...job.message, permissionMode: resumeMode }
-      this.runProvider(job, false, false)
+      this.runProvider(job, false)
     } else {
       procState.pendingTools = []
       this.setJobStatus(job, 'done')
@@ -352,6 +392,47 @@ class ChatJobQueue {
     this.emitAndBuffer(job, { type: 'done', requestId: 'aborted', aborted: true })
     this.setJobStatus(job, 'done')
     console.log('[JobQueue] Abort: job status set to done for', job.id)
+  }
+
+  /**
+   * Terminate any provider process associated with a conversation that has
+   * been finalized. Unlike abort(), this is cleanup for a read-only
+   * conversation, so it must not emit a stopped assistant turn.
+   */
+  finalizeConversation(conversationId: string): void {
+    // Kill the persistent interactive PTY for this conversation. The synthetic
+    // job controller only sends Ctrl+C (interrupts a turn but leaves the CLI at
+    // the composer), so without this the claude/codex process leaks once the
+    // conversation is finalized. Done unconditionally — an idle, job-less
+    // session (turn already completed) is the most common leak.
+    disposeTerminalSession(buildTerminalSessionId(conversationId))
+
+    const convState = this.conversationStates.get(conversationId)
+    if (!convState) return
+
+    if (convState.activeJobId) {
+      const job = this.jobs.get(convState.activeJobId)
+      const procState = this.jobProcessStates.get(convState.activeJobId)
+
+      if (procState?.proc) {
+        procState.procGeneration++
+        killProc(procState.proc)
+        procState.proc = null
+        console.log('[JobQueue] Finalize: process killed for', convState.activeJobId)
+      }
+
+      if (procState) {
+        procState.pendingTools = []
+      }
+
+      if (job && job.status !== 'done' && job.status !== 'error') {
+        this.setJobStatus(job, 'done')
+      }
+    }
+
+    convState.providerSessionId = null
+    convState.approvedTools.clear()
+    convState.activeJobId = null
   }
 
   /**
@@ -407,7 +488,91 @@ class ChatJobQueue {
 
   // ── Provider Execution ─────────────────────────────
 
-  private async runProvider(job: ChatJob, isRetry: boolean, forceEphemeral: boolean): Promise<void> {
+  /**
+   * Execute a job through the provider's interactive PTY session. Turn
+   * completion is detected via the CLI Stop hook.
+   */
+  private async runProvider(job: ChatJob, isRetry: boolean): Promise<void> {
+    return this.runProviderViaPty(job, isRetry)
+  }
+
+  /**
+   * Inject a prompt into a (possibly freshly-spawned) PTY session once its TUI
+   * composer is ready, then submit it. The prompt is bracketed-pasted so
+   * embedded newlines don't submit line-by-line. Server-side and
+   * client-independent — runs whether or not a terminal-ws viewer is attached.
+   */
+  private injectMessage(
+    session: TerminalSession,
+    sessionId: string,
+    text: string,
+    stillValid: () => boolean,
+    onSubmitted: () => void,
+  ): void {
+    const READY_IDLE_MS = 1200
+    const REUSED_READY_MS = 800
+    const READY_MAX_MS = 15_000
+    const SUBMIT_IDLE_MS = 600
+    const SUBMIT_MAX_MS = 4000
+    const reused = session.buffer.length > 0
+
+    // Strip embedded bracketed-paste markers so a message cannot break out of
+    // paste mode and submit early or inject control sequences.
+    const safeText = text.replace(/\x1b\[20[01]~/g, '')
+
+    const startedAt = Date.now()
+    let firstDataAt = reused ? startedAt : 0
+    let lastDataAt = Date.now()
+    let injected = false
+    let injectedAt = 0
+    let submitted = false
+
+    const unsubscribe = subscribeTerminalSession(session, {
+      onData: () => {
+        const now = Date.now()
+        if (!firstDataAt) firstDataAt = now
+        lastDataAt = now
+      },
+      onExit: () => {},
+    })
+
+    const timer = setInterval(() => {
+      if (!stillValid()) {
+        clearInterval(timer)
+        unsubscribe()
+        return
+      }
+      const now = Date.now()
+
+      if (!injected) {
+        const idleMs = reused ? REUSED_READY_MS : READY_IDLE_MS
+        const ready = firstDataAt > 0 && now - lastDataAt >= idleMs
+        const forced = now - startedAt >= READY_MAX_MS
+        if (ready || forced) {
+          injected = true
+          injectedAt = now
+          lastDataAt = now
+          writeTerminalInput(sessionId, `\x1b[200~${safeText}\x1b[201~`)
+        }
+        return
+      }
+
+      if (!submitted) {
+        const echoSettled = now - lastDataAt >= SUBMIT_IDLE_MS
+        const submitForced = now - injectedAt >= SUBMIT_MAX_MS
+        if (echoSettled || submitForced) {
+          submitted = true
+          writeTerminalInput(sessionId, '\r')
+          onSubmitted()
+          clearInterval(timer)
+          unsubscribe()
+        }
+        return
+      }
+    }, 250)
+  }
+
+  private async runProviderViaPty(job: ChatJob, isRetry: boolean): Promise<void> {
     const msg = job.message
     const convState = this.getConversationState(job.conversationId)
     const procState = this.jobProcessStates.get(job.id)
@@ -415,9 +580,19 @@ class ChatJobQueue {
 
     job.status = 'running'
 
-    const requestedSelection = msg.providerId
-      ? { providerId: msg.providerId, modelKey: msg.providerModelKey || '' }
-      : { providerId: 'claude', modelKey: msg.providerModelKey || '' }
+    // Resolve provider (mirror of the stream path: prefer the message, fall
+    // back to the persisted conversation provider rather than hardcoding claude).
+    let requestedSelection: { providerId: string; modelKey: string }
+    if (msg.providerId) {
+      requestedSelection = { providerId: msg.providerId, modelKey: msg.providerModelKey || '' }
+    } else {
+      const storedSelection = getStoredProviderSelection(
+        await readConversationFromStorage(job.conversationId),
+      )
+      requestedSelection = storedSelection
+        ? { providerId: storedSelection.providerId, modelKey: msg.providerModelKey || storedSelection.providerModelKey }
+        : { providerId: 'claude', modelKey: msg.providerModelKey || '' }
+    }
     const selection = await resolveServerProviderSelection(requestedSelection)
     const provider = getProvider(selection.providerId)
     if (!provider) {
@@ -430,43 +605,10 @@ class ChatJobQueue {
       return
     }
 
-    const providerGuard = await guardProviderCapability(
-      selection,
-      'streaming',
-      'Choose a provider with streaming capability in Settings.',
-    )
-    if ('failure' in providerGuard) {
-      this.emitAndBuffer(job, {
-        type: 'error',
-        error: providerGuard.failure.error,
-        requestId: msg.requestId,
-      })
-      this.setJobStatus(job, 'error')
-      return
-    }
-
     const projectDir = getProjectDir()
     const workingDirectory = msg.cwd || projectDir
-    const mode = msg.permissionMode || 'ask'
 
-    if (mode === 'ask' || mode === 'plan') {
-      const permissionGuard = await guardProviderCapability(
-        selection,
-        'permissions',
-        'Use auto/bypass permission mode or choose a provider that supports permission prompts.',
-      )
-      if ('failure' in permissionGuard) {
-        this.emitAndBuffer(job, {
-          type: 'error',
-          error: permissionGuard.failure.error,
-          requestId: msg.requestId,
-        })
-        this.setJobStatus(job, 'error')
-        return
-      }
-    }
-
-    // Recover worktree if the spec-cat tmp directory was wiped
+    // Recover worktree if the spec-cat tmp directory was wiped.
     if (isSpecCatWorktreePath(workingDirectory) && !existsSync(workingDirectory)) {
       const result = await ensureChatWorktree(projectDir, workingDirectory, msg.worktreeBranch)
       if (result.recovered) {
@@ -482,248 +624,194 @@ class ChatJobQueue {
       }
     }
 
-    // Resume flag (skip on retry)
+    // Hydrate resume session id from storage when starting fresh.
+    const speckitCommand = isSpeckitCommand(msg.message)
+    if (!isRetry && !speckitCommand && !convState.providerSessionId) {
+      const storedSessionId = getStoredProviderSessionId(await readConversationFromStorage(job.conversationId))
+      if (storedSessionId) convState.providerSessionId = storedSessionId
+    }
     const usedResumeFlag = !isRetry && !!convState.providerSessionId
     const resumeSessionId = usedResumeFlag ? convState.providerSessionId! : undefined
 
-    // Inject feature spec context
-    let systemPrompt: string | undefined
-    const speckitCommand = isSpeckitCommand(msg.message)
+    // The interactive TUI has no --append-system-prompt, so spec context and the
+    // speckit autonomy directive are prepended to the injected message instead.
+    let preface = ''
     if (msg.featureId && !usedResumeFlag) {
       try {
         const specContext = await loadSpecContext(projectDir, msg.featureId)
-        if (specContext) {
-          systemPrompt = specContext
-        }
+        if (specContext) preface = specContext
       } catch (error) {
         console.error('[JobQueue] Failed to load spec context:', error)
       }
     }
     if (speckitCommand && !usedResumeFlag) {
-      systemPrompt = systemPrompt
-        ? `${systemPrompt}\n\n${SPECKIT_AUTONOMY_DIRECTIVE}`
-        : SPECKIT_AUTONOMY_DIRECTIVE
+      preface = preface ? `${preface}\n\n${SPECKIT_AUTONOMY_DIRECTIVE}` : SPECKIT_AUTONOMY_DIRECTIVE
     }
+    const attachments = msg.attachments || []
+    const baseMessage = buildProviderMessage(msg.message, attachments)
+    const fullMessage = preface ? `${preface}\n\n${baseMessage}` : baseMessage
 
-    console.log('[JobQueue] Running provider:', selection.providerId, selection.modelKey, isRetry ? '(retry)' : '')
+    console.log('[JobQueue] Running provider via PTY:', selection.providerId, selection.modelKey, isRetry ? '(retry)' : '')
 
     const generation = procState.procGeneration
-    let permissionRequested = false
-    let emittedRenderableContent = false
-    let emittedTerminalErrorEvent = false
-    const activeToolInputs = new Map<string, StreamingToolInput>()
+    const sessionId = buildTerminalSessionId(job.conversationId)
 
-    const attachments = msg.attachments || []
-    const providerMessage = buildProviderMessage(msg.message, attachments)
-
+    let session: TerminalSession
     try {
-      procState.proc = await streamChatWithProvider(
-        {
-          message: providerMessage,
-          selection,
-          cwd: workingDirectory,
-          permissionMode: mode,
-          approvedTools: Array.from(convState.approvedTools),
-          resumeSessionId,
-          systemPrompt,
-          ephemeral: forceEphemeral && selection.providerId === 'codex',
+      session = getOrCreateTerminalSession({
+        sessionId,
+        cwd: workingDirectory,
+        providerId: selection.providerId,
+        modelKey: selection.modelKey,
+        resumeSessionId,
+        hookContext: {
+          enabled: true,
+          providerId: selection.providerId,
+          conversationId: job.conversationId,
+          jobId: job.id,
+          requestId: msg.requestId,
         },
-        {
-          onProviderJson: (parsed) => {
-            const events = provider.toCanonicalEvents(parsed)
-
-            for (const event of events) {
-              const completedToolInput = event.type === 'block_start' || event.type === 'block_delta' || event.type === 'block_end'
-                ? trackStreamingToolInput(event, activeToolInputs)
-                : null
-
-              if (event.sessionId) {
-                convState.providerSessionId = event.sessionId
-              }
-              if (isRenderableEvent(event)) {
-                emittedRenderableContent = true
-              }
-              if (event.type === 'error' || (event.type === 'turn_result' && event.subtype !== 'success')) {
-                emittedTerminalErrorEvent = true
-              }
-
-              if (completedToolInput && isUserInputToolName(completedToolInput.name)) {
-                permissionRequested = true
-                this.setJobStatus(job, 'done')
-                this.emitAndBuffer(job, { type: 'ui_event', event })
-                this.emitAndBuffer(job, {
-                  type: 'done',
-                  requestId: msg.requestId,
-                  awaitingUserInput: true,
-                  tool: completedToolInput.name,
-                  input: parseToolInputJson(completedToolInput.inputJson),
-                })
-                procState.proc?.kill()
-                return
-              }
-
-              // Permission interception
-              if ((mode === 'ask' || mode === 'plan') && !permissionRequested) {
-                const permRequest = deriveApprovalRequestFromEvent(
-                  event,
-                  convState.approvedTools,
-                  selection.providerId,
-                  mode,
-                )
-                if (permRequest) {
-                  permissionRequested = true
-                  procState.pendingTools = permRequest.tools || [permRequest.tool]
-                  job.status = 'waiting_permission'
-                  this.emitAndBuffer(job, {
-                    type: 'permission_request',
-                    tool: permRequest.tool,
-                    tools: procState.pendingTools,
-                    description: permRequest.description || `Permission required: ${permRequest.tool}`,
-                  })
-                  procState.proc?.kill()
-                  return
-                }
-              }
-
-              // Emit canonical UI event
-              this.emitAndBuffer(job, { type: 'ui_event', event })
-            }
-          },
-
-          onClose: ({ exitCode, signal, nonJsonOutput }) => {
-            if (procState.procGeneration !== generation) {
-              return
-            }
-
-            try {
-              if (!permissionRequested) {
-                if (exitCode !== 0 && exitCode !== null) {
-                  console.error('[JobQueue] Provider exited unexpectedly', {
-                    providerId: selection.providerId,
-                    modelKey: selection.modelKey,
-                    permissionMode: mode,
-                    requestId: msg.requestId,
-                    exitCode,
-                    signal,
-                    nonJsonOutput: nonJsonOutput.slice(-25),
-                  })
-
-                  const inferred = deriveApprovalRequestFromProcessOutput(nonJsonOutput, mode)
-                  if (inferred) {
-                    permissionRequested = true
-                    procState.pendingTools = inferred.tools || [inferred.tool]
-                    job.status = 'waiting_permission'
-                    this.emitAndBuffer(job, {
-                      type: 'permission_request',
-                      tool: inferred.tool,
-                      tools: procState.pendingTools,
-                      description: inferred.description,
-                    })
-                    procState.proc = null
-                    return
-                  }
-
-                  const hasPermissionError = hasCodexPermissionError(nonJsonOutput)
-                  const missingRolloutPath = hasCodexMissingRolloutPathError(nonJsonOutput)
-                  if (missingRolloutPath && !hasPermissionError && !isRetry) {
-                    this.emitAndBuffer(job, {
-                      type: 'session_reset',
-                      reason: 'Codex session state was missing rollout data. Retrying with a fresh ephemeral session.',
-                    })
-                    convState.providerSessionId = null
-                    procState.proc = null
-                    this.runProvider(job, true, true)
-                    return
-                  }
-
-                  if (usedResumeFlag && !isRetry) {
-                    const retryWithEphemeral = selection.providerId === 'codex'
-                    this.emitAndBuffer(job, {
-                      type: 'session_reset',
-                      reason: retryWithEphemeral
-                        ? `Session resume failed (exit code ${exitCode}). Retrying with a fresh ephemeral session.`
-                        : `Session resume failed (exit code ${exitCode}). Retrying with a fresh session.`,
-                    })
-                    convState.providerSessionId = null
-                    procState.proc = null
-                    this.runProvider(job, true, retryWithEphemeral)
-                    return
-                  }
-
-                  const summary = summarizeProviderProcessError(nonJsonOutput, 700)
-                  if (!summary && emittedTerminalErrorEvent && emittedRenderableContent) {
-                    this.emitAndBuffer(job, { type: 'done', requestId: msg.requestId })
-                    this.setJobStatus(job, 'done')
-                    return
-                  }
-
-                  const details = summary ? ` — ${summary}` : ''
-                  this.emitAndBuffer(job, {
-                    type: 'error',
-                    error: `Provider process exited unexpectedly (code: ${exitCode}${signal ? ', signal: ' + signal : ''})${details}`,
-                    requestId: msg.requestId,
-                  })
-                  this.setJobStatus(job, 'error')
-                } else if (exitCode === null && signal) {
-                  const summary = summarizeProviderProcessError(nonJsonOutput, 700)
-                  const details = summary ? ` — ${summary}` : ''
-                  this.emitAndBuffer(job, {
-                    type: 'error',
-                    error: `Provider process was killed by signal ${signal}${details}`,
-                    requestId: msg.requestId,
-                  })
-                  this.setJobStatus(job, 'error')
-                  console.error('[JobQueue] Provider killed by signal', {
-                    providerId: selection.providerId,
-                    modelKey: selection.modelKey,
-                    permissionMode: mode,
-                    requestId: msg.requestId,
-                    signal,
-                    nonJsonOutput: nonJsonOutput.slice(-25),
-                  })
-                } else {
-                  if (!emittedRenderableContent) {
-                    const summary = summarizeProviderProcessError(nonJsonOutput, 700)
-                    const fallbackText = summary
-                      ? `Provider returned no structured response.\n\nRaw output:\n${summary}`
-                      : 'Provider completed without returning visible response content.'
-                    this.emitAssistantText(job, fallbackText, convState.providerSessionId)
-                  }
-                  this.emitAndBuffer(job, { type: 'done', requestId: msg.requestId })
-                  this.setJobStatus(job, 'done')
-                }
-              }
-            } finally {
-              procState.proc = null
-            }
-          },
-
-          onError: (error) => {
-            try {
-              this.emitAndBuffer(job, {
-                type: 'error',
-                error: `Provider process error: ${error.message}`,
-                requestId: msg.requestId,
-              })
-              this.setJobStatus(job, 'error')
-            } finally {
-              procState.pendingTools = []
-              procState.proc = null
-            }
-          },
+        onProviderSessionId: (providerSessionId) => {
+          convState.providerSessionId = providerSessionId
+          updateConversationProviderSessionInStorage(job.conversationId, providerSessionId).catch((error) => {
+            console.warn('[JobQueue] Failed to persist provider session id:', error)
+          })
         },
-      )
+      })
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : 'Failed to start provider process'
       this.emitAndBuffer(job, {
         type: 'error',
-        error: errorMsg,
+        error: error instanceof Error ? error.message : 'Failed to start provider terminal',
         requestId: msg.requestId,
       })
       this.setJobStatus(job, 'error')
-      procState.pendingTools = []
+      return
+    }
+
+    // Turn completion is signalled by the CLI Stop hook landing in the
+    // conversation's spool. The monitor reads only records appended after it
+    // starts, so the next Stop corresponds to this turn.
+    let finished = false
+    let submitted = false
+    let watchdog: ReturnType<typeof setTimeout> | undefined
+    let idleCheck: ReturnType<typeof setInterval> | undefined
+    let unsubscribeExit: (() => void) | undefined
+    // Output-idle fallback bookkeeping (see PTY_IDLE_FINALIZE_MS).
+    let lastDataAt = Date.now()
+    let sawPostSubmitData = false
+    const cleanup = () => {
+      monitor.stop()
+      if (watchdog) clearTimeout(watchdog)
+      if (idleCheck) clearInterval(idleCheck)
+      unsubscribeExit?.()
+    }
+    const finalize = (lastAssistantMessage?: string) => {
+      if (finished) return
+      finished = true
+      cleanup()
+      if (procState.procGeneration !== generation) return // superseded by a newer job
+      const text = lastAssistantMessage?.trim()
+      if (text) this.emitAssistantText(job, text, convState.providerSessionId)
+      this.emitAndBuffer(job, { type: 'cli_turn_stop_confirmed', requestId: msg.requestId })
+      this.emitAndBuffer(job, { type: 'done', requestId: msg.requestId })
+      this.setJobStatus(job, 'done')
       procState.proc = null
     }
+
+    // Fallback so a turn can never hang in `running` forever. Without this, a
+    // crashed/auth-failed PTY or a silently-broken hook injection (no Stop hook
+    // ever lands) would leak the active job indefinitely.
+    const finalizeError = (reason: string) => {
+      if (finished) return
+      finished = true
+      cleanup()
+      if (procState.procGeneration !== generation) return // superseded by a newer job
+      this.emitAndBuffer(job, { type: 'error', error: reason, requestId: msg.requestId })
+      this.setJobStatus(job, 'error')
+      procState.proc = null
+    }
+
+    // A Ctrl+C from a superseded turn in a reused PTY can emit a stray Stop
+    // before this turn's prompt is even submitted; arming on `submitted` ensures
+    // only a post-submit Stop is treated as this turn's completion.
+    const monitor = startCliHookMonitor({
+      conversationId: job.conversationId,
+      emit: (event) => this.emitAndBuffer(job, event),
+      onStop: (lastAssistantMessage) => finalize(lastAssistantMessage),
+      isArmed: () => submitted,
+      // Only finalize on a Stop that follows this turn's own (post-submit)
+      // UserPromptSubmit, so a stray Stop from a superseded turn in the reused
+      // PTY can never be mistaken for completion. The output-idle watchdog below
+      // remains the guaranteed fallback if the prompt hook never lands.
+      requireArmedPromptSubmit: true,
+    })
+
+    // The PTY is a persistent session, so a normal turn never exits it; an exit
+    // here means the provider process died mid-turn. A resumed session that dies
+    // is almost always a stale resume id (rollout/jsonl wiped) — retry once from
+    // a fresh session, mirroring the stream path's ephemeral fallback.
+    const handleExit = () => {
+      if (finished) return
+      if (usedResumeFlag && !isRetry) {
+        finished = true
+        cleanup()
+        if (procState.procGeneration !== generation) return // superseded by a newer job
+        convState.providerSessionId = null
+        this.emitAndBuffer(job, { type: 'session_reset', reason: 'Resume failed; starting a fresh session' })
+        this.runProviderViaPty(job, true).catch((error) => {
+          this.emitAndBuffer(job, {
+            type: 'error',
+            error: error instanceof Error ? error.message : 'Provider retry failed',
+            requestId: msg.requestId,
+          })
+          this.setJobStatus(job, 'error')
+        })
+        return
+      }
+      finalizeError('Provider terminal exited before the turn completed')
+    }
+    unsubscribeExit = subscribeTerminalSession(session, {
+      onData: () => {
+        lastDataAt = Date.now()
+        if (submitted) sawPostSubmitData = true
+      },
+      onExit: () => handleExit(),
+    })
+
+    // Primary completion is the Stop hook (finalize via onStop). This idle watch
+    // is the fallback: once the prompt is submitted and the TUI has produced
+    // output then fallen silent for PTY_IDLE_FINALIZE_MS, treat the turn as
+    // complete so `done` is always emitted even when the hook never lands. A
+    // healthy Stop hook calls finalize() first (finished=true), so this no-ops.
+    idleCheck = setInterval(() => {
+      if (finished) return
+      if (!submitted || !sawPostSubmitData) return
+      if (Date.now() - lastDataAt >= PTY_IDLE_FINALIZE_MS) {
+        console.warn('[JobQueue] PTY turn completed via output-idle fallback (no Stop hook).')
+        finalize()
+      }
+    }, 500)
+
+    // Absolute cap as the last line of defence when no Stop hook arrives.
+    watchdog = setTimeout(() => finalizeError('Provider turn timed out'), PTY_TURN_TIMEOUT_MS)
+
+    // Synthetic controller so abort()/finalizeConversation()/submit() can
+    // interrupt the in-flight turn. Ctrl+C interrupts the TUI without killing
+    // the persistent session so the next turn can resume context.
+    procState.proc = {
+      kill: () => {
+        try { writeTerminalInput(sessionId, '\x03') } catch {}
+        cleanup()
+      },
+    }
+
+    this.injectMessage(
+      session,
+      sessionId,
+      fullMessage,
+      () => procState.procGeneration === generation && !finished,
+      () => { submitted = true },
+    )
   }
 
   private emitAssistantText(job: ChatJob, text: string, sessionId?: string | null): void {

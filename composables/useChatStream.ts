@@ -18,7 +18,7 @@ import type {
   ChatImageAttachment,
   UIStreamEvent,
 } from '~/types/chat'
-import { DEFAULT_MODEL_KEY, DEFAULT_PROVIDER_ID } from '~/types/aiProvider'
+import { DEFAULT_PROVIDER_ID } from '~/types/aiProvider'
 import { generateBlockId } from '~/types/chat'
 import {
   buildCloseReason,
@@ -54,7 +54,7 @@ import {
 } from '~/utils/wsConnectionState'
 
 interface WSResponse {
-  type: 'ui_event' | 'provider_json' | 'done' | 'error' | 'pong' | 'permission_prompt' | 'permission_request' | 'session_reset' | 'worktree_recovered' | 'aborted' | 'context_reset' | 'replay_start' | 'replay_end' | 'subscribed' | 'notification'
+  type: 'ui_event' | 'provider_json' | 'done' | 'error' | 'pong' | 'permission_prompt' | 'permission_request' | 'session_reset' | 'worktree_recovered' | 'aborted' | 'context_reset' | 'replay_start' | 'replay_end' | 'subscribed' | 'notification' | 'cli_hook' | 'cli_prompt_submitted' | 'cli_tool_completed' | 'cli_turn_stop' | 'cli_subagent_stop' | 'cli_turn_stop_confirmed'
   event?: UIStreamEvent  // Canonical UI stream event (for ui_event type)
   data?: any // Legacy provider JSON payload
   error?: string
@@ -75,6 +75,10 @@ interface WSResponse {
   notificationEvent?: string  // For notifications (job_created, job_completed)
   source?: string  // For notifications (job source: user/scheduler/cascade)
   status?: string  // For notifications (job final status)
+  prompt?: string
+  hookEventName?: string
+  toolName?: string
+  failed?: boolean
 }
 
 type ConnectionState = WSConnectionState<WSResponse>
@@ -446,6 +450,18 @@ export function useChatStream() {
         return
       }
 
+      if (
+        response.type === 'cli_hook'
+        || response.type === 'cli_prompt_submitted'
+        || response.type === 'cli_tool_completed'
+        || response.type === 'cli_turn_stop'
+        || response.type === 'cli_subagent_stop'
+        || response.type === 'cli_turn_stop_confirmed'
+      ) {
+        handleCliLifecycleEvent(response, conn, conversationId)
+        return
+      }
+
       if (response.type === 'pong') {
         return
       }
@@ -756,7 +772,8 @@ export function useChatStream() {
     notifyChatCompleted(conversationId)
 
     const conv = await findConversationWithRetry(conversationId)
-    const commitPromise = autoCommitAndSyncPreview(conv, conversationId, conn)
+    const commitPromise = waitForPostTurnSideEffects(conn)
+      .then(ready => ready ? autoCommitAndSyncPreview(conv, conversationId, conn) : undefined)
 
     const nextCascade = cascadeRegistry.popNextStep(conversationId)
     if (nextCascade) {
@@ -845,6 +862,66 @@ export function useChatStream() {
     }).catch((err: unknown) => {
       console.warn('[useChatStream] Auto-commit/preview-sync failed:', err)
     })
+  }
+
+  function handleCliLifecycleEvent(response: WSResponse, conn: ConnectionState, conversationId: string) {
+    if (response.type === 'cli_prompt_submitted' && typeof response.prompt === 'string' && response.prompt.trim()) {
+      conn.cliSubmittedPrompt = response.prompt
+      updateLastUserMessageFromCliPrompt(conversationId, response.prompt)
+      return
+    }
+
+    if (response.type === 'cli_turn_stop') {
+      conn.cliTurnStopSeen = true
+      return
+    }
+
+    if (response.type === 'cli_turn_stop_confirmed') {
+      conn.cliTurnStopConfirmed = true
+      return
+    }
+
+    if (response.type === 'cli_tool_completed' && response.failed) {
+      console.warn('[useChatStream] CLI tool hook reported failure:', response.toolName || response.hookEventName)
+    }
+  }
+
+  function updateLastUserMessageFromCliPrompt(conversationId: string, prompt: string) {
+    const normalizedPrompt = prompt.trim()
+    if (!normalizedPrompt || normalizedPrompt.length > 20_000) return
+    const conv = chatStore.conversations.find(c => c.id === conversationId)
+    if (!conv) return
+    const lastUserMessage = [...conv.messages].reverse().find(message => message.role === 'user')
+    if (!lastUserMessage) return
+    const current = lastUserMessage.content.trim()
+    if (current === normalizedPrompt) return
+    if (normalizedPrompt.includes(current) && normalizedPrompt.length > current.length * 3) {
+      // Codex may receive inlined system/spec context. Keep the user's visible prompt
+      // instead of replacing it with a large transport payload.
+      return
+    }
+    chatStore.updateMessage(lastUserMessage.id, { content: normalizedPrompt }, conversationId)
+    chatStore.saveConversation(conversationId, false)
+  }
+
+  async function waitForPostTurnSideEffects(conn: ConnectionState): Promise<boolean> {
+    // If the provider emitted a Stop hook, wait for the server's close-time
+    // confirmation before committing/syncing. Providers or older CLI builds
+    // without hooks keep the existing done-driven behavior.
+    if (!conn.cliTurnStopSeen || conn.cliTurnStopConfirmed) return true
+
+    const started = Date.now()
+    while (Date.now() - started < 750) {
+      await new Promise(resolve => setTimeout(resolve, 50))
+      if (conn.cliTurnStopConfirmed) return true
+    }
+
+    // The confirmation gate only orders the commit after the CLI Stop hook; it
+    // must never cancel it. If confirmation hasn't arrived in time, commit anyway
+    // so the worktree ref is written — otherwise chokidar never fires and the git
+    // graph silently stops refreshing.
+    console.warn('[useChatStream] CLI Stop seen but not confirmed before done; committing anyway.')
+    return true
   }
 
   // Debounce global notification refreshes to avoid redundant fetches
@@ -1040,6 +1117,16 @@ export function useChatStream() {
       chatStore.endSession(conversationId)
       chatStore.endConversationStreaming(conversationId)
       notifyChatCompleted(conversationId)
+
+      // A turn that completed while we were away (page reloaded mid-turn) still
+      // needs its worktree committed and preview synced — otherwise the ref is
+      // never written and the git graph never refreshes. Mirror handleDone's
+      // happy-path side effects for successful replays.
+      if (result.finalStatus === 'complete') {
+        findConversationWithRetry(conversationId)
+          .then(conv => autoCommitAndSyncPreview(conv, conversationId, conn))
+          .catch(error => console.warn('[useChatStream] Replay post-turn commit failed:', error))
+      }
     }
 
     console.log(`[useChatStream] Replay batch processed: ${events.length} events → ${result.contentBlocks.length} blocks, status=${result.finalStatus}`)
@@ -1085,6 +1172,9 @@ export function useChatStream() {
         conn.activeTools.clear()
         conn.currentTextBlockId = null
         conn.currentThinkingBlockId = null
+        conn.cliTurnStopSeen = false
+        conn.cliTurnStopConfirmed = false
+        conn.cliSubmittedPrompt = null
         startHealthCheck(conn)
       }
 
@@ -1098,16 +1188,17 @@ export function useChatStream() {
 
       const conv = chatStore.conversations.find((c: { id: string }) => c.id === conversationId)
       const providerId = conv?.providerId || settingsStore.providerSelection.providerId || DEFAULT_PROVIDER_ID
-      const providerModelKey = conv?.providerModelKey || settingsStore.providerSelection.modelKey || DEFAULT_MODEL_KEY
+      const providerModelKey = conv?.providerModelKey
 
-      if (conv && (!conv.providerId || !conv.providerModelKey)) {
-        chatStore.setConversationProviderSelection(conversationId, providerId, providerModelKey)
+      if (conv && !conv.providerId) {
+        chatStore.setConversationProviderSelection(conversationId, providerId)
         chatStore.saveConversation(conversationId, true)
       }
 
       const payload = {
         type: 'chat',
         message,
+        assistantMessageId: messageId,
         attachments: options?.attachments,
         requestId,
         sessionId: providerSessionId || undefined,
@@ -1249,6 +1340,9 @@ export function useChatStream() {
         conn.activeTools.clear()
         conn.currentTextBlockId = null
         conn.currentThinkingBlockId = null
+        conn.cliTurnStopSeen = false
+        conn.cliTurnStopConfirmed = false
+        conn.cliSubmittedPrompt = null
         startHealthCheck(conn)
       }
 

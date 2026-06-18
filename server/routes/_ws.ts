@@ -44,6 +44,7 @@ interface ChatMessage {
   type: 'chat'
   message: string
   conversationId: string
+  assistantMessageId?: string
   attachments?: unknown[]
   requestId: string
   sessionId?: string
@@ -82,10 +83,16 @@ interface SubscribeMessage {
 
 type ClientMessage = ChatMessage | PingMessage | PermissionResponse | AbortMessage | ResetContextMessage | SubscribeMessage
 
-// Track peer → conversation mapping and EventBus subscription
+// Track peer → conversation mapping and EventBus subscriptions.
+// A peer may observe MULTIPLE conversations at once (e.g. the global
+// notification socket watching several concurrent server/CLI jobs), so event
+// subscriptions are kept in a map keyed by conversationId. `conversationId`
+// still records the most-recently-bound conversation, which command messages
+// (permission_response / abort / reset_context) target — chat peers only ever
+// bind a single conversation, so this preserves their behaviour.
 interface PeerConnection {
   conversationId: string | null
-  unsubscribe: (() => void) | null
+  subscriptions: Map<string, () => void>
   unsubscribeGlobal: (() => void) | null
 }
 
@@ -94,7 +101,7 @@ const peerConnections = new Map<string, PeerConnection>()
 function getPeerConnection(peerId: string): PeerConnection {
   let conn = peerConnections.get(peerId)
   if (!conn) {
-    conn = { conversationId: null, unsubscribe: null, unsubscribeGlobal: null }
+    conn = { conversationId: null, subscriptions: new Map(), unsubscribeGlobal: null }
     peerConnections.set(peerId, conn)
   }
   return conn
@@ -103,24 +110,25 @@ function getPeerConnection(peerId: string): PeerConnection {
 function subscribePeerToConversation(peer: any, conversationId: string): void {
   const conn = getPeerConnection(peer.id)
 
-  // Already subscribed to this conversation
-  if (conn.conversationId === conversationId && conn.unsubscribe) {
+  // Record the most-recent conversation for command routing.
+  conn.conversationId = conversationId
+
+  // Already forwarding this conversation's events.
+  if (conn.subscriptions.has(conversationId)) {
     return
   }
 
-  // Unsubscribe from previous conversation
-  if (conn.unsubscribe) {
-    conn.unsubscribe()
-  }
-
-  conn.conversationId = conversationId
-  conn.unsubscribe = eventBus.subscribe(conversationId, (event) => {
+  const unsubscribe = eventBus.subscribe(conversationId, (event) => {
     try {
-      peer.send(JSON.stringify(event))
+      // Inject conversationId so a peer observing multiple conversations can
+      // route each event to the right job. Conversation-channel events don't
+      // otherwise carry it.
+      peer.send(JSON.stringify({ ...event, conversationId }))
     } catch (err) {
       console.error('[WS] Failed to send event to peer:', err)
     }
   })
+  conn.subscriptions.set(conversationId, unsubscribe)
 }
 
 export default defineWebSocketHandler({
@@ -144,7 +152,8 @@ export default defineWebSocketHandler({
   close(peer) {
     const conn = peerConnections.get(peer.id)
     if (conn) {
-      if (conn.unsubscribe) conn.unsubscribe()
+      for (const unsubscribe of conn.subscriptions.values()) unsubscribe()
+      conn.subscriptions.clear()
       if (conn.unsubscribeGlobal) conn.unsubscribeGlobal()
       // Jobs are NOT aborted on disconnect — they run to completion
       // so reconnecting clients can subscribe and replay buffered events.
@@ -292,7 +301,7 @@ async function handleChatMessage(peer: any, msg: ChatMessage) {
   // Subscribe server-side persister BEFORE submit so no events are missed.
   // This ensures the server owns the conversation state for ALL jobs,
   // not just server-initiated ones (POST /api/jobs).
-  startPersisting(msg.conversationId, msg.message)
+  startPersisting(msg.conversationId, msg.message, msg.assistantMessageId)
 
   jobQueue.submit(jobMessage)
 }
@@ -338,8 +347,11 @@ function handleSubscribe(peer: any, msg: SubscribeMessage) {
     const bufferedEvents = activeJob.events.slice(cursor)
 
     if (bufferedEvents.length > 0) {
+      // Replay messages are sent directly (not via the eventBus callback), so
+      // inject conversationId here too for multi-conversation routing.
       peer.send(JSON.stringify({
         type: 'replay_start',
+        conversationId: msg.conversationId,
         jobId: activeJob.id,
         jobStatus: activeJob.status,
         eventCount: bufferedEvents.length,
@@ -348,7 +360,7 @@ function handleSubscribe(peer: any, msg: SubscribeMessage) {
 
       for (const event of bufferedEvents) {
         try {
-          peer.send(JSON.stringify(event))
+          peer.send(JSON.stringify({ ...event, conversationId: msg.conversationId }))
         } catch {
           break
         }
@@ -356,6 +368,7 @@ function handleSubscribe(peer: any, msg: SubscribeMessage) {
 
       peer.send(JSON.stringify({
         type: 'replay_end',
+        conversationId: msg.conversationId,
         jobId: activeJob.id,
         nextCursor: activeJob.events.length,
       }))

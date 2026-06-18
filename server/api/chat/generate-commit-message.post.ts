@@ -7,7 +7,7 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { existsSync } from 'node:fs'
-import { sendMessage } from '~/server/utils/claudeService'
+import { queryInteractiveProvider } from '~/server/utils/interactiveProviderQuery'
 import { logger } from '~/server/utils/logger'
 import { getProjectDir } from '~/server/utils/projectDir'
 import { guardServerProviderCapability } from '~/server/utils/aiProviderSelection'
@@ -28,6 +28,7 @@ export default defineEventHandler(async (event) => {
     worktreePath?: string
     baseBranch?: string
     worktreeBranch?: string
+    previewSessionId?: string
   }>(event)
 
   if (!body?.conversationId) {
@@ -35,6 +36,12 @@ export default defineEventHandler(async (event) => {
   }
 
   const { conversationId } = body
+  // Only allow client-supplied preview ids inside the ephemeral commit-gen
+  // namespace so a request can't co-opt the live `conversation:<id>` PTY.
+  const previewSessionId =
+    typeof body.previewSessionId === 'string' && body.previewSessionId.startsWith('commitgen:')
+      ? body.previewSessionId
+      : undefined
   const worktreePath = body.worktreePath || getChatWorktreePath(conversationId)
   const projectDir = getProjectDir()
   const abortController = new AbortController()
@@ -87,27 +94,30 @@ export default defineEventHandler(async (event) => {
 
     const diffStat = await git(worktreePath, ['diff', '--stat', range])
 
-    const prompt = `Generate a concise squash commit message summarizing these changes.
+    // Keep the prompt single-line: the interactive TUI treats newlines in typed
+    // input as submit/insert, so commit history and diff stats are flattened.
+    const flatten = (value: string) => value.replace(/\s*\n\s*/g, ' | ').trim()
+    const prompt =
+      `Write a single concise squash git commit message summarizing the work on branch ` +
+      `"${worktreeBranch || '(unknown)'}" (base "${baseBranch}"). ` +
+      `Commits: ${flatten(log)}. File changes: ${flatten(diffStat)}. ` +
+      `Use conventional commit format (feat/fix/refactor/docs/chore). First line max 72 chars, no emoji. ` +
+      `Add a short body of 2-3 lines only if the changes are complex. Output only the commit message.`
 
-Base branch: ${baseBranch}
-Worktree branch: ${worktreeBranch || '(unknown)'}
-
-Commit history:
-${log}
-
-Overall diff:
-${diffStat}
-
-Rules:
-- Use conventional commit format (feat/fix/refactor/docs/chore)
-- First line max 72 chars
-- Optionally add a blank line then a short body (2-3 lines max) if the changes are complex
-- Be specific about what changed
-- No emoji
-
-Output only the commit message, nothing else.`
-
-    const result = await sendMessage(prompt, worktreePath, selection.modelKey, abortController.signal)
+    const result = await queryInteractiveProvider({
+      conversationId,
+      cwd: worktreePath,
+      providerId: selection.providerId,
+      modelKey: selection.modelKey,
+      prompt,
+      // Long histories make this prompt big enough that the TUI collapses it
+      // into a "[Pasted text]" chip. Inject it as an explicit bracketed paste so
+      // the chip is created deterministically rather than depending on raw-type
+      // burst-render timing (which intermittently dropped the submit).
+      bracketedPaste: true,
+      abortSignal: abortController.signal,
+      previewSessionId,
+    })
 
     if (result.success && result.text) {
       return { success: true, message: result.text.trim() }

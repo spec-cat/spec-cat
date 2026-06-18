@@ -31,8 +31,8 @@ const unresolvedCount = computed(() => {
   return chatStore.conflictState.files.length - chatStore.conflictState.resolvedFiles.size
 })
 
-const modelLabel = computed(() => {
-  return `${settingsStore.providerId}/${settingsStore.providerModelKey}`
+const providerLabel = computed(() => {
+  return settingsStore.providerId
 })
 
 // Auto-scroll to bottom when new messages arrive
@@ -84,7 +84,7 @@ function messageIcon(msg: ConflictChatMessage): string {
         <span class="text-xs font-mono text-retro-text font-semibold">AI Conflict Resolution</span>
       </div>
       <div class="text-[10px] font-mono text-retro-muted mt-1">
-        Model: {{ modelLabel }}
+        Provider: {{ providerLabel }}
       </div>
     </div>
 

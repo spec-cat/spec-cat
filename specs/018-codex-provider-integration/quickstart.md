@@ -13,8 +13,7 @@ Validate that Codex is exposed in settings, selection is normalized safely, stre
 - Codex runtime prerequisites configured:
   - `codex` CLI is available in `PATH` or `CODEX_CLI_PATH` points to the binary
   - Codex CLI can run non-interactive `exec --json` commands in project working directories
-  - For auto mode runs, Codex supports `--full-auto`
-  - For bypass mode runs, Codex supports `--dangerously-bypass-approvals-and-sandbox`
+  - Codex supports `--dangerously-bypass-approvals-and-sandbox` for non-interactive runs
 
 ## Codex Runtime Troubleshooting
 

@@ -65,6 +65,17 @@ Extracted from WebSocket handler into standalone modules.
 | Client subscribe | `composables/useChatStream.ts` | FR-010 |
 | Client refresh | `stores/chat.ts` | FR-009 |
 
+### Phase 2.5: Interactive PTY Execution + Anchored Persistence (IMPLEMENTED)
+
+| Component | File | FR Coverage |
+|-----------|------|-------------|
+| `runProviderViaPty()` + `injectMessage()` | `server/utils/jobQueue.ts` | FR-012 |
+| Turn-completion fallback (PTY exit / timeout) | `server/utils/jobQueue.ts` | FR-012 |
+| PTY hook injection (Stop hook into spool) | `server/utils/terminalSessions.ts`, `server/utils/cliHookInjection.ts` | FR-012 |
+| Stop-hook monitor (no jobId filter, `onStop`) | `server/utils/cliHookMonitor.ts` | FR-012 |
+| `assistantMessageId` plumbing | `composables/useChatStream.ts`, `server/routes/_ws.ts` | FR-013 |
+| Exact-placeholder update with last-streaming fallback | `server/utils/jobPersister.ts` | FR-013 |
+
 ### Phase 3: Scheduler (NOT YET)
 
 - Cron/trigger-based job scheduling
@@ -96,6 +107,14 @@ The job submission API creates the conversation record synchronously before subm
 ### D-005: Cursor-based replay
 Event replay uses a simple integer cursor (array index). The client tracks its cursor and can reconnect with the last known cursor to avoid re-processing events. This is simpler than sequence IDs and sufficient for the in-memory model.
 
+### D-006: Interactive PTY as the live execution path
+Jobs run through the provider's persistent interactive PTY instead of one-shot `-p`/`codex exec`. This preserves in-TUI context across turns and lets a terminal-ws viewer watch live. Turn completion is inferred from the CLI Stop hook because the TUI has no machine-readable "done" signal. `runProviderViaStream` is retained as dead-but-ready code for rollback during testing.
+
+**Trade-off**: Richer/persistent sessions vs. timing-heuristic fragility (composer-ready and echo-settled are detected by idle windows). Mitigated by forced-injection/forced-submit caps.
+
+### D-007: Turn-completion is fail-safe
+Because completion depends on an out-of-band hook, the job never trusts the hook alone: a PTY exit finalizes as `error`, and an absolute `PTY_TURN_TIMEOUT_MS` cap finalizes as `error` if no Stop hook ever arrives. This guarantees the active job is always released.
+
 ## FR Coverage Matrix
 
 | FR | Plan Section | Status |
@@ -111,3 +130,5 @@ Event replay uses a simple integer cursor (array index). The client tracks its c
 | FR-009 | Phase 2: Client conversation refresh | Implemented |
 | FR-010 | Phase 2: Client subscribe composable | Implemented |
 | FR-011 | Phase 2: listAllJobs | Implemented |
+| FR-012 | Phase 2.5: Interactive PTY execution + fail-safe completion | Implemented |
+| FR-013 | Phase 2.5: Client-anchored assistant persistence | Implemented |

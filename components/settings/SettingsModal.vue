@@ -104,12 +104,6 @@ const handlePermissionModeChange = (mode: PermissionMode) => {
   toast.success('Settings saved')
 }
 
-
-const handleAutoGenerateCommitMessagesChange = (enabled: boolean) => {
-  settingsStore.setAutoGenerateCommitMessages(enabled)
-  toast.success('Settings saved')
-}
-
 const handleBackdropClick = () => {
   emit('close')
 }
@@ -328,62 +322,6 @@ onUnmounted(() => {
               :errorMessage="providerErrorMessage"
               @select="handleProviderSelection"
             />
-          </section>
-
-          <div class="border-t border-retro-border" />
-
-          <!-- AI-Generated Commit Messages Section -->
-          <section>
-            <h3 class="text-sm font-mono font-semibold text-retro-text mb-1">Commit Messages</h3>
-            <p class="text-xs text-retro-muted mb-3">
-              Choose whether to use AI to generate commit messages automatically.
-            </p>
-
-            <div class="space-y-1.5">
-              <label
-                class="flex items-center gap-3 px-3 py-2 rounded border cursor-pointer transition-colors"
-                :class="[
-                  !settingsStore.autoGenerateCommitMessages
-                    ? 'border-retro-cyan bg-retro-cyan/10'
-                    : 'border-retro-border bg-retro-panel hover:border-retro-muted'
-                ]"
-              >
-                <input
-                  type="radio"
-                  name="commit-messages"
-                  :value="false"
-                  :checked="!settingsStore.autoGenerateCommitMessages"
-                  class="w-3.5 h-3.5 text-retro-cyan accent-retro-cyan"
-                  @change="handleAutoGenerateCommitMessagesChange(false)"
-                >
-                <div class="flex-1">
-                  <div class="text-sm font-mono text-retro-text">Template (Recommended)</div>
-                  <div class="text-xs text-retro-muted leading-tight">Simple template-based messages. No token usage.</div>
-                </div>
-              </label>
-
-              <label
-                class="flex items-center gap-3 px-3 py-2 rounded border cursor-pointer transition-colors"
-                :class="[
-                  settingsStore.autoGenerateCommitMessages
-                    ? 'border-retro-cyan bg-retro-cyan/10'
-                    : 'border-retro-border bg-retro-panel hover:border-retro-muted'
-                ]"
-              >
-                <input
-                  type="radio"
-                  name="commit-messages"
-                  :value="true"
-                  :checked="settingsStore.autoGenerateCommitMessages"
-                  class="w-3.5 h-3.5 text-retro-cyan accent-retro-cyan"
-                  @change="handleAutoGenerateCommitMessagesChange(true)"
-                >
-                <div class="flex-1">
-                  <div class="text-sm font-mono text-retro-text">AI-Generated</div>
-                  <div class="text-xs text-retro-muted leading-tight">Uses Claude Haiku to create meaningful commit messages. ~300-500 tokens per commit.</div>
-                </div>
-              </label>
-            </div>
           </section>
 
           <div class="border-t border-retro-border" />

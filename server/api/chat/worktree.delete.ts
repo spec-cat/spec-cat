@@ -12,9 +12,10 @@ import { getProjectDir } from '~/server/utils/projectDir'
 import { validateWorktreePath } from '~/server/utils/validateWorktree'
 import { assertSafeBranchName, git } from '~/server/utils/chatGit'
 import { withLock } from '~/server/utils/asyncLock'
+import { buildTerminalSessionId, disposeTerminalSession } from '~/server/utils/terminalSessions'
 
 export default defineEventHandler(async (event) => {
-  const body = await readBody<{ worktreePath: string; branch: string }>(event)
+  const body = await readBody<{ worktreePath: string; branch: string; conversationId?: string }>(event)
 
   if (!body?.worktreePath || !body?.branch) {
     throw createError({
@@ -26,6 +27,13 @@ export default defineEventHandler(async (event) => {
   const { worktreePath } = body
   const branch = assertSafeBranchName(body.branch, 'branch')
   const projectDir = getProjectDir()
+
+  // Kill the conversation's interactive PTY before removing the worktree: the
+  // CLI's cwd is this directory, so a surviving claude/codex process would both
+  // leak and hold the path open against `git worktree remove`.
+  if (body.conversationId) {
+    disposeTerminalSession(buildTerminalSessionId(body.conversationId))
+  }
 
   // Reject paths outside the managed worktree root before any destructive op.
   // Only validate when the directory still exists — a missing worktree is a

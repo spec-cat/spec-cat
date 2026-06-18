@@ -8,6 +8,7 @@ import {
   STORAGE_VERSION,
   isValidArchivedConversation,
   isValidConversation,
+  sanitizeConversationTitle,
 } from '~/types/chat'
 
 export interface LoadedConversationState {
@@ -56,20 +57,28 @@ export async function loadConversations(): Promise<LoadedConversationState> {
     const migratedActive = data.conversations.map((entry) => {
       if (!entry || typeof entry !== 'object') return entry
       const record = entry as Record<string, unknown>
+      const migrated: Record<string, unknown> = { ...record }
       if ('claudeSessionId' in record && !('providerSessionId' in record)) {
-        return { ...record, providerSessionId: record.claudeSessionId }
+        migrated.providerSessionId = record.claudeSessionId
       }
-      return entry
+      if (typeof record.title === 'string') {
+        migrated.title = sanitizeConversationTitle(record.title)
+      }
+      return migrated
     })
 
     const archivedRaw = Array.isArray(data.archivedConversations) ? data.archivedConversations : []
     const migratedArchived = archivedRaw.map((entry) => {
       if (!entry || typeof entry !== 'object') return entry
       const record = entry as Record<string, unknown>
+      const migrated: Record<string, unknown> = { ...record }
       if ('claudeSessionId' in record && !('providerSessionId' in record)) {
-        return { ...record, providerSessionId: record.claudeSessionId }
+        migrated.providerSessionId = record.claudeSessionId
       }
-      return entry
+      if (typeof record.title === 'string') {
+        migrated.title = sanitizeConversationTitle(record.title)
+      }
+      return migrated
     })
 
     const validConversations = migratedActive.filter(isValidConversation)

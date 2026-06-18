@@ -23,11 +23,9 @@ describe('settings utils', () => {
     expect(normalizeSettings({
       theme: 'light',
       permissionMode: 'auto',
-      autoGenerateCommitMessages: true,
     })).toMatchObject({
       theme: 'light',
       permissionMode: 'auto',
-      autoGenerateCommitMessages: true,
     })
     expect(normalizeSettings({ theme: 'blue', permissionMode: 'invalid' })).toEqual({})
   })

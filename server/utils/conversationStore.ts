@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { STORAGE_VERSION } from '~/types/chat'
+import { generateBlockId, STORAGE_VERSION } from '~/types/chat'
 import { getSpecCatDataDir, readSpecCatStore } from './specCatStore'
 import { getProjectDir } from './projectDir'
 import { isUsableBaseBranchName, resolveConversationBaseBranch } from './baseBranch'
@@ -20,6 +20,14 @@ interface ArchivedConversationsFile {
 interface ConversationLikeRecord {
   baseBranch?: unknown
   worktreeBranch?: unknown
+}
+
+interface ChatMessageLikeRecord {
+  role?: unknown
+  status?: unknown
+  content?: unknown
+  contentBlocks?: unknown
+  timestamp?: unknown
 }
 
 const LEGACY_FILENAME = 'conversations.json'
@@ -47,6 +55,82 @@ function getRecordId(entry: unknown): string | null {
   if (!entry || typeof entry !== 'object') return null
   const value = (entry as Record<string, unknown>).id
   return isSafeConversationId(value) ? value : null
+}
+
+function getRecordUpdatedAt(entry: unknown): string | null {
+  if (!entry || typeof entry !== 'object') return null
+  const value = (entry as Record<string, unknown>).updatedAt
+  return typeof value === 'string' ? value : null
+}
+
+function getRecordMessages(entry: unknown): unknown[] | null {
+  if (!entry || typeof entry !== 'object') return null
+  const value = (entry as Record<string, unknown>).messages
+  return Array.isArray(value) ? value : null
+}
+
+function getNonEmptyString(entry: unknown, key: string): string | null {
+  if (!entry || typeof entry !== 'object') return null
+  const value = (entry as Record<string, unknown>)[key]
+  return typeof value === 'string' && value.length > 0 ? value : null
+}
+
+/**
+ * Returns the incoming conversation, backfilling provider/session fields from
+ * the existing on-disk record whenever the incoming record does not carry a
+ * non-empty value. These fields are written by the server during streaming and
+ * must not be clobbered by client saves that omit or blank them.
+ */
+function preserveServerProviderFields(existing: unknown, incoming: unknown): unknown {
+  if (!incoming || typeof incoming !== 'object') return incoming
+  const preserved: Record<string, unknown> = { ...(incoming as Record<string, unknown>) }
+  let changed = false
+
+  for (const key of ['providerSessionId', 'providerId', 'providerModelKey'] as const) {
+    if (!getNonEmptyString(incoming, key)) {
+      const existingValue = getNonEmptyString(existing, key)
+      if (existingValue) {
+        preserved[key] = existingValue
+        changed = true
+      }
+    }
+  }
+
+  return changed ? preserved : incoming
+}
+
+async function preserveExistingConversationFields(conversation: unknown): Promise<unknown> {
+  const id = getRecordId(conversation)
+  if (!id) return conversation
+
+  const filePath = getConversationFilePath(id)
+  if (!existsSync(filePath)) return conversation
+
+  try {
+    const existing = JSON.parse(await readFile(filePath, 'utf-8')) as unknown
+    if (shouldKeepExistingConversation(existing, conversation)) {
+      return existing
+    }
+    return preserveServerProviderFields(existing, conversation)
+  } catch {
+    return conversation
+  }
+}
+
+function shouldKeepExistingConversation(existing: unknown, incoming: unknown): boolean {
+  const existingMessages = getRecordMessages(existing)
+  const incomingMessages = getRecordMessages(incoming)
+  if (!existingMessages || !incomingMessages) return false
+  if (existingMessages.length === 0) return false
+
+  const existingUpdatedAt = getRecordUpdatedAt(existing)
+  const incomingUpdatedAt = getRecordUpdatedAt(incoming)
+  if (!existingUpdatedAt || !incomingUpdatedAt) return false
+
+  const incomingIsOlder = incomingUpdatedAt < existingUpdatedAt
+  if (!incomingIsOlder) return false
+
+  return incomingMessages.length <= existingMessages.length
 }
 
 async function ensureDataDir(): Promise<void> {
@@ -258,7 +342,8 @@ export async function writeConversationStorageState(state: StoredConversations):
     const id = getRecordId(conversation)
     if (!id) continue
     expectedFiles.add(`${id}.json`)
-    await writeFile(getConversationFilePath(id), JSON.stringify(conversation, null, 2), 'utf-8')
+    const conversationToWrite = await preserveExistingConversationFields(conversation)
+    await writeFile(getConversationFilePath(id), JSON.stringify(conversationToWrite, null, 2), 'utf-8')
   }
 
   const dir = getConversationsDirPath()
@@ -282,7 +367,28 @@ export async function upsertConversationInStorage(conversation: unknown, version
   }
 
   await ensureConversationsDir()
-  await writeFile(getConversationFilePath(id), JSON.stringify(conversation, null, 2), 'utf-8')
+  const filePath = getConversationFilePath(id)
+  let conversationToWrite = conversation
+
+  if (existsSync(filePath)) {
+    try {
+      const existing = JSON.parse(await readFile(filePath, 'utf-8')) as unknown
+      if (shouldKeepExistingConversation(existing, conversation)) {
+        conversationToWrite = existing
+      } else {
+        // The provider id and session id are server-authoritative: they are
+        // captured during streaming (jobQueue) and must survive client saves
+        // that omit or blank them. Backfill from the existing file whenever the
+        // incoming record lacks a non-empty value, so a Codex conversation can
+        // resume its session (and keep its provider) after a server restart.
+        conversationToWrite = preserveServerProviderFields(existing, conversation)
+      }
+    } catch {
+      // Corrupt existing file: let the incoming validated conversation replace it.
+    }
+  }
+
+  await writeFile(filePath, JSON.stringify(conversationToWrite, null, 2), 'utf-8')
 
   if (typeof version === 'number') {
     const archived = await readArchivedFile()
@@ -297,4 +403,111 @@ export async function removeConversationFromStorage(conversationId: string): Pro
     throw new Error('Conversation id is invalid')
   }
   await rm(getConversationFilePath(conversationId), { force: true })
+}
+
+export async function readConversationFromStorage(conversationId: string): Promise<unknown | null> {
+  if (!isSafeConversationId(conversationId)) {
+    throw new Error('Conversation id is invalid')
+  }
+
+  const filePath = getConversationFilePath(conversationId)
+  if (!existsSync(filePath)) return null
+
+  try {
+    const raw = await readFile(filePath, 'utf-8')
+    return JSON.parse(raw) as unknown
+  } catch {
+    return null
+  }
+}
+
+export async function updateConversationProviderSessionInStorage(
+  conversationId: string,
+  providerSessionId: string,
+): Promise<void> {
+  if (!providerSessionId) return
+  const conversation = await readConversationFromStorage(conversationId)
+  if (!conversation || typeof conversation !== 'object') return
+
+  const record = conversation as Record<string, unknown>
+  record.providerSessionId = providerSessionId
+  record.updatedAt = new Date().toISOString()
+  await upsertConversationInStorage(record, STORAGE_VERSION)
+}
+
+function markInterruptedMessages(conversation: unknown, timestamp: string): boolean {
+  if (!conversation || typeof conversation !== 'object') return false
+  const record = conversation as Record<string, unknown>
+  if (!Array.isArray(record.messages)) return false
+
+  let changed = false
+  for (const message of record.messages) {
+    if (!message || typeof message !== 'object') continue
+    const msg = message as ChatMessageLikeRecord
+    if (msg.role !== 'assistant' || msg.status !== 'streaming') continue
+
+    msg.status = 'stopped'
+    msg.timestamp = timestamp
+
+    const recoveryNote = '\n\n> Response interrupted because the server restarted. Send a follow-up message to continue from the saved conversation context.\n'
+    msg.content = typeof msg.content === 'string'
+      ? `${msg.content}${recoveryNote}`
+      : recoveryNote.trimStart()
+
+    if (Array.isArray(msg.contentBlocks)) {
+      msg.contentBlocks.push({
+        id: generateBlockId(),
+        type: 'text',
+        text: recoveryNote,
+      })
+      for (const block of msg.contentBlocks) {
+        if (!block || typeof block !== 'object') continue
+        const blockRecord = block as Record<string, unknown>
+        if (blockRecord.type === 'tool_use' && (blockRecord.status === 'running' || blockRecord.status === 'pending')) {
+          blockRecord.status = 'error'
+        }
+      }
+    }
+
+    changed = true
+  }
+
+  if (changed) {
+    record.updatedAt = timestamp
+  }
+
+  return changed
+}
+
+/**
+ * On a server restart, in-memory jobs and child processes are gone. Persisted
+ * conversations can still contain assistant messages marked as streaming from
+ * the previous process lifetime; close those turns so the UI can continue with
+ * a follow-up using the saved provider session/worktree context.
+ */
+export async function markInterruptedStreamingConversations(): Promise<number> {
+  await ensureConversationsDir()
+
+  const dir = getConversationsDirPath()
+  const entries = await readdir(dir, { withFileTypes: true })
+  const timestamp = new Date().toISOString()
+  let changedCount = 0
+
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith('.json')) continue
+
+    const filePath = join(dir, entry.name)
+    try {
+      const raw = await readFile(filePath, 'utf-8')
+      const conversation = JSON.parse(raw) as unknown
+      if (!markInterruptedMessages(conversation, timestamp)) continue
+
+      await writeFile(filePath, JSON.stringify(conversation, null, 2), 'utf-8')
+      changedCount++
+    } catch (error) {
+      console.warn('[conversationStore] Failed to reconcile interrupted conversation:', entry.name, error)
+    }
+  }
+
+  return changedCount
 }

@@ -1,4 +1,5 @@
 import { execGitCommand } from './gitExec'
+import { logger } from './logger'
 
 const DEFAULT_BRANCH_CANDIDATES = ['main', 'master']
 const WORKTREE_BRANCH_PREFIX = 'sc/'
@@ -143,8 +144,24 @@ export async function resolveConversationBaseBranch(options: {
     if (defaultBranch && matches.includes(defaultBranch)) {
       return defaultBranch
     }
-    if (matches.length > 0) {
+    if (matches.length === 1) {
       return matches[0]
+    }
+    if (matches.length > 1) {
+      // Multiple branches share this fork point, so the stored hash alone cannot
+      // disambiguate the true base. Prefer a branch whose tip is exactly the
+      // stored commit (strongest signal); otherwise pick deterministically by
+      // sorted name and warn, instead of relying on git's ref enumeration order.
+      const pointingAtHash = new Set(await getBranchesPointingAt(cwd, branch))
+      const sorted = [...matches].sort()
+      const chosen = sorted.find(candidate => pointingAtHash.has(candidate)) ?? sorted[0]
+      logger.chat.warn('Ambiguous base branch resolved from stored commit hash', {
+        storedHash: branch,
+        worktreeBranch: normalizedWorktreeBranch,
+        matches,
+        chosen,
+      })
+      return chosen
     }
   }
 

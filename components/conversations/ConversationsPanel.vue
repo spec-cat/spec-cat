@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import {
   PlusIcon,
   MagnifyingGlassIcon,
@@ -7,11 +7,13 @@ import {
   ArchiveBoxIcon,
   TrashIcon,
   ChatBubbleLeftRightIcon,
+  XMarkIcon,
 } from '@heroicons/vue/24/outline'
 import { useChatStore } from '~/stores/chat'
 import ConversationItem from '~/components/chat/ConversationItem.vue'
 import NewConversationModal from '~/components/conversations/NewConversationModal.vue'
 import type { ArchivedConversation, Conversation } from '~/types/chat'
+import { cleanTerminalTextForPreview } from '~/utils/terminalText'
 
 const chatStore = useChatStore()
 const toast = useToast()
@@ -23,7 +25,33 @@ const creatingConversation = ref(false)
 const showRestoreModal = ref(false)
 const restoringConversation = ref(false)
 const restoringArchiveId = ref<string | null>(null)
+const showClearArchiveConfirm = ref(false)
+const clearingArchives = ref(false)
 let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
+function isEditableShortcutTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  const tag = target.tagName.toLowerCase()
+  return target.isContentEditable || tag === 'input' || tag === 'textarea' || tag === 'select'
+}
+
+function handleGlobalKeydown(event: KeyboardEvent) {
+  if (
+    event.key.toLowerCase() !== 'n' ||
+    event.ctrlKey ||
+    event.metaKey ||
+    event.altKey ||
+    event.shiftKey ||
+    showCreateModal.value ||
+    showRestoreModal.value ||
+    isEditableShortcutTarget(event.target)
+  ) {
+    return
+  }
+
+  event.preventDefault()
+  void handleCreate()
+}
 
 watch(searchQuery, (value) => {
   if (searchDebounceTimer) clearTimeout(searchDebounceTimer)
@@ -37,11 +65,25 @@ onUnmounted(() => {
     clearTimeout(searchDebounceTimer)
     searchDebounceTimer = null
   }
+  window.removeEventListener('keydown', handleGlobalKeydown)
+})
+
+onMounted(() => {
+  window.addEventListener('keydown', handleGlobalKeydown)
 })
 
 type SearchCacheValue = { signature: string; text: string }
 const activeSearchCache = new Map<string, SearchCacheValue>()
 const archiveSearchCache = new Map<string, SearchCacheValue>()
+
+function findLastUserMessage(messages: Array<{ role?: string; content?: string; id?: string }>) {
+  return [...messages].reverse().find(message => message.role === 'user')
+}
+
+function getLastUserMessageMemoKey(messages: Array<{ role?: string; content?: string; id?: string }>) {
+  const message = findLastUserMessage(messages)
+  return `${message?.id || ''}:${cleanTerminalTextForPreview(message?.content || '')}`
+}
 
 watch(
   () => chatStore.sortedConversations.map(c => c.id),
@@ -66,25 +108,25 @@ watch(
 )
 
 function buildActiveSignature(conv: Conversation): string {
-  const last = conv.messages[conv.messages.length - 1]
+  const lastUserMessage = findLastUserMessage(conv.messages)
   return [
     conv.updatedAt,
     conv.title,
     conv.messages.length,
-    last?.id || '',
-    last?.content?.length || 0,
+    lastUserMessage?.id || '',
+    cleanTerminalTextForPreview(lastUserMessage?.content || '').length,
   ].join('|')
 }
 
 function buildArchiveSignature(conv: ArchivedConversation): string {
-  const last = conv.messages[conv.messages.length - 1]
+  const lastUserMessage = findLastUserMessage(conv.messages)
   return [
     conv.updatedAt,
     conv.archivedAt,
     conv.title,
     conv.messages.length,
-    last?.id || '',
-    last?.content?.length || 0,
+    lastUserMessage?.id || '',
+    cleanTerminalTextForPreview(lastUserMessage?.content || '').length,
   ].join('|')
 }
 
@@ -95,7 +137,7 @@ function getActiveSearchText(conv: Conversation): string {
 
   const text = [
     conv.title,
-    ...conv.messages.map(msg => msg.content || ''),
+    ...conv.messages.map(msg => cleanTerminalTextForPreview(msg.content || '')),
   ].join('\n').toLowerCase()
 
   activeSearchCache.set(conv.id, { signature, text })
@@ -109,7 +151,7 @@ function getArchiveSearchText(conv: ArchivedConversation): string {
 
   const text = [
     conv.title,
-    ...conv.messages.map(msg => msg.content || ''),
+    ...conv.messages.map(msg => cleanTerminalTextForPreview(msg.content || '')),
   ].join('\n').toLowerCase()
 
   archiveSearchCache.set(conv.id, { signature, text })
@@ -148,10 +190,10 @@ async function handleCreate() {
   showCreateModal.value = true
 }
 
-async function handleCreateConfirm(baseBranch: string) {
+async function handleCreateConfirm(options: { baseBranch: string; providerId: string }) {
   creatingConversation.value = true
   try {
-    const conversationId = await chatStore.createConversation({ baseBranch })
+    const conversationId = await chatStore.createConversation(options)
     if (!conversationId) {
       toast.error('Failed to create conversation')
       return
@@ -188,12 +230,12 @@ function handleRestoreClose() {
   restoringArchiveId.value = null
 }
 
-async function handleRestoreConfirm(baseBranch: string) {
+async function handleRestoreConfirm(options: { baseBranch: string; providerId: string }) {
   if (!restoringArchiveId.value) return
 
   restoringConversation.value = true
   try {
-    const result = await chatStore.restoreArchivedConversation(restoringArchiveId.value, baseBranch)
+    const result = await chatStore.restoreArchivedConversation(restoringArchiveId.value, options.baseBranch)
     if (!result.success) {
       toast.error(result.error || 'Failed to restore archived conversation')
       return
@@ -215,6 +257,21 @@ async function handleDeleteArchive(archiveId: string) {
   toast.success('Archived conversation deleted')
 }
 
+async function handleClearAllArchives() {
+  clearingArchives.value = true
+  try {
+    const result = await chatStore.deleteAllArchivedConversations()
+    if (!result.success) {
+      toast.error(result.error || 'Failed to clear archived conversations')
+      return
+    }
+    showClearArchiveConfirm.value = false
+    toast.success(`Cleared ${result.deletedCount} archived conversation${result.deletedCount === 1 ? '' : 's'}`)
+  } finally {
+    clearingArchives.value = false
+  }
+}
+
 function handleRename(id: string, title: string) {
   chatStore.renameConversation(id, title)
 }
@@ -223,11 +280,11 @@ function formatArchivedAt(value: string) {
   return new Date(value).toLocaleString()
 }
 
-function getArchivePreview(messages: Array<{ content?: string }>) {
+function getArchivePreview(messages: Array<{ role?: string; content?: string }>) {
   if (!messages.length) return 'No messages'
-  const last = messages[messages.length - 1]
-  const content = (last.content || '').trim()
-  if (!content) return 'No messages'
+  const lastUserMessage = findLastUserMessage(messages)
+  const content = cleanTerminalTextForPreview(lastUserMessage?.content || '')
+  if (!content) return 'No user message'
   return content.length > 80 ? `${content.slice(0, 80)}...` : content
 }
 </script>
@@ -298,8 +355,8 @@ function getArchivePreview(messages: Array<{ content?: string }>) {
               v-memo="[
                 conv.id,
                 conv.title,
-                conv.updatedAt,
                 conv.messages.length,
+                getLastUserMessageMemoKey(conv.messages),
                 conv.finalized,
                 conv.id === chatStore.activeConversationId,
                 chatStore.isConversationStreaming(conv.id),
@@ -331,6 +388,17 @@ function getArchivePreview(messages: Array<{ content?: string }>) {
 
       <template v-else>
         <div v-if="chatStore.hasArchivedConversations" class="space-y-2">
+          <div class="flex items-center justify-end pb-1">
+            <button
+              @click="showClearArchiveConfirm = true"
+              class="inline-flex items-center gap-1 px-2 py-1 text-xs font-mono border border-red-400/40 text-red-300 rounded hover:bg-red-500/10 transition-colors"
+              title="Delete all archived conversations"
+            >
+              <TrashIcon class="w-3.5 h-3.5" />
+              Clear all
+            </button>
+          </div>
+
           <template v-if="filteredArchivedConversations.length > 0">
             <div
               v-for="conv in filteredArchivedConversations"
@@ -404,8 +472,66 @@ function getArchivePreview(messages: Array<{ content?: string }>) {
     <NewConversationModal
       :show="showRestoreModal"
       :creating="restoringConversation"
+      :show-provider="false"
       @close="handleRestoreClose"
       @create="handleRestoreConfirm"
     />
+
+    <Teleport to="body">
+      <Transition
+        enter-active-class="transition-opacity duration-200"
+        enter-from-class="opacity-0"
+        enter-to-class="opacity-100"
+        leave-active-class="transition-opacity duration-200"
+        leave-from-class="opacity-100"
+        leave-to-class="opacity-0"
+      >
+        <div
+          v-if="showClearArchiveConfirm"
+          class="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+          @click.self="!clearingArchives && (showClearArchiveConfirm = false)"
+        >
+          <div class="w-full max-w-md mx-4 bg-retro-dark border border-retro-border rounded-lg shadow-xl">
+            <div class="px-4 py-3 border-b border-retro-border flex items-center justify-between">
+              <h3 class="text-sm font-mono text-retro-text font-semibold">Clear archived conversations</h3>
+              <button
+                type="button"
+                class="p-1 text-retro-muted hover:text-retro-text transition-colors"
+                :disabled="clearingArchives"
+                @click="showClearArchiveConfirm = false"
+              >
+                <XMarkIcon class="w-4 h-4" />
+              </button>
+            </div>
+
+            <div class="px-4 py-4">
+              <p class="text-xs font-mono text-retro-text">
+                Delete all {{ chatStore.archivedConversations.length }} archived conversation{{ chatStore.archivedConversations.length === 1 ? '' : 's' }}? This cannot be undone.
+              </p>
+            </div>
+
+            <div class="px-4 py-3 border-t border-retro-border flex items-center justify-end gap-2">
+              <button
+                type="button"
+                :disabled="clearingArchives"
+                class="px-3 py-1 text-xs font-mono rounded border border-retro-border text-retro-muted hover:text-retro-text hover:border-retro-text/30 transition-colors disabled:opacity-40"
+                @click="showClearArchiveConfirm = false"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                :disabled="clearingArchives"
+                class="inline-flex items-center gap-1 px-3 py-1 text-xs font-mono rounded border border-red-400/50 text-red-300 hover:bg-red-500/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                @click="handleClearAllArchives"
+              >
+                <TrashIcon class="w-3.5 h-3.5" />
+                {{ clearingArchives ? 'Clearing...' : 'Clear all' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>

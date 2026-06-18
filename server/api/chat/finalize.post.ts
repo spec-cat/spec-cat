@@ -22,6 +22,7 @@ import { validateWorktreePath } from '~/server/utils/validateWorktree'
 import { assertSafeBranchName, git, localBranchRef } from '~/server/utils/chatGit'
 import { autoCommitChanges } from '~/server/utils/claudeService'
 import { withLock } from '~/server/utils/asyncLock'
+import { jobQueue } from '~/server/utils/jobQueue'
 import type { FinalizeRequest, FinalizeResponse } from '~/types/chat'
 
 async function collectConflictFiles(worktreePath: string): Promise<string[]> {
@@ -151,7 +152,10 @@ export default defineEventHandler(async (event): Promise<FinalizeResponse> => {
 
       logger.chat.info('Base branch updated', { baseBranch, newHead })
 
-      // 7. Cleanup: remove worktree and delete temp branch + preview branch
+      // 7. Stop any provider process still associated with this finalized conversation.
+      jobQueue.finalizeConversation(conversationId)
+
+      // 8. Cleanup: remove worktree and delete temp branch + preview branch
       try {
         await git(projectDir, ['worktree', 'remove', worktreePath, '--force'])
       } catch {

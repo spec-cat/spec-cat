@@ -277,6 +277,110 @@ describe('chat store — permission state', () => {
   })
 })
 
+describe('chat store — isConversationStreaming', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  it('returns true when the conversation is in the explicit streaming set', () => {
+    const store = useChatStore()
+    const conv = seedConversation(store)
+
+    store.startConversationStreaming(conv.id)
+    expect(store.isConversationStreaming(conv.id)).toBe(true)
+
+    store.endConversationStreaming(conv.id)
+    expect(store.isConversationStreaming(conv.id)).toBe(false)
+  })
+
+  it('falls back to the last assistant message status when the set lost track', () => {
+    const store = useChatStore()
+    const conv = seedConversation(store)
+    // Assistant message is mid-stream but the in-memory set was never populated
+    // (e.g. observed CLI/server job, cross-tab activity, missed start call).
+    store.addAssistantMessage(conv.id)
+
+    expect(store.isConversationStreaming(conv.id)).toBe(true)
+  })
+
+  it('does not report streaming once the assistant message is finalized', () => {
+    const store = useChatStore()
+    const conv = seedConversation(store)
+    const msg = store.addAssistantMessage(conv.id)
+
+    store.updateMessage(msg.id, { status: 'complete' }, conv.id)
+    expect(store.isConversationStreaming(conv.id)).toBe(false)
+  })
+
+  it('suppresses the streaming fallback while awaiting permission', () => {
+    const store = useChatStore()
+    const conv = seedConversation(store)
+    store.addAssistantMessage(conv.id)
+    store.setPendingPermission({ tool: 'Write', filePath: '/a/b' }, conv.id)
+
+    // Paused for permission: message is still 'streaming' but the live
+    // indicator is intentionally dropped.
+    expect(store.isConversationStreaming(conv.id)).toBe(false)
+
+    store.clearPendingPermission(conv.id)
+    expect(store.isConversationStreaming(conv.id)).toBe(true)
+  })
+
+  it('suppresses the streaming fallback while awaiting plan approval', () => {
+    const store = useChatStore()
+    const conv = seedConversation(store)
+    store.addAssistantMessage(conv.id)
+    store.setPendingPlanApproval({ allowedPrompts: [{ tool: 'Write', prompt: 'x' }] }, conv.id)
+
+    expect(store.isConversationStreaming(conv.id)).toBe(false)
+  })
+
+  it('returns false for an unknown conversation id', () => {
+    const store = useChatStore()
+    seedConversation(store)
+    expect(store.isConversationStreaming('nope')).toBe(false)
+  })
+})
+
+describe('chat store — isConversationActivelyStreaming (guard predicate)', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  it('reflects only the explicit streaming set, ignoring the message-status fallback', () => {
+    const store = useChatStore()
+    const conv = seedConversation(store)
+    // Last assistant message stuck at 'streaming' but the Set has no entry:
+    // the display predicate reports true, the guard predicate must report false
+    // so control-flow (archive, re-observe, reuse) is not wrongly suppressed.
+    store.addAssistantMessage(conv.id)
+
+    expect(store.isConversationStreaming(conv.id)).toBe(true)
+    expect(store.isConversationActivelyStreaming(conv.id)).toBe(false)
+  })
+
+  it('returns true while the conversation is in the explicit streaming set', () => {
+    const store = useChatStore()
+    const conv = seedConversation(store)
+
+    store.startConversationStreaming(conv.id)
+    expect(store.isConversationActivelyStreaming(conv.id)).toBe(true)
+
+    store.endConversationStreaming(conv.id)
+    expect(store.isConversationActivelyStreaming(conv.id)).toBe(false)
+  })
+
+  it('allows archiving a conversation whose last message is stuck streaming but is not live', async () => {
+    const store = useChatStore()
+    const conv = seedConversation(store)
+    store.addAssistantMessage(conv.id)
+
+    // Guard uses the authoritative signal, so this is not blocked as "streaming".
+    const result = await store.archiveConversation(conv.id)
+    expect(result.error).not.toBe('Cannot archive while this conversation is streaming')
+  })
+})
+
 describe('chat store — session state', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -335,6 +439,33 @@ describe('chat store — conversations', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.unstubAllGlobals()
+  })
+
+  it('uses the first user message as the conversation title', () => {
+    const store = useChatStore()
+    const conversation = seedConversation(store, { title: 'New Conversation' })
+
+    store.addUserMessage('/implement 018-codex-provider-integration')
+
+    expect(conversation.title).toBe('/implement 018-codex-provider-integration')
+  })
+
+  it('does not overwrite a custom conversation title from the first user message', () => {
+    const store = useChatStore()
+    const conversation = seedConversation(store, { title: 'spec: 031-spec-search-modal' })
+
+    store.addUserMessage('/implement 031-spec-search-modal')
+
+    expect(conversation.title).toBe('spec: 031-spec-search-modal')
+  })
+
+  it('updates default conversation titles regardless of casing', () => {
+    const store = useChatStore()
+    const conversation = seedConversation(store, { title: 'New conversation' })
+
+    store.addUserMessage('/tasks 031-spec-search-modal')
+
+    expect(conversation.title).toBe('/tasks 031-spec-search-modal')
   })
 
   it('keeps active conversations sorted by createdAt desc after archive', async () => {

@@ -95,6 +95,11 @@ As a developer, I want AI provider execution to emit events through an EventBus 
 - Multiple jobs are submitted for the same conversation in rapid succession — previous job is cancelled, new job runs.
 - Server restarts mid-job — in-memory job state is lost; client must handle gracefully (no replay available).
 - Job produces thousands of events — replay sends all buffered events; consider pagination in future iteration.
+- Provider PTY crashes or exits mid-turn (e.g., auth failure) — job is finalized as `error` instead of hanging in `running`.
+- CLI hook injection silently fails so no Stop hook ever lands — a hard turn-timeout finalizes the job as `error`.
+- Injected message contains bracketed-paste markers — markers are stripped so the message cannot break out of paste mode.
+- Superseded turn in a reused PTY emits a Ctrl+C-induced Stop before the new prompt submits — ignored because the monitor is armed only post-submit.
+- Resumed session exits immediately (stale resume id) — job retries once from a fresh session, persisting a new provider session id.
 
 ## Feature Requirements
 
@@ -130,6 +135,12 @@ When a job is submitted via REST API, a minimal `Conversation` record is created
 
 ### FR-011: JobQueue listAllJobs
 `ChatJobQueue.listAllJobs()` returns all jobs across all conversations for the list API.
+
+### FR-012: Interactive PTY Provider Execution
+Jobs execute through the provider's persistent interactive PTY session (one per conversation) rather than a one-shot `-p`/`codex exec` process. The prompt is injected via bracketed paste once the TUI composer is idle, then submitted. Turn completion is detected by the CLI Stop hook landing in the conversation's spool (no jobId filter, since the env jobId is fixed at PTY spawn and goes stale across turns). Spec context and the speckit autonomy directive — which the interactive TUI cannot receive via `--append-system-prompt` — are prepended to the injected message. The job MUST never remain `running` indefinitely: if the PTY exits mid-turn or no Stop hook arrives within a hard cap, the job is finalized as `error`. Cancellation/supersession interrupts the in-flight turn with Ctrl+C while keeping the session alive so the next turn resumes context. The Stop-hook monitor is *armed* only after the prompt is submitted, so a stray Ctrl+C-induced Stop from a superseded turn in a reused PTY is never mistaken for the current turn's completion. If a *resumed* session exits before completing — almost always a stale resume id (rollout/jsonl wiped) — the job retries once from a fresh session before erroring.
+
+### FR-013: Client-Anchored Assistant Message Persistence
+A browser-initiated chat MUST carry the client's `assistantMessageId` so the server persister updates that exact placeholder. After a reconnect/restart multiple assistant turns may share terminal-looking statuses; "last streaming message" is only a fallback for callers that supply no id. Server-initiated jobs (no client placeholder) fall back to creating/locating the message as before.
 
 ## Constraints
 

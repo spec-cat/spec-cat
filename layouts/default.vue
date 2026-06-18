@@ -101,7 +101,6 @@ watch(
   (conversationId, previousConversationId) => {
     if (
       isMobile.value
-      && activeMobilePanel.value === 'conversations'
       && conversationId
       && conversationId !== previousConversationId
     ) {

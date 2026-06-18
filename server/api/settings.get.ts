@@ -13,7 +13,6 @@ export interface SpecCatSettings {
   claudeModel?: string
   panelWidth: number
   permissionMode: string
-  autoGenerateCommitMessages: boolean
 }
 
 const DEFAULTS: SpecCatSettings = {
@@ -23,7 +22,6 @@ const DEFAULTS: SpecCatSettings = {
   claudeModel: 'sonnet',
   panelWidth: 400,
   permissionMode: 'ask',
-  autoGenerateCommitMessages: false,
 }
 
 export default defineEventHandler(async () => {

@@ -265,7 +265,7 @@ async function resolveStepPrompt(step: string, featureId: string, conversationId
 function findReusableConversationId(featureId: string, forceNew: boolean): string | null {
   if (forceNew) return null
   const existing = chatStore.findConversationByFeature(featureId)
-  if (existing && !chatStore.isConversationStreaming(existing.id) && !existing.finalized) {
+  if (existing && !chatStore.isConversationActivelyStreaming(existing.id) && !existing.finalized) {
     chatStore.selectConversation(existing.id)
     return existing.id
   }
@@ -286,8 +286,12 @@ function checkForFinalizedConversation(featureId: string): boolean {
   return false
 }
 
-async function createFeatureConversation(featureId: string, title: string, baseBranch: string): Promise<string> {
-  const conversationId = await chatStore.createConversation({ featureId, baseBranch })
+async function createFeatureConversation(
+  featureId: string,
+  title: string,
+  options: { baseBranch: string; providerId: string },
+): Promise<string> {
+  const conversationId = await chatStore.createConversation({ featureId, ...options })
   if (!conversationId) {
     throw new Error('Failed to create conversation')
   }
@@ -444,13 +448,13 @@ function handleCreateModalClose() {
   pendingFeatureAction.value = null
 }
 
-async function handleCreateConfirm(baseBranch: string) {
+async function handleCreateConfirm(options: { baseBranch: string; providerId: string }) {
   if (!pendingFeatureAction.value) return
 
   creatingConversation.value = true
   try {
     const action = pendingFeatureAction.value
-    const conversationId = await createFeatureConversation(action.featureId, action.title, baseBranch)
+    const conversationId = await createFeatureConversation(action.featureId, action.title, options)
     if (action.type === 'cascade') {
       await executeCascadeAction(action.featureId, action.command, conversationId)
     } else if (action.type === 'skill') {

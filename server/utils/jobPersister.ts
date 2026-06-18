@@ -44,6 +44,7 @@ interface ActiveTool {
 interface JobAccumulator {
   conversationId: string
   userMessage: string
+  cliSubmittedPrompt: string | null
   assistantMessageId: string
   contentBlocks: ContentBlock[]
   flatText: string
@@ -53,6 +54,8 @@ interface JobAccumulator {
   providerSessionId: string | null
   unsubscribe: () => void
   status: 'streaming' | 'complete' | 'error' | 'stopped'
+  cliTurnStopSeen: boolean
+  cliTurnStopConfirmed: boolean
 }
 
 const accumulators = new Map<string, JobAccumulator>()
@@ -73,6 +76,7 @@ function formatToolInputSummary(input: Record<string, unknown>): string {
 export function startPersisting(
   conversationId: string,
   userMessage: string,
+  assistantMessageId = generateMessageId(),
 ): void {
   // Clean up any existing accumulator for this conversation
   const existing = accumulators.get(conversationId)
@@ -81,11 +85,10 @@ export function startPersisting(
     accumulators.delete(conversationId)
   }
 
-  const assistantMessageId = generateMessageId()
-
   const acc: JobAccumulator = {
     conversationId,
     userMessage,
+    cliSubmittedPrompt: null,
     assistantMessageId,
     contentBlocks: [],
     flatText: '',
@@ -95,6 +98,8 @@ export function startPersisting(
     providerSessionId: null,
     unsubscribe: () => {},
     status: 'streaming',
+    cliTurnStopSeen: false,
+    cliTurnStopConfirmed: false,
   }
 
   acc.unsubscribe = eventBus.subscribe(conversationId, (event) => {
@@ -140,6 +145,24 @@ function handleEvent(acc: JobAccumulator, event: JobEvent): void {
     if (event.type === 'session_reset') {
       const reason = typeof event.reason === 'string' ? event.reason : 'Session reset'
       appendTextBlock(acc, `\n\n> **Session Reset**: ${reason}\n\n`)
+      return
+    }
+
+    if (event.type === 'cli_prompt_submitted' && typeof event.prompt === 'string') {
+      const prompt = event.prompt.trim()
+      if (prompt && prompt.length <= 20_000 && !prompt.includes(acc.userMessage.trim())) {
+        acc.cliSubmittedPrompt = prompt
+      }
+      return
+    }
+
+    if (event.type === 'cli_turn_stop') {
+      acc.cliTurnStopSeen = true
+      return
+    }
+
+    if (event.type === 'cli_turn_stop_confirmed') {
+      acc.cliTurnStopConfirmed = true
       return
     }
 
@@ -369,11 +392,31 @@ async function flush(acc: JobAccumulator): Promise<void> {
       }
     }
 
-    // Try to find the existing assistant message (client-initiated).
-    // Search from the end since it's always the last assistant message.
-    // Match 'streaming' (normal) or 'stopped' (client clicked stop before server flushed).
+    // Try to find the existing assistant message (client-initiated). Prefer
+    // the id supplied by the browser; after a restart/reconnect there can be
+    // multiple assistant turns with terminal-looking statuses, and "last
+    // streaming" is only a fallback for older callers.
     let updated = false
+    const exactIndex = conversation.messages.findIndex(
+      m => m.role === 'assistant' && m.id === acc.assistantMessageId,
+    )
+    if (exactIndex !== -1) {
+      const m = conversation.messages[exactIndex]
+      conversation.messages[exactIndex] = {
+        ...m,
+        content: acc.flatText,
+        contentBlocks: acc.contentBlocks,
+        status: finalStatus,
+        timestamp: now,
+      }
+      updated = true
+    }
+
+    // Fallback for jobs that did not provide a client assistant id.
+    // Search from the end since it is normally the last assistant message.
+    // Match 'streaming' (normal) or 'stopped' (client clicked stop before server flushed).
     for (let i = conversation.messages.length - 1; i >= 0; i--) {
+      if (updated) break
       const m = conversation.messages[i]
       if (m.role === 'assistant' && (m.status === 'streaming' || m.status === 'stopped')) {
         conversation.messages[i] = {
@@ -393,7 +436,7 @@ async function flush(acc: JobAccumulator): Promise<void> {
       const userMsg: ChatMessage = {
         id: generateMessageId(),
         role: 'user',
-        content: acc.userMessage,
+        content: acc.cliSubmittedPrompt || acc.userMessage,
         timestamp: now,
       }
       const assistantMsg: ChatMessage = {

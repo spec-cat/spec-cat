@@ -24,7 +24,7 @@ const REFRESH_DEBOUNCE = 500
 const RETRY_DELAY = 1_000
 const MAX_RETRIES = 5
 
-/** Lightweight per-job streaming state (one at a time per WebSocket). */
+/** Lightweight per-job streaming state. */
 interface ServerJobState {
   conversationId: string
   messageId: string
@@ -35,7 +35,10 @@ interface ServerJobState {
   isReplaying: boolean
   replayBuffer: any[]
 }
-let activeServerJob: ServerJobState | null = null
+// Active observed jobs keyed by conversationId. The single WebSocket can watch
+// multiple concurrent server/CLI jobs at once; events are routed to the right
+// job by the conversationId the server injects into each message.
+const serverJobs = new Map<string, ServerJobState>()
 
 /** Jobs awaiting setup after the next refresh completes. */
 const pendingJobs = new Map<string, string>() // conversationId → message
@@ -104,8 +107,17 @@ export function useGlobalNotifications() {
   function setupServerJobStreaming(conversationId: string, message: string): boolean {
     if (!ws || ws.readyState !== WebSocket.OPEN) return false
 
-    // Skip if this browser is already streaming this conversation (e.g. we initiated the job)
-    if (chatStore.isConversationStreaming(conversationId)) {
+    // Already observing this conversation — don't subscribe/duplicate.
+    if (serverJobs.has(conversationId)) {
+      retryCount.delete(conversationId)
+      return true
+    }
+
+    // Skip if this browser is already actively streaming this conversation (e.g.
+    // we initiated the job). Must use the authoritative Set-only signal: the
+    // status fallback would treat a finished-but-stuck 'streaming' message as
+    // live and wrongly skip re-observing a genuinely active job.
+    if (chatStore.isConversationActivelyStreaming(conversationId)) {
       retryCount.delete(conversationId)
       return true
     }
@@ -130,7 +142,7 @@ export function useGlobalNotifications() {
     if (existingAssistant) {
       chatStore.resetMessageForReplay(existingAssistant.id, conversationId)
       chatStore.startConversationStreaming(conversationId)
-      activeServerJob = {
+      serverJobs.set(conversationId, {
         conversationId,
         messageId: existingAssistant.id,
         currentTextBlockId: null,
@@ -138,7 +150,7 @@ export function useGlobalNotifications() {
         currentToolInputJson: '',
         isReplaying: false,
         replayBuffer: [],
-      }
+      })
       ws.send(JSON.stringify({ type: 'subscribe', conversationId, cursor: 0 }))
       console.log('[GlobalNotifications] Resumed server job streaming (existing msg):', conversationId)
       return true
@@ -149,7 +161,7 @@ export function useGlobalNotifications() {
     chatStore.initContentBlocks(assistantMsg.id, conversationId)
     chatStore.startConversationStreaming(conversationId)
 
-    activeServerJob = {
+    serverJobs.set(conversationId, {
       conversationId,
       messageId: assistantMsg.id,
       currentTextBlockId: null,
@@ -157,7 +169,7 @@ export function useGlobalNotifications() {
       currentToolInputJson: '',
       isReplaying: false,
       replayBuffer: [],
-    }
+    })
 
     // Subscribe this WebSocket to the conversation's event channel with full replay
     ws.send(JSON.stringify({
@@ -182,9 +194,13 @@ export function useGlobalNotifications() {
         return
       }
 
-      // Conversation-level streaming events (for active server job)
-      if (activeServerJob) {
-        handleStreamingEvent(msg)
+      // Conversation-level streaming events — route to the matching observed
+      // job by the conversationId the server injects into each message.
+      const convId = msg.conversationId
+      if (!convId) return
+      const job = serverJobs.get(convId)
+      if (job) {
+        handleStreamingEvent(job, msg)
       }
     } catch {
       // ignore parse errors
@@ -204,9 +220,9 @@ export function useGlobalNotifications() {
 
     if (msg.notificationEvent === 'job_persisted') {
       // Clean up streaming state — the persisted data will replace everything
-      if (activeServerJob?.conversationId === msg.conversationId) {
+      if (serverJobs.has(msg.conversationId)) {
         chatStore.endConversationStreaming(msg.conversationId)
-        activeServerJob = null
+        serverJobs.delete(msg.conversationId)
       }
       pendingJobs.delete(msg.conversationId)
       retryCount.delete(msg.conversationId)
@@ -231,8 +247,7 @@ export function useGlobalNotifications() {
   // The full content (with tool_use, thinking blocks etc.)
   // comes from jobPersister via job_persisted.
 
-  function handleStreamingEvent(msg: any) {
-    const job = activeServerJob!
+  function handleStreamingEvent(job: ServerJobState, msg: any) {
     const convId = job.conversationId
 
     // Replay buffering: accumulate events during replay for batch processing
@@ -270,7 +285,7 @@ export function useGlobalNotifications() {
       chatStore.updateMessage(job.messageId, { status: 'error' }, convId)
       chatStore.setSessionError(msg.error || 'Server job error', convId)
       chatStore.endConversationStreaming(convId)
-      activeServerJob = null
+      serverJobs.delete(convId)
       return
     }
 
@@ -506,10 +521,10 @@ export function useGlobalNotifications() {
       console.log('[GlobalNotifications] WebSocket closed', { code: event.code, reason: event.reason })
       ws = null
       // Clean up any active streaming
-      if (activeServerJob) {
-        chatStore.endConversationStreaming(activeServerJob.conversationId)
-        activeServerJob = null
+      for (const convId of serverJobs.keys()) {
+        chatStore.endConversationStreaming(convId)
       }
+      serverJobs.clear()
       scheduleReconnect()
     }
 
@@ -539,10 +554,10 @@ export function useGlobalNotifications() {
     retryTimers.clear()
     retryCount.clear()
     pendingJobs.clear()
-    if (activeServerJob) {
-      chatStore.endConversationStreaming(activeServerJob.conversationId)
-      activeServerJob = null
+    for (const convId of serverJobs.keys()) {
+      chatStore.endConversationStreaming(convId)
     }
+    serverJobs.clear()
     if (ws) {
       ws.close()
       ws = null
@@ -576,8 +591,10 @@ export function useGlobalNotifications() {
       await chatStore.refreshServerConversations()
 
       for (const job of activeServerJobs) {
-        // Skip if already streaming (e.g. another path already resumed it)
-        if (chatStore.isConversationStreaming(job.conversationId)) continue
+        // Skip only if we're already actively observing it (authoritative
+        // Set-only signal). The status fallback would treat a stale 'streaming'
+        // last message as live and skip resuming a real active job.
+        if (chatStore.isConversationActivelyStreaming(job.conversationId)) continue
 
         const conv = chatStore.conversations.find((c: { id: string }) => c.id === job.conversationId)
         if (!conv) continue

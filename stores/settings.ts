@@ -16,7 +16,6 @@ interface SettingsStoreState {
   providerModelKey: string
   theme: Theme
   permissionMode: PermissionMode
-  autoGenerateCommitMessages: boolean
   _hydrated: boolean
 }
 
@@ -26,7 +25,6 @@ export const useSettingsStore = defineStore('settings', {
     providerModelKey: DEFAULT_MODEL_KEY,
     theme: 'dark',
     permissionMode: 'ask',
-    autoGenerateCommitMessages: false,
     _hydrated: false,
   }),
 
@@ -56,9 +54,6 @@ export const useSettingsStore = defineStore('settings', {
         if (normalized.permissionMode !== undefined) {
           this.permissionMode = normalized.permissionMode
         }
-        if (normalized.autoGenerateCommitMessages !== undefined) {
-          this.autoGenerateCommitMessages = normalized.autoGenerateCommitMessages
-        }
         this._hydrated = true
       } catch (error) {
         console.error('Failed to load settings:', error)
@@ -84,17 +79,11 @@ export const useSettingsStore = defineStore('settings', {
       this._saveToServer()
     },
 
-    setAutoGenerateCommitMessages(enabled: boolean) {
-      this.autoGenerateCommitMessages = enabled
-      this._saveToServer()
-    },
-
     resetToDefaults() {
       this.providerId = DEFAULT_PROVIDER_ID
       this.providerModelKey = DEFAULT_MODEL_KEY
       this.theme = 'dark'
       this.permissionMode = 'ask'
-      this.autoGenerateCommitMessages = false
       this._saveToServer()
     },
 
@@ -107,7 +96,6 @@ export const useSettingsStore = defineStore('settings', {
         claudeModel: this.providerId === 'claude' ? this.providerModelKey : undefined,
         theme: this.theme,
         permissionMode: this.permissionMode,
-        autoGenerateCommitMessages: this.autoGenerateCommitMessages,
       }
       $fetch<{ success: boolean; settings?: Record<string, unknown> }>('/api/settings', { method: 'POST', body: data })
         .then((response) => {

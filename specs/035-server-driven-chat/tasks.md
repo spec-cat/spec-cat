@@ -69,6 +69,31 @@
 - [x] Deduplicates by conversation ID
 - [x] Sorts after merge
 
+## Phase 2.5: Interactive PTY Execution + Anchored Persistence
+
+### T-016: Route execution through the interactive PTY [FR-012]
+- [x] `runProvider()` delegates to `runProviderViaPty()`; `runProviderViaStream()` retained for rollback [FR-012]
+- [x] `injectMessage()` waits for composer-idle, bracketed-pastes the prompt, then submits [FR-012]
+- [x] Strip embedded bracketed-paste markers from the injected message [FR-012]
+- [x] Prepend spec context / speckit autonomy directive (no `--append-system-prompt` in TUI) [FR-012]
+
+### T-017: Detect turn completion via CLI Stop hook [FR-012]
+- [x] `terminalSessions` injects CLI hooks (env + claude/codex settings) when `hookContext.enabled` [FR-012]
+- [x] `cliHookMonitor` matches every spool record (no jobId filter) and fires `onStop` once [FR-012]
+- [x] On Stop, emit final assistant text + `cli_turn_stop_confirmed` + `done` [FR-012]
+
+### T-018: Fail-safe turn completion [FR-012]
+- [x] PTY exit mid-turn finalizes the job as `error` [FR-012]
+- [x] `PTY_TURN_TIMEOUT_MS` cap finalizes as `error` when no Stop hook arrives [FR-012]
+- [x] Ctrl+C interrupt on cancel/supersession keeps the session alive [FR-012]
+- [x] Monitor armed only post-submit so stray pre-submit Stop hooks are ignored [FR-012]
+- [x] Resumed session exit retries once from a fresh session before erroring [FR-012]
+
+### T-019: Client-anchored assistant persistence [FR-013]
+- [x] Client sends `assistantMessageId`; threaded through `_ws.ts` to `startPersisting()` [FR-013]
+- [x] `jobPersister` updates the exact placeholder, falling back to last-streaming [FR-013]
+- [x] Regression test in `tests/server/conversationRecovery.test.ts` [FR-013]
+
 ## Phase 3: Scheduler (Not Started)
 
 ### T-012: Create Scheduler module

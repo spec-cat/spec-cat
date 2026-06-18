@@ -8,6 +8,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const rootDir = resolve(__dirname, '..')
 const serverEntry = resolve(rootDir, '.output/server/index.mjs')
 const precomputedPath = resolve(rootDir, '.output/server/chunks/build/client.precomputed.mjs')
+const nodePtyOutputRoot = resolve(rootDir, '.output/server/node_modules/node-pty')
 
 const forbiddenBuildMarkers = [
   { pattern: '/_nuxt/@vite/client', label: 'Vite dev client URL' },
@@ -50,6 +51,18 @@ function assertNoForbiddenMarkers(content, context) {
     if (content.includes(pattern)) {
       throw new Error(`Found ${label} in ${context}: ${pattern}`)
     }
+  }
+}
+
+function assertNodePtyNativeAsset() {
+  const candidates = [
+    resolve(nodePtyOutputRoot, 'build/Release/pty.node'),
+    resolve(nodePtyOutputRoot, 'build/Debug/pty.node'),
+    resolve(nodePtyOutputRoot, `prebuilds/${process.platform}-${process.arch}/pty.node`),
+  ]
+
+  if (!candidates.some(candidate => existsSync(candidate))) {
+    throw new Error(`Missing node-pty native module in built output. Checked: ${candidates.join(', ')}`)
   }
 }
 
@@ -106,6 +119,7 @@ if (!existsSync(precomputedPath)) {
 }
 
 assertNoForbiddenMarkers(readFileSync(precomputedPath, 'utf8'), 'client.precomputed.mjs')
+assertNodePtyNativeAsset()
 
 const port = await getFreePort()
 const childLogs = []

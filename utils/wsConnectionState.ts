@@ -24,6 +24,9 @@ export interface ConnectionState<T extends BufferedResponse = BufferedResponse> 
   lastMessageTime: number
   lastServerError: string | null
   lastSocketError: string | null
+  cliTurnStopSeen: boolean
+  cliTurnStopConfirmed: boolean
+  cliSubmittedPrompt: string | null
   /** Replay buffering: accumulate events during replay_start → replay_end */
   isReplaying: boolean
   replayBuffer: T[]
@@ -49,6 +52,9 @@ export function createConnectionState<T extends BufferedResponse>(
     lastMessageTime: now(),
     lastServerError: null,
     lastSocketError: null,
+    cliTurnStopSeen: false,
+    cliTurnStopConfirmed: false,
+    cliSubmittedPrompt: null,
     isReplaying: false,
     replayBuffer: [],
   }

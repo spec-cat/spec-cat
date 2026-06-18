@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, onMounted } from 'vue'
 import { CheckIcon, XMarkIcon, SparklesIcon, ChevronUpDownIcon, StopCircleIcon } from '@heroicons/vue/24/outline'
+import LiveTerminalView from './LiveTerminalView.vue'
 import {
   getSelectableBaseBranchNameFromBranch,
   getSelectableBaseBranchLabel,
@@ -9,6 +10,7 @@ import {
 } from '~/utils/baseBranchSelection'
 
 interface Props {
+  conversationId: string
   baseBranch: string
   worktreeBranch: string
   worktreePath: string
@@ -28,6 +30,7 @@ const generating = ref(false)
 const generateStatus = ref<'idle' | 'running' | 'done' | 'error' | 'aborted'>('idle')
 const generateError = ref('')
 const generateAbortController = ref<AbortController | null>(null)
+const previewSessionId = ref('')
 const targetBranch = ref(isSelectableBaseBranchName(props.baseBranch) ? props.baseBranch : '')
 const branches = ref<string[]>([])
 const branchesLoading = ref(false)
@@ -39,6 +42,9 @@ async function generateMessage() {
   generating.value = true
   generateStatus.value = 'running'
   generateError.value = ''
+  // Unique per run so the live viewer and the server PTY share one id without
+  // colliding with a prior (possibly still-disposing) generation.
+  previewSessionId.value = `commitgen:${props.conversationId}:${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   const controller = new AbortController()
   generateAbortController.value = controller
   try {
@@ -46,10 +52,11 @@ async function generateMessage() {
       method: 'POST',
       signal: controller.signal,
       body: {
-        conversationId: props.worktreePath.split('/').pop()?.replace('sc-', '') || '',
+        conversationId: props.conversationId,
         worktreePath: props.worktreePath,
         worktreeBranch: props.worktreeBranch,
         baseBranch: targetBranch.value || props.baseBranch,
+        previewSessionId: previewSessionId.value,
       },
     })
     if (res.success && res.message) {
@@ -230,6 +237,14 @@ function handleConfirm() {
       >
         <StopCircleIcon class="w-4 h-4" />
       </button>
+    </div>
+
+    <!-- Live PTY preview while generating -->
+    <div
+      v-if="generateStatus === 'running' && previewSessionId"
+      class="h-48 rounded border border-retro-border bg-retro-black overflow-hidden"
+    >
+      <LiveTerminalView :key="previewSessionId" :session-id="previewSessionId" />
     </div>
 
     <!-- Actions -->

@@ -4,25 +4,16 @@
  * Mirrors steps 6-8 of finalize.post.ts.
  */
 
-import { exec } from 'node:child_process'
-import { promisify } from 'node:util'
 import { existsSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { resolveExistingBaseBranch } from '~/server/utils/baseBranch'
+import { assertSafeBranchName, git, localBranchRef } from '~/server/utils/chatGit'
+import { validateWorktreePath } from '~/server/utils/validateWorktree'
+import { withLock } from '~/server/utils/asyncLock'
 import { logger } from '~/server/utils/logger'
 import { getProjectDir } from '~/server/utils/projectDir'
 import { getChatWorktreePath } from '~/server/utils/worktreePaths'
 import type { RebaseContinueRequest, FinalizeResponse } from '~/types/chat'
-
-const execAsync = promisify(exec)
-
-async function git(cwd: string, cmd: string, env?: Record<string, string>): Promise<string> {
-  const { stdout } = await execAsync(`git ${cmd}`, {
-    cwd,
-    env: env ? { ...process.env, ...env } : undefined,
-  })
-  return stdout.trim()
-}
 
 export default defineEventHandler(async (event): Promise<FinalizeResponse> => {
   const body = await readBody<RebaseContinueRequest>(event)
@@ -31,107 +22,116 @@ export default defineEventHandler(async (event): Promise<FinalizeResponse> => {
     throw createError({ statusCode: 400, message: 'conversationId and commitMessage are required' })
   }
 
-  const { conversationId, commitMessage } = body
+  const { conversationId } = body
   const projectDir = getProjectDir()
-  const branchName = body.worktreeBranch || `sc/${conversationId}`
+  const branchName = assertSafeBranchName(body.worktreeBranch || `sc/${conversationId}`, 'branch')
   const worktreePath = body.worktreePath || getChatWorktreePath(conversationId)
+  const previewBranch = body.previewBranch ? assertSafeBranchName(body.previewBranch, 'preview branch') : undefined
 
   if (!existsSync(worktreePath)) {
     return { success: false, error: 'Worktree directory not found.' }
   }
+  validateWorktreePath(worktreePath)
 
   const baseBranch = await resolveExistingBaseBranch({
     cwd: projectDir,
     requestedBaseBranch: body.baseBranch,
-    worktreeBranch: body.worktreeBranch || branchName,
+    worktreeBranch: branchName,
   })
   if (!baseBranch) {
     return { success: false, error: 'Unable to resolve a valid base branch for this worktree.' }
   }
+  const baseBranchRef = localBranchRef(baseBranch, 'base branch')
 
-  try {
-    // Continue the rebase (GIT_EDITOR=true skips the editor)
+  return withLock(projectDir, async (): Promise<FinalizeResponse> => {
     try {
-      await git(worktreePath, 'rebase --continue', { GIT_EDITOR: 'true' })
-    } catch (rebaseError) {
-      // Check if there are still unresolved conflicts
-      let conflictFiles: string[] = []
-      try {
-        const statusOutput = await git(worktreePath, 'status --porcelain')
-        conflictFiles = statusOutput
-          .split('\n')
-          .filter(line => /^(UU|AA|DU|UD|UA|AU|DD)\s/.test(line))
-          .map(line => line.substring(3).trim())
-      } catch { /* ignore */ }
+      if (!existsSync(worktreePath)) {
+        return { success: false, error: 'Worktree directory not found.' }
+      }
 
-      if (conflictFiles.length > 0) {
-        return {
-          success: false,
-          error: 'There are still unresolved conflicts.',
-          conflictFiles,
-          rebaseInProgress: true,
+      // Continue the rebase. `-c core.editor=true` accepts the existing commit
+      // message without opening an editor (argv-safe equivalent of GIT_EDITOR=true).
+      try {
+        await git(worktreePath, ['-c', 'core.editor=true', 'rebase', '--continue'])
+      } catch (rebaseError) {
+        // Check if there are still unresolved conflicts
+        let conflictFiles: string[] = []
+        try {
+          const statusOutput = await git(worktreePath, ['status', '--porcelain'])
+          conflictFiles = statusOutput
+            .split('\n')
+            .filter(line => /^(UU|AA|DU|UD|UA|AU|DD)\s/.test(line))
+            .map(line => line.substring(3).trim())
+        } catch { /* ignore */ }
+
+        if (conflictFiles.length > 0) {
+          return {
+            success: false,
+            error: 'There are still unresolved conflicts.',
+            conflictFiles,
+            rebaseInProgress: true,
+          }
         }
+
+        // Unknown rebase error
+        const msg = rebaseError instanceof Error ? rebaseError.message : String(rebaseError)
+        return { success: false, error: `Rebase continue failed: ${msg}` }
       }
 
-      // Unknown rebase error
-      const msg = rebaseError instanceof Error ? rebaseError.message : String(rebaseError)
-      return { success: false, error: `Rebase continue failed: ${msg}` }
-    }
+      // --- From here, same as finalize.post.ts steps 6-8 ---
 
-    // --- From here, same as finalize.post.ts steps 6-8 ---
-
-    // 6. Checkout baseBranch in main worktree
-    const previewBranch = body.previewBranch
-    try {
-      const currentBranch = await git(projectDir, 'rev-parse --abbrev-ref HEAD')
-      if (currentBranch !== baseBranch) {
-        await git(projectDir, `checkout "${baseBranch}"`)
-      }
-    } catch { /* ignore */ }
-
-    // 7. Update base branch ref
-    const newHead = await git(worktreePath, 'rev-parse HEAD')
-    await git(projectDir, `update-ref refs/heads/${baseBranch} ${newHead}`)
-
-    // 7-1. Sync working directory
-    try {
-      const mainBranch = await git(projectDir, 'rev-parse --abbrev-ref HEAD')
-      if (mainBranch === baseBranch) {
-        await git(projectDir, 'reset --hard HEAD')
-      }
-    } catch { /* skip */ }
-
-    logger.chat.info('Base branch updated after conflict resolution', { baseBranch, newHead })
-
-    // 8. Cleanup worktree + branches
-    try {
-      await execAsync(`git worktree remove "${worktreePath}" --force`, { cwd: projectDir })
-    } catch {
+      // 6. Checkout baseBranch in main worktree
       try {
-        await rm(worktreePath, { recursive: true, force: true })
-      } catch { /* ignore */ }
-    }
+        const currentBranch = await git(projectDir, ['rev-parse', '--abbrev-ref', 'HEAD'])
+        if (currentBranch !== baseBranch) {
+          await git(projectDir, ['switch', baseBranch])
+        }
+      } catch { /* ignore — main worktree might be in detached HEAD or other state */ }
 
-    await execAsync('git worktree prune', { cwd: projectDir }).catch(() => {})
+      // 7. Update base branch ref
+      const newHead = await git(worktreePath, ['rev-parse', 'HEAD'])
+      await git(projectDir, ['update-ref', baseBranchRef, newHead])
 
-    try {
-      await git(projectDir, `branch -D "${branchName}"`)
-    } catch {
-      logger.chat.warn('Failed to delete temp branch', { branchName })
-    }
-
-    if (previewBranch) {
+      // 7-1. Sync working directory
       try {
-        await git(projectDir, `branch -D "${previewBranch}"`)
-      } catch { /* preview branch may not exist */ }
+        const mainBranch = await git(projectDir, ['rev-parse', '--abbrev-ref', 'HEAD'])
+        if (mainBranch === baseBranch) {
+          await git(projectDir, ['reset', '--hard', 'HEAD'])
+        }
+      } catch { /* skip */ }
+
+      logger.chat.info('Base branch updated after conflict resolution', { baseBranch, newHead })
+
+      // 8. Cleanup worktree + branches
+      try {
+        await git(projectDir, ['worktree', 'remove', worktreePath, '--force'])
+      } catch {
+        try {
+          await rm(worktreePath, { recursive: true, force: true })
+        } catch { /* ignore */ }
+      }
+
+      await git(projectDir, ['worktree', 'prune']).catch(() => {})
+
+      try {
+        await git(projectDir, ['branch', '-D', branchName])
+      } catch {
+        logger.chat.warn('Failed to delete temp branch', { branchName })
+      }
+
+      if (previewBranch) {
+        try {
+          await git(projectDir, ['branch', '-D', previewBranch])
+        } catch { /* preview branch may not exist */ }
+      }
+
+      logger.chat.info('Conversation finalized after conflict resolution', { conversationId, newCommit: newHead })
+
+      return { success: true, newCommit: newHead }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      logger.chat.error('Rebase continue failed', { conversationId, error: errorMessage })
+      return { success: false, error: errorMessage }
     }
-
-    logger.chat.info('Conversation finalized after conflict resolution', { conversationId, newCommit: newHead })
-
-    return { success: true, newCommit: newHead }
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error)
-    logger.chat.error('Rebase continue failed', { conversationId, error: errorMessage })
-    return { success: false, error: errorMessage }
-  }
+  })
 })

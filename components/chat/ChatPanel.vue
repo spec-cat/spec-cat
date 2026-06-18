@@ -2,9 +2,7 @@
 import { useChatStore } from '~/stores/chat'
 import { useLayoutStore } from '~/stores/layout'
 import { useChatStream } from '~/composables/useChatStream'
-import ChatMessages from './ChatMessages.vue'
-import ChatInput from './ChatInput.vue'
-import ChatDebugPanel from './ChatDebugPanel.vue'
+import TerminalPanel from './TerminalPanel.vue'
 import FinalizeConfirm from './FinalizeConfirm.vue'
 import RebaseConfirm from './RebaseConfirm.vue'
 import ConflictResolutionModal from './ConflictResolutionModal.vue'
@@ -16,12 +14,18 @@ import {
   EyeSlashIcon,
   ArrowsPointingOutIcon,
   ArrowsPointingInIcon,
-  BugAntIcon,
 } from '@heroicons/vue/24/outline'
 
 const chatStore = useChatStore()
 const layoutStore = useLayoutStore()
 const { disconnectConversation, abort } = useChatStream()
+const terminalPanelRef = ref<InstanceType<typeof TerminalPanel> | null>(null)
+
+function focusChatInput() {
+  nextTick(() => {
+    terminalPanelRef.value?.focusTerminal()
+  })
+}
 
 onMounted(async () => {
   try {
@@ -40,15 +44,6 @@ const conversationTitle = computed(() => {
 const showDeleteConfirm = ref(false)
 
 const isChatFullscreen = computed(() => layoutStore.isChatFullscreen)
-const showDebugPanel = ref(false)
-
-watch(showDebugPanel, (enabled) => {
-  chatStore.setDebugStreamEnabled(enabled)
-})
-
-onUnmounted(() => {
-  chatStore.setDebugStreamEnabled(false)
-})
 
 function handleToggleFullscreen() {
   layoutStore.toggleChatFullscreen()
@@ -138,6 +133,7 @@ watch(
     showFinalizeConfirm.value = false
     showRebaseConfirm.value = false
     finalizeStatus.value = null
+    focusChatInput()
   },
 )
 
@@ -153,6 +149,11 @@ const canPreview = computed(() => {
 const canFinalize = computed(() => {
   const conv = chatStore.activeConversation
   return !!conv?.hasWorktree && !conv?.finalized && !chatStore.isActiveConversationStreaming && !isSameAsBase.value
+})
+
+const canRebase = computed(() => {
+  const conv = chatStore.activeConversation
+  return !!conv?.hasWorktree && !conv?.finalized
 })
 
 function handleFinalizeClick() {
@@ -279,9 +280,10 @@ function handleRebaseCancel() {
 
         <!-- Rebase onto base button -->
         <button
-          v-if="canFinalize"
-          class="p-1.5 rounded text-retro-muted hover:text-retro-cyan hover:bg-retro-panel transition-colors"
-          title="Rebase: sync worktree onto target base branch"
+          v-if="canRebase"
+          :disabled="chatStore.isActiveConversationStreaming"
+          class="p-1.5 rounded text-retro-muted hover:text-retro-cyan hover:bg-retro-panel transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          :title="chatStore.isActiveConversationStreaming ? 'Rebase unavailable while Claude is responding' : 'Rebase: sync worktree onto target base branch'"
           @click="handleRebaseClick"
         >
           <svg
@@ -338,14 +340,6 @@ function handleRebaseCancel() {
           <ArrowsPointingOutIcon v-else class="w-4 h-4" />
         </button>
 
-        <button
-          class="p-1.5 rounded text-retro-muted hover:text-retro-cyan hover:bg-retro-panel transition-colors"
-          :title="showDebugPanel ? 'Hide debug stream' : 'Show debug stream'"
-          @click="showDebugPanel = !showDebugPanel"
-        >
-          <BugAntIcon class="w-4 h-4" :class="showDebugPanel ? 'text-retro-cyan' : ''" />
-        </button>
-
         <!-- New conversation button -->
         <button
           :disabled="!chatStore.hasMessages"
@@ -368,6 +362,7 @@ function handleRebaseCancel() {
     <!-- Finalize confirmation panel -->
     <FinalizeConfirm
       v-if="showFinalizeConfirm && chatStore.activeConversation?.hasWorktree"
+      :conversation-id="chatStore.activeConversation.id"
       :base-branch="chatStore.activeConversation.baseBranch || 'main'"
       :worktree-branch="chatStore.activeConversation.worktreeBranch || ''"
       :worktree-path="chatStore.activeConversation.worktreePath || ''"
@@ -415,13 +410,9 @@ function handleRebaseCancel() {
       This conversation has been finalized and is read-only.
     </div>
 
-    <!-- Chat messages -->
-    <div class="flex-1 min-h-0 flex flex-col">
-      <ChatMessages class="flex-1 overflow-hidden" />
-      <ChatDebugPanel v-if="showDebugPanel" />
+    <!-- Claude terminal -->
+    <div class="flex-1 min-h-0">
+      <TerminalPanel ref="terminalPanelRef" :disabled="isReadOnly" />
     </div>
-
-    <!-- Chat input -->
-    <ChatInput :disabled="isReadOnly" />
   </div>
 </template>

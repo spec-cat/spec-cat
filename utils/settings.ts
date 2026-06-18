@@ -9,7 +9,6 @@ export interface NormalizedSettings {
   providerModelKey?: string
   theme?: Theme
   permissionMode?: PermissionMode
-  autoGenerateCommitMessages?: boolean
 }
 
 export function normalizeSettings(raw: Record<string, unknown> | null | undefined): NormalizedSettings {
@@ -43,10 +42,6 @@ export function normalizeSettings(raw: Record<string, unknown> | null | undefine
   const mode = raw.permissionMode
   if (mode && ['plan', 'ask', 'auto', 'bypass'].includes(String(mode))) {
     normalized.permissionMode = mode as PermissionMode
-  }
-
-  if (typeof raw.autoGenerateCommitMessages === 'boolean') {
-    normalized.autoGenerateCommitMessages = raw.autoGenerateCommitMessages
   }
 
   return normalized

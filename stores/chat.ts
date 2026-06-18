@@ -30,6 +30,7 @@ import {
   generateMessageId,
   generateConversationId,
   generateConversationTitle,
+  sanitizeConversationTitle,
 } from '~/types/chat'
 import { DEFAULT_MODEL_KEY, DEFAULT_PROVIDER_ID } from '~/types/aiProvider'
 import {
@@ -63,6 +64,7 @@ import {
 } from '~/utils/rebaseApi'
 
 // Panel width and permission mode are persisted via /api/settings
+const DEFAULT_CONVERSATION_TITLE = 'New Conversation'
 
 /** Per-conversation runtime state (not persisted) */
 interface ConversationStreamState {
@@ -140,6 +142,8 @@ export const useChatStore = defineStore('chat', () => {
 
   // AbortController for cancelling in-progress AI conflict resolution
   let conflictResolveAbort: AbortController | null = null
+  // Guards the automatic resolve→continue pipeline against re-entrancy.
+  let autoResolveActive = false
 
   // ===== Per-conversation stream state helpers =====
 
@@ -178,15 +182,56 @@ export const useChatStore = defineStore('chat', () => {
   const hasMessages = computed(() => messages.value.length > 0)
   const lastMessage = computed(() => messages.value[messages.value.length - 1] || null)
 
-  // Check if a specific conversation is streaming
+  // Check if a specific conversation is streaming.
+  //
+  // The explicit `streamingConversations` Set is the primary signal, but it is
+  // in-memory only and maintained by ~30 add/delete call sites across the chat
+  // stream + global-notification composables. It loses track in several real
+  // cases — observed CLI/server jobs, cross-tab activity, a missed start call,
+  // or the single-slot server-job observer being clobbered by a second job —
+  // which leaves a live conversation with no streaming badge.
+  //
+  // The persisted ground truth the user is actually watching is the last
+  // assistant message's status: while it is 'streaming' the run is mid-flight.
+  // Fall back to it so the card stays in sync even when the Set drifts. The
+  // paused states (awaiting permission / plan approval) intentionally drop the
+  // live indicator, so exclude them.
   function isConversationStreaming(conversationId: string): boolean {
+    if (streamingConversations.value.has(conversationId)) return true
+
+    // Touch the tick so this stays reactive to pending-permission/-plan changes.
+    streamStateTick.value
+    const streamState = conversationStreamStates.get(conversationId)
+    if (streamState?.pendingPermission || streamState?.pendingPlanApproval) return false
+
+    const conv = conversations.value.find(c => c.id === conversationId)
+    if (!conv) return false
+    for (let i = conv.messages.length - 1; i >= 0; i--) {
+      const msg = conv.messages[i]
+      if (msg.role === 'assistant') return msg.status === 'streaming'
+    }
+    return false
+  }
+
+  // Authoritative "this browser is actively streaming/observing this
+  // conversation right now" signal — the in-memory Set only, with NO
+  // last-message-status fallback.
+  //
+  // Use this (not isConversationStreaming) for control-flow guards that SKIP a
+  // needed action when they read true: starting/observing a job, resuming after
+  // refresh, archiving, reusing a conversation. There, the status fallback's
+  // false positives (a finished job whose last message is stuck at 'streaming')
+  // would wrongly suppress the action — block archive forever, skip re-observe,
+  // spawn a duplicate. Cleanup paths that only mark-error on a dead socket keep
+  // isConversationStreaming, where a false positive is a harmless extra cleanup.
+  function isConversationActivelyStreaming(conversationId: string): boolean {
     return streamingConversations.value.has(conversationId)
   }
 
   // Check if the active conversation is streaming
   const isActiveConversationStreaming = computed(() => {
     if (!activeConversationId.value) return false
-    return streamingConversations.value.has(activeConversationId.value)
+    return isConversationStreaming(activeConversationId.value)
   })
 
   // Conversation computed (T036)
@@ -214,6 +259,42 @@ export const useChatStore = defineStore('chat', () => {
     conversationViewMode.value = mode
   }
 
+  function persistActiveConversationState() {
+    if (typeof window === 'undefined') return
+
+    $fetch('/api/settings', {
+      method: 'POST',
+      body: {
+        activeConversationId: activeConversationId.value,
+        isPanelOpen: isPanelOpen.value,
+      },
+    }).catch((e) => {
+      console.error('Failed to save active conversation state:', e)
+    })
+  }
+
+  function restoreActiveConversationFromLoadedState() {
+    const previousActiveId = activeConversationId.value
+    const existingActiveConversation = previousActiveId
+      ? conversations.value.find(c => c.id === previousActiveId)
+      : null
+
+    const nextActiveConversation = existingActiveConversation ?? conversations.value[0] ?? null
+    activeConversationId.value = nextActiveConversation?.id ?? null
+
+    if (nextActiveConversation?.cwd) {
+      cwd.value = nextActiveConversation.cwd
+    }
+
+    if (!nextActiveConversation) {
+      isPanelOpen.value = false
+    }
+
+    if (activeConversationId.value !== previousActiveId) {
+      persistActiveConversationState()
+    }
+  }
+
   async function syncPreviewBranchIfActive(conv: Conversation | null | undefined): Promise<void> {
     if (!conv?.previewBranch || !conv.worktreePath) return
 
@@ -233,7 +314,7 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function archiveConversation(id: string): Promise<{ success: boolean; error?: string }> {
-    if (isConversationStreaming(id)) {
+    if (isConversationActivelyStreaming(id)) {
       return { success: false, error: 'Cannot archive while this conversation is streaming' }
     }
     const index = conversations.value.findIndex(c => c.id === id)
@@ -243,8 +324,6 @@ export const useChatStore = defineStore('chat', () => {
       const response = await $fetch<{
         success: boolean
         archived?: ArchivedConversation
-        conversations?: Conversation[]
-        archivedConversations?: ArchivedConversation[]
       }>(`/api/conversations/${id}/archive`, {
         method: 'POST',
       })
@@ -253,12 +332,8 @@ export const useChatStore = defineStore('chat', () => {
         saveScheduler.cancel(id)
         conversationStreamStates.delete(id)
 
-        conversations.value = Array.isArray(response.conversations)
-          ? response.conversations
-          : conversations.value.filter(c => c.id !== id)
-        archivedConversations.value = Array.isArray(response.archivedConversations)
-          ? response.archivedConversations
-          : [response.archived, ...archivedConversations.value]
+        conversations.value = conversations.value.filter(c => c.id !== id)
+        archivedConversations.value = [response.archived, ...archivedConversations.value]
         sortConversations()
         sortArchivedConversations()
 
@@ -359,6 +434,26 @@ export const useChatStore = defineStore('chat', () => {
       archivedConversations.value.splice(index, 1)
       saveAllConversations()
       return { success: true }
+    }
+  }
+
+  async function deleteAllArchivedConversations(): Promise<{ success: boolean; deletedCount: number; error?: string }> {
+    const deletedCount = archivedConversations.value.length
+    if (deletedCount === 0) {
+      return { success: true, deletedCount: 0 }
+    }
+
+    try {
+      await $fetch('/api/conversations/archives', {
+        method: 'DELETE',
+      })
+
+      archivedConversations.value = []
+      return { success: true, deletedCount }
+    } catch {
+      archivedConversations.value = []
+      saveAllConversations()
+      return { success: true, deletedCount }
     }
   }
 
@@ -541,6 +636,28 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  function updateConversationWorktree(
+    conversationId: string,
+    worktree: { worktreePath?: string; worktreeBranch?: string; baseBranch?: string },
+  ) {
+    const conv = conversations.value.find(c => c.id === conversationId)
+    if (!conv) return
+
+    if (worktree.worktreePath) {
+      conv.cwd = worktree.worktreePath
+      conv.worktreePath = worktree.worktreePath
+      conv.hasWorktree = true
+    }
+    if (worktree.worktreeBranch) {
+      conv.worktreeBranch = worktree.worktreeBranch
+    }
+    if (worktree.baseBranch) {
+      conv.baseBranch = worktree.baseBranch
+    }
+    conv.updatedAt = new Date().toISOString()
+    saveConversation(conversationId)
+  }
+
   /**
    * If the current worktree branch name matches a spec feature ID, link it.
    * This allows branch-first workflows to still highlight/reuse feature conversations.
@@ -573,11 +690,13 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  function setConversationProviderSelection(conversationId: string, providerId: string, providerModelKey: string) {
+  function setConversationProviderSelection(conversationId: string, providerId: string, providerModelKey?: string) {
     const conv = conversations.value.find(c => c.id === conversationId)
     if (!conv) return
     conv.providerId = providerId
-    conv.providerModelKey = providerModelKey
+    if (providerModelKey !== undefined) {
+      conv.providerModelKey = providerModelKey
+    }
   }
 
   /**
@@ -645,6 +764,7 @@ export const useChatStore = defineStore('chat', () => {
       timestamp: new Date().toISOString(),
     }
     addMessage(message, conversationId)
+    updateConversationTitleIfNeeded(conversationId)
     return message
   }
 
@@ -1056,17 +1176,7 @@ export const useChatStore = defineStore('chat', () => {
         previewingConversationId.value = previewing.id
       }
     }
-    // Restore active conversation if it exists in loaded conversations
-    if (activeConversationId.value) {
-      const conv = conversations.value.find(c => c.id === activeConversationId.value)
-      if (conv && conv.cwd) {
-        cwd.value = conv.cwd
-      } else if (!conv) {
-        // Active conversation no longer exists, clear it
-        activeConversationId.value = null
-        isPanelOpen.value = false
-      }
-    }
+    restoreActiveConversationFromLoadedState()
   }
 
   /**
@@ -1111,7 +1221,15 @@ export const useChatStore = defineStore('chat', () => {
       if (!serverIds.has(conv.id) && !streamingConversations.value.has(conv.id)) {
         console.log(`[chat] refresh: removed conversation ${conv.id} (no longer on server)`)
         if (activeConversationId.value === conv.id) {
-          activeConversationId.value = null
+          const nextActiveConversation = conversations.value.find(c => c.id !== conv.id) ?? null
+          activeConversationId.value = nextActiveConversation?.id ?? null
+          if (nextActiveConversation?.cwd) {
+            cwd.value = nextActiveConversation.cwd
+          }
+          if (!nextActiveConversation) {
+            isPanelOpen.value = false
+          }
+          persistActiveConversationState()
         }
         conversations.value.splice(i, 1)
         removed++
@@ -1177,7 +1295,12 @@ export const useChatStore = defineStore('chat', () => {
    * Create a new conversation (T039) — now async for worktree creation
    * Returns empty string if creation is blocked at the 100-conversation limit.
    */
-  async function createConversation(options?: { featureId?: string; baseBranch?: string }): Promise<string> {
+  async function createConversation(options?: {
+    featureId?: string
+    baseBranch?: string
+    providerId?: string
+    providerModelKey?: string
+  }): Promise<string> {
     // Check storage limits — block creation at hard limit (FR-002)
     const limits = checkStorageLimits()
     if (limits.atLimit) {
@@ -1217,18 +1340,21 @@ export const useChatStore = defineStore('chat', () => {
       providerId: DEFAULT_PROVIDER_ID,
       modelKey: DEFAULT_MODEL_KEY,
     }
+    const resolvedProviderId = options?.providerId || resolvedProviderSelection.providerId
+    const resolvedProviderModelKey = options?.providerModelKey
+      || (options?.providerId ? undefined : resolvedProviderSelection.modelKey)
 
     const conv: Conversation = {
       id,
-      title: 'New Conversation',
+      title: DEFAULT_CONVERSATION_TITLE,
       messages: [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       cwd: cwd.value || process.cwd?.() || '',
       source: options?.featureId ? 'cascade' : 'user',
       featureId: options?.featureId,
-      providerId: resolvedProviderSelection.providerId,
-      providerModelKey: resolvedProviderSelection.modelKey,
+      providerId: resolvedProviderId,
+      providerModelKey: resolvedProviderModelKey,
     }
 
     // Apply worktree info if already fetched (feature-originated)
@@ -1244,12 +1370,13 @@ export const useChatStore = defineStore('chat', () => {
 
     conversations.value.unshift(conv)
     activeConversationId.value = id
+    isPanelOpen.value = true
 
     // Save active conversation ID to settings
     if (typeof window !== 'undefined') {
       $fetch('/api/settings', {
         method: 'POST',
-        body: { activeConversationId: id }
+        body: { activeConversationId: id, isPanelOpen: true }
       }).catch((e) => {
         console.error('Failed to save active conversation:', e)
       })
@@ -1332,7 +1459,7 @@ export const useChatStore = defineStore('chat', () => {
     // Clean up worktree if present
     if (conv.hasWorktree && conv.worktreePath && conv.worktreeBranch) {
       try {
-        await deleteWorktree({ worktreePath: conv.worktreePath, branch: conv.worktreeBranch })
+        await deleteWorktree({ worktreePath: conv.worktreePath, branch: conv.worktreeBranch, conversationId: id })
       } catch (err) {
         console.warn('[chat] Failed to clean up worktree for conversation', id, err)
       }
@@ -1404,6 +1531,9 @@ export const useChatStore = defineStore('chat', () => {
         // Enter conflict resolution mode even when conflictFiles is empty.
         // The conflict list API is the source of truth for current unresolved files.
         await startConflictResolution(id, conv.worktreePath!, baseBranch || 'main', commitMessage)
+        // Auto-resolve and continue without prompting; the modal shows progress
+        // and only waits for the user if the AI can't fully resolve a round.
+        void runAutoConflictResolution().catch(() => {})
       }
 
       return res
@@ -1438,6 +1568,9 @@ export const useChatStore = defineStore('chat', () => {
         // Enter conflict resolution mode (sync mode — keep worktree after)
         // Conflict list is fetched from API to avoid relying on partial payloads.
         await startConflictResolution(id, conv.worktreePath!, rebaseBranch || 'main', '', 'sync')
+        // Auto-resolve and continue without prompting; the modal shows progress
+        // and only waits for the user if the AI can't fully resolve a round.
+        void runAutoConflictResolution().catch(() => {})
       } else if (res.success) {
         await syncPreviewBranchIfActive(conv)
         // Update conversation's baseBranch to the target branch after successful rebase
@@ -1730,6 +1863,69 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   /**
+   * Automatically drive conflict resolution to completion without prompting:
+   * resolve every conflicted file with AI, continue the rebase, and repeat for
+   * any cascading conflicts the next rebase step surfaces. The modal stays open
+   * throughout as a live progress view. It only stops and waits for the user
+   * when the AI cannot fully resolve a round (so they can guide/edit/abort) or
+   * when continuing the rebase errors out — never silently abandoning work.
+   */
+  async function runAutoConflictResolution(): Promise<void> {
+    // One conflict pipeline at a time; subsequent rounds are driven by the loop.
+    if (autoResolveActive) return
+    autoResolveActive = true
+    // Cascading rebase conflicts are bounded so a pathological loop can't spin
+    // forever; the user can still continue manually past this cap.
+    const MAX_AUTO_ROUNDS = 20
+    try {
+      for (let round = 0; round < MAX_AUTO_ROUNDS; round++) {
+        const state = conflictState.value
+        // Cleared (resolved+continued) or aborted elsewhere — nothing to do.
+        if (!state) return
+        // Initial conflict-list fetch failed; leave the modal for manual handling.
+        if (state.error) return
+        // Already mid-resolution from a manual trigger — don't double-run.
+        if (state.lifecycleState === 'resolving') return
+
+        await aiResolveAllConflicts()
+
+        const resolved = conflictState.value
+        if (!resolved) return // aborted/cleared while resolving
+        if (resolved.lifecycleState !== 'resolved') {
+          // AI left unresolved files — pause for the user to guide or edit.
+          addConflictChatMessage(
+            'system',
+            'Automatic resolution needs help on the remaining conflicts. Review them, add guidance, or abort.',
+            'info',
+          )
+          return
+        }
+
+        const res = await continueRebase()
+        // continueRebase clears conflictState on a fully successful continue.
+        if (!conflictState.value) return
+        if (!res.rebaseInProgress) {
+          // Continue failed without surfacing new conflicts — stop and report.
+          addConflictChatMessage(
+            'system',
+            `Could not continue the rebase: ${res.error || 'unknown error'}.`,
+            'error',
+          )
+          return
+        }
+        // More conflicts were surfaced (state was refreshed) — next round.
+      }
+      addConflictChatMessage(
+        'system',
+        'Reached the automatic resolution limit. Continue manually to finish.',
+        'info',
+      )
+    } finally {
+      autoResolveActive = false
+    }
+  }
+
+  /**
    * Cancel in-progress AI conflict resolution and reset to initial detected state.
    * Aborts running API calls and re-fetches conflict files from git.
    */
@@ -1866,7 +2062,7 @@ export const useChatStore = defineStore('chat', () => {
   function renameConversation(id: string, title: string) {
     const conv = conversations.value.find(c => c.id === id)
     if (conv) {
-      conv.title = title.trim()
+      conv.title = sanitizeConversationTitle(title)
       conv.updatedAt = new Date().toISOString()
       sortConversations()
       saveAllConversations()
@@ -1884,7 +2080,7 @@ export const useChatStore = defineStore('chat', () => {
     if (!conv) return
 
     // Only auto-generate title if it's still the default
-    if (conv.title !== 'New Conversation') return
+    if (conv.title.trim().toLowerCase() !== DEFAULT_CONVERSATION_TITLE.toLowerCase()) return
 
     // Find first user message
     const firstUserMessage = conv.messages.find(m => m.role === 'user')
@@ -1894,8 +2090,8 @@ export const useChatStore = defineStore('chat', () => {
         conv.title = generateConversationTitle(firstUserMessage.content)
       } else if (firstUserMessage.attachments && firstUserMessage.attachments.length > 0) {
         conv.title = firstUserMessage.attachments.length === 1
-          ? '[Image] New Conversation'
-          : `[${firstUserMessage.attachments.length} Images] New Conversation`
+          ? `[Image] ${DEFAULT_CONVERSATION_TITLE}`
+          : `[${firstUserMessage.attachments.length} Images] ${DEFAULT_CONVERSATION_TITLE}`
       }
     }
   }
@@ -1925,9 +2121,6 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     const message = addUserMessage(content, undefined, attachments)
-
-    // Update title if needed (T047)
-    updateConversationTitleIfNeeded()
 
     // Save immediately (T046)
     saveCurrentConversation(true)
@@ -2015,10 +2208,12 @@ export const useChatStore = defineStore('chat', () => {
     clearProviderSession,
     getProviderSessionId,
     updateWorktreeBranch,
+    updateConversationWorktree,
     setConversationProviderSelection,
     startConversationStreaming,
     endConversationStreaming,
     isConversationStreaming,
+    isConversationActivelyStreaming,
     addMessage,
     addUserMessage,
     addAssistantMessage,
@@ -2057,6 +2252,7 @@ export const useChatStore = defineStore('chat', () => {
     archiveConversation,
     restoreArchivedConversation,
     deleteArchivedConversation,
+    deleteAllArchivedConversations,
     setConversationViewMode,
     findConversationByFeature,
     syncConversationFeatureFromBranch,

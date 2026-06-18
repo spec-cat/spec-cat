@@ -13,6 +13,8 @@ import {
 } from '@heroicons/vue/24/outline'
 import type { Conversation } from '~/types/chat'
 import { writeTextToClipboard } from '~/utils/clipboard'
+import { buildMessageContentFromBlocks } from '~/utils/contentBlocks'
+import { cleanTerminalTextForPreview } from '~/utils/terminalText'
 
 const props = defineProps<{
   conversation: Conversation
@@ -63,9 +65,16 @@ async function copyToClipboard(text: string) {
 const lastMessagePreview = computed(() => {
   const msgs = props.conversation.messages
   if (!msgs.length) return 'No messages'
-  const last = msgs[msgs.length - 1]
-  const preview = last.content.slice(0, 60)
-  return preview.length < last.content.length ? preview + '...' : preview
+  const lastMeaningfulMessage = [...msgs].reverse().find((message) => {
+    const text = cleanTerminalTextForPreview(message.content || buildMessageContentFromBlocks(message.contentBlocks))
+    return text.length > 0
+  })
+  const content = cleanTerminalTextForPreview(
+    lastMeaningfulMessage?.content || buildMessageContentFromBlocks(lastMeaningfulMessage?.contentBlocks)
+  )
+  if (!content) return 'No message content'
+  const preview = content.slice(0, 60)
+  return preview.length < content.length ? preview + '...' : preview
 })
 
 // Formatted date (FR-024)

@@ -7,6 +7,7 @@ import { generateArchivedConversationId } from '~/types/chat'
 import { logger } from '~/server/utils/logger'
 import { eventBus, GLOBAL_CHANNEL } from '~/server/utils/eventBus'
 import { getProjectDir } from '~/server/utils/projectDir'
+import { buildTerminalSessionId, disposeTerminalSession } from '~/server/utils/terminalSessions'
 import { readConversationStorageState, writeConversationStorageState } from '../../../utils/conversationStore'
 const execAsync = promisify(exec)
 
@@ -46,6 +47,10 @@ export default defineEventHandler(async (event) => {
   const projectDir = getProjectDir()
   const worktreePath = typeof source.worktreePath === 'string' ? source.worktreePath : ''
   const worktreeBranch = typeof source.worktreeBranch === 'string' ? source.worktreeBranch : ''
+
+  // Kill the conversation's interactive PTY before removing its worktree so the
+  // claude/codex process doesn't leak or hold the cwd open.
+  disposeTerminalSession(buildTerminalSessionId(conversationId))
 
   // Enforce cleanup invariant for archived conversations.
   if (worktreePath || worktreeBranch) {
@@ -110,10 +115,11 @@ export default defineEventHandler(async (event) => {
     conversationId,
   })
 
+  // Return only the snapshot. The client updates its lists locally (removes the
+  // source conversation, prepends this archive) so we avoid serializing every
+  // conversation's full message history on each archive.
   return {
     success: true,
     archived: snapshot,
-    conversations,
-    archivedConversations,
   }
 })

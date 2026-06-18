@@ -1,13 +1,14 @@
 import type { AIProvider } from '~/server/utils/aiProvider'
 import { registerProvider } from '~/server/utils/aiProviderRegistry'
-import type { AIProviderStreamCallbacks, AIProviderStreamController, AIProviderStreamOptions } from '~/server/utils/aiProvider'
-import { processCodexJsonLine } from '~/server/utils/codexStreamParser'
-import { accessSync, constants, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
-import { execSync, spawn } from 'node:child_process'
-import type { ChildProcess } from 'node:child_process'
-import { basename, join } from 'node:path'
-import { transformCodexEvent } from '~/server/utils/uiAdapter'
+import { accessSync, constants, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, symlinkSync } from 'node:fs'
+import { execSync } from 'node:child_process'
+import { join } from 'node:path'
 import { ensureSpecCatTmpDir } from '~/server/utils/worktreePaths'
+import { getSpecCatStorePath } from '~/server/utils/specCatStore'
+
+// Codex chat runs through the interactive PTY path (terminalSessions.ts +
+// jobQueue.runProviderViaPty). This module contributes provider metadata, model
+// validation, and the Codex home resolver used by the PTY layer.
 
 function detectCodexCli(): string | null {
   if (typeof process.env.CODEX_CLI_PATH === 'string' && process.env.CODEX_CLI_PATH.length > 0 && existsSync(process.env.CODEX_CLI_PATH)) {
@@ -59,17 +60,11 @@ function isCodexAvailable(): boolean {
   }
 }
 
-function killProc(proc: ChildProcess) {
-  try {
-    proc.kill('SIGTERM')
-    const forceKillTimer = setTimeout(() => {
-      try { proc.kill('SIGKILL') } catch {}
-    }, 3000)
-    proc.once('exit', () => clearTimeout(forceKillTimer))
-  } catch {}
+function safePathSegment(value: string): string {
+  return value.replace(/[^a-zA-Z0-9._-]/g, '-').slice(0, 120) || 'default'
 }
 
-function resolveCodexHomeForSpawn(ephemeral: boolean): string | null {
+export function resolveCodexHomeForSpawn(ephemeral: boolean, hookHomeKey?: string): string | null {
   const sourceCodexHome = (() => {
     if (typeof process.env.CODEX_HOME === 'string' && process.env.CODEX_HOME.length > 0) {
       return process.env.CODEX_HOME
@@ -137,6 +132,33 @@ function resolveCodexHomeForSpawn(ephemeral: boolean): string | null {
       } catch {
         return null
       }
+    }
+  }
+
+  if (hookHomeKey) {
+    try {
+      const managedHome = getSpecCatStorePath(join('codex-home', safePathSegment(hookHomeKey)))
+      mkdirSync(managedHome, { recursive: true })
+      seedCodexAuth(managedHome)
+      // Share rollout/session records with the real Codex home so `codex resume`
+      // can find sessions created before/outside this managed home (e.g. after a
+      // server restart). Without this, the managed home starts empty and resume
+      // fails with "missing rollout path", falling back to a fresh session.
+      if (sourceCodexHome && sourceCodexHome !== managedHome) {
+        const realSessions = join(sourceCodexHome, 'sessions')
+        const linkedSessions = join(managedHome, 'sessions')
+        if (existsSync(realSessions) && !existsSync(linkedSessions)) {
+          try {
+            symlinkSync(realSessions, linkedSessions, 'dir')
+          } catch {
+            // Best-effort: if symlink fails (e.g. it already exists as a real
+            // dir, or the platform disallows it), resume falls back gracefully.
+          }
+        }
+      }
+      return managedHome
+    } catch {
+      // Fall through to the normal home resolution path.
     }
   }
 
@@ -236,241 +258,8 @@ const metadata = {
   },
 } satisfies AIProvider['metadata']
 
-export function buildCodexExecArgs(opts: AIProviderStreamOptions): string[] {
-  const isResume = !!opts.resumeSessionId
-  const args: string[] = isResume
-    ? ['exec', 'resume', '--json', '--model', opts.selection.modelKey]
-    : ['exec', '--json', '--model', opts.selection.modelKey]
-
-  if (opts.ephemeral) {
-    args.push('--ephemeral')
-  }
-
-  const mode = opts.permissionMode || 'ask'
-  switch (mode) {
-    case 'plan':
-    case 'ask':
-      // `codex exec resume` does not accept `--sandbox`, so only set sandbox on new turns.
-      if (!isResume) {
-        // Keep ask/plan interactive permission semantics, but ensure writable sandbox.
-        // Without explicit sandbox mode, some Codex builds default to read-only.
-        args.push('--sandbox', 'workspace-write')
-      }
-      break
-    case 'auto':
-      args.push('--full-auto')
-      break
-    case 'bypass':
-      args.push('--dangerously-bypass-approvals-and-sandbox')
-      break
-  }
-
-  // Always pass prompt via stdin ("-") to avoid argv size limits (E2BIG),
-  // especially when messages include image data URLs.
-  if (opts.resumeSessionId) {
-    args.push(opts.resumeSessionId, '-')
-  } else {
-    args.push('-')
-  }
-
-  return args
-}
-
-function buildCodexPrompt(opts: AIProviderStreamOptions): string {
-  if (!opts.systemPrompt) {
-    return opts.message
-  }
-
-  // Codex CLI does not expose a Claude-like --append-system-prompt flag,
-  // so we inline the system instructions into the initial prompt payload.
-  return [
-    'System instructions:',
-    opts.systemPrompt,
-    '',
-    'User request:',
-    opts.message,
-  ].join('\n')
-}
-
-function extractSessionIdFromRecord(input: Record<string, unknown>): string | null {
-  const directKeys = [
-    'thread_id',
-    'threadId',
-    'session_id',
-    'sessionId',
-    'conversation_id',
-    'conversationId',
-  ]
-
-  for (const key of directKeys) {
-    const value = input[key]
-    if (typeof value === 'string' && value.trim().length > 0) {
-      return value
-    }
-  }
-
-  const nestedKeys = ['event', 'payload', 'data', 'response', 'item']
-  for (const nestedKey of nestedKeys) {
-    const nested = input[nestedKey]
-    if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
-      const nestedSessionId = extractSessionIdFromRecord(nested as Record<string, unknown>)
-      if (nestedSessionId) {
-        return nestedSessionId
-      }
-    }
-  }
-
-  return null
-}
-
 const codexProvider: AIProvider = {
   metadata,
-  toCanonicalEvents(data) {
-    return transformCodexEvent(data as Record<string, unknown>)
-  },
-  streamChat(opts: AIProviderStreamOptions, callbacks: AIProviderStreamCallbacks): AIProviderStreamController {
-    const cliPath = getCodexCliPath()
-    const fallbackCodexHome = resolveCodexHomeForSpawn(!!opts.ephemeral)
-    // Ephemeral retries get a per-run mkdtemp home (basename "codex-home-<rand>").
-    // Remove it once the process ends so retries don't leak temp dirs that hold
-    // a copy of the user's Codex credentials.
-    const disposableCodexHome = fallbackCodexHome && basename(fallbackCodexHome).startsWith('codex-home-')
-      ? fallbackCodexHome
-      : null
-    let codexHomeCleaned = false
-    const cleanupCodexHome = () => {
-      if (codexHomeCleaned || !disposableCodexHome) return
-      codexHomeCleaned = true
-      try {
-        rmSync(disposableCodexHome, { recursive: true, force: true })
-      } catch {
-        // Best-effort cleanup only.
-      }
-    }
-    const args = buildCodexExecArgs(opts)
-    const prompt = buildCodexPrompt(opts)
-
-    // Codex CLI does not emit a stable init envelope in all builds.
-    // Emit canonical session init once per turn when we have a reliable session ID.
-    const isBypassLike = (opts.permissionMode || 'ask') === 'bypass' || (opts.permissionMode || 'ask') === 'auto'
-    const syntheticToolCount = 32
-    let sessionInitEmitted = false
-    let discoveredSessionId: string | null = null
-
-    const emitSessionInit = (sessionId?: string) => {
-      if (sessionInitEmitted) return
-      callbacks.onProviderJson({
-        type: 'session_init',
-        sessionId,
-        model: opts.selection.modelKey,
-        tools: Array.from({ length: syntheticToolCount }, (_, idx) => `tool-${idx + 1}`),
-        permissionMode: isBypassLike ? 'bypassPermissions' : (opts.permissionMode || 'ask'),
-        cwd: opts.cwd,
-      })
-      sessionInitEmitted = true
-    }
-
-    if (opts.resumeSessionId) {
-      discoveredSessionId = opts.resumeSessionId
-      emitSessionInit(opts.resumeSessionId)
-    }
-
-    const proc = spawn(cliPath, args, {
-      cwd: opts.cwd,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env: {
-        ...process.env,
-        NODE_NO_WARNINGS: '1',
-        NO_COLOR: '1',
-        ...(fallbackCodexHome ? { CODEX_HOME: fallbackCodexHome } : {}),
-      },
-    })
-    if (proc.stdin) {
-      proc.stdin.on('error', () => {
-        // Ignore pipe errors if Codex exits before consuming stdin.
-      })
-      proc.stdin.write(prompt)
-      proc.stdin.end()
-    }
-
-    let stdoutBuffer = ''
-    let stderrBuffer = ''
-    const nonJsonOutput: string[] = []
-
-    const handleStreamChunk = (chunk: string, stream: 'stdout' | 'stderr') => {
-      const merged = (stream === 'stdout' ? stdoutBuffer : stderrBuffer) + chunk
-      const lines = merged.split('\n')
-      const tail = lines.pop() || ''
-      if (stream === 'stdout') {
-        stdoutBuffer = tail
-      } else {
-        stderrBuffer = tail
-      }
-      for (const line of lines) {
-        const cleaned = line.trim()
-        if (!cleaned) continue
-        try {
-          const parsed = JSON.parse(cleaned) as Record<string, unknown>
-          const candidateSessionId = extractSessionIdFromRecord(parsed)
-          if (candidateSessionId && !discoveredSessionId) {
-            discoveredSessionId = candidateSessionId
-            emitSessionInit(candidateSessionId)
-          }
-        } catch {
-          // Non-JSON line — session discovery is best-effort only.
-        }
-        const processed = processCodexJsonLine(cleaned)
-        nonJsonOutput.push(...processed.diagnostics)
-        if (processed.nonJson) {
-          nonJsonOutput.push(processed.nonJson)
-          continue
-        }
-        for (const mapped of processed.mappedEvents) {
-          callbacks.onProviderJson(mapped)
-        }
-      }
-    }
-
-    proc.stdout?.on('data', (data: Buffer) => {
-      handleStreamChunk(data.toString(), 'stdout')
-    })
-
-    proc.stderr?.on('data', (data: Buffer) => {
-      handleStreamChunk(data.toString(), 'stderr')
-    })
-
-    proc.on('close', (exitCode, signal) => {
-      if (!sessionInitEmitted) {
-        emitSessionInit(discoveredSessionId || undefined)
-      }
-      const flushTail = (tail: string) => {
-        const cleaned = tail.trim()
-        if (!cleaned) return
-        const processed = processCodexJsonLine(cleaned)
-        nonJsonOutput.push(...processed.diagnostics)
-        if (processed.nonJson) {
-          nonJsonOutput.push(processed.nonJson)
-          return
-        }
-        for (const mapped of processed.mappedEvents) {
-          callbacks.onProviderJson(mapped)
-        }
-      }
-      flushTail(stdoutBuffer)
-      flushTail(stderrBuffer)
-      cleanupCodexHome()
-      callbacks.onClose({ exitCode, signal, nonJsonOutput })
-    })
-
-    proc.on('error', (error) => {
-      cleanupCodexHome()
-      callbacks.onError(error)
-    })
-
-    return {
-      kill: () => killProc(proc),
-    }
-  },
   isModelSupported(modelKey: string) {
     return metadata.models.some((model) => model.key === modelKey)
   },

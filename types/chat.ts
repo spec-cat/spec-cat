@@ -466,9 +466,24 @@ export function generateArchivedConversationId(): string {
 /**
  * Generate conversation title from first user message (T035)
  */
+const ANSI_ESCAPE_RE = /[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[a-zA-Z\d]*)*)?\u0007)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g
+const BARE_TERMINAL_SEQUENCE_RE = /\[(?:\?[\d;]*[A-Za-z]|[IO])/g
+const CONTROL_CHAR_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g
+const INVISIBLE_FORMAT_CHAR_RE = /[\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF]/g
+
+export function sanitizeConversationTitle(title: string): string {
+  return title
+    .replace(ANSI_ESCAPE_RE, '')
+    .replace(BARE_TERMINAL_SEQUENCE_RE, '')
+    .replace(CONTROL_CHAR_RE, '')
+    .replace(INVISIBLE_FORMAT_CHAR_RE, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 export function generateConversationTitle(firstMessage: string): string {
   const MAX_LENGTH = 50
-  const cleaned = firstMessage.trim().replace(/\n/g, ' ')
+  const cleaned = sanitizeConversationTitle(firstMessage)
   if (cleaned.length <= MAX_LENGTH) return cleaned
   return cleaned.slice(0, MAX_LENGTH).trim() + '...'
 }
