@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { WebglAddon } from '@xterm/addon-webgl'
+import { Unicode11Addon } from '@xterm/addon-unicode11'
 import '@xterm/xterm/css/xterm.css'
 import { CommandLineIcon } from '@heroicons/vue/24/outline'
 import { useChatStore } from '~/stores/chat'
@@ -88,6 +90,9 @@ const assistantMessageByConversation = new Map<string, string>()
 const renderedServerMessages = new Map<string, number>()
 let renderedServerConversationId: string | null = null
 let resizeObserver: ResizeObserver | null = null
+let resizeRaf = 0
+let lastSentCols = 0
+let lastSentRows = 0
 let reconnectSeq = 0
 let userLineBuffer = ''
 let lastSubmittedLine = ''
@@ -115,7 +120,18 @@ function fitAndResize() {
   if (!term || !fit) return
 
   try {
+    // Skip when the proposed dimensions are unchanged. fit() resizes the
+    // .xterm DOM, which the ResizeObserver then re-observes — without this
+    // guard the two oscillate between adjacent row counts and the terminal
+    // visibly shakes.
+    const dims = fit.proposeDimensions()
+    if (!dims || !dims.cols || !dims.rows) return
+    if (dims.cols === lastSentCols && dims.rows === lastSentRows) return
+
     fit.fit()
+    lastSentCols = term.cols
+    lastSentRows = term.rows
+
     if (ws?.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({
         type: 'resize',
@@ -126,6 +142,12 @@ function fitAndResize() {
   } catch {
     // Xterm can throw while the container is hidden or has no dimensions.
   }
+}
+
+function scheduleFitAndResize() {
+  if (typeof window === 'undefined') return
+  cancelAnimationFrame(resizeRaf)
+  resizeRaf = requestAnimationFrame(fitAndResize)
 }
 
 function focusTerminal() {
@@ -582,13 +604,32 @@ onMounted(async () => {
     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
     fontSize: 13,
     lineHeight: 1.25,
-    scrollback: 5000,
+    scrollback: 1000,
+    allowProposedApi: true,
     theme: terminalThemeFor(isDark.value),
   })
 
   const fit = new FitAddon()
   term.loadAddon(fit)
+
+  // Unicode 11 width tables — keeps box-drawing/emoji in the Claude/Codex TUI
+  // aligned. Must be loaded + activated before open().
+  const unicode11 = new Unicode11Addon()
+  term.loadAddon(unicode11)
+  term.unicode.activeVersion = '11'
+
   term.open(terminalEl.value)
+
+  // WebGL renderer — the default DOM renderer flickers under the rapid
+  // full-screen repaints these TUIs emit. Fall back silently if WebGL is
+  // unavailable (context loss disposes the addon → DOM renderer).
+  try {
+    const webgl = new WebglAddon()
+    webgl.onContextLoss(() => webgl.dispose())
+    term.loadAddon(webgl)
+  } catch {
+    // WebGL unavailable — DOM renderer remains.
+  }
 
   term.onData((data) => {
     if (props.disabled) return
@@ -602,7 +643,7 @@ onMounted(async () => {
   terminal.value = term
   fitAddon.value = fit
 
-  resizeObserver = new ResizeObserver(() => fitAndResize())
+  resizeObserver = new ResizeObserver(() => scheduleFitAndResize())
   resizeObserver.observe(terminalEl.value)
 
   await nextTick()
@@ -648,6 +689,7 @@ watch(
 
 onUnmounted(() => {
   reconnectSeq++
+  if (typeof window !== 'undefined') cancelAnimationFrame(resizeRaf)
   if (resizeObserver) {
     resizeObserver.disconnect()
     resizeObserver = null
@@ -692,6 +734,7 @@ onUnmounted(() => {
 .terminal-host :deep(.xterm) {
   height: 100%;
   padding: 10px;
+  box-sizing: border-box;
 }
 
 .terminal-host :deep(.xterm-viewport) {
