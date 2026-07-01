@@ -12,6 +12,7 @@ interface Props {
   baseBranch: string
   worktreeBranch: string
   worktreePath: string
+  targetBranch?: string
 }
 
 const props = defineProps<Props>()
@@ -19,14 +20,23 @@ const props = defineProps<Props>()
 const emit = defineEmits<{
   confirm: [targetBranch: string]
   cancel: []
+  'update:targetBranch': [targetBranch: string]
 }>()
 
 const commitCount = ref<number | null>(null)
 const loading = ref(false)
-const targetBranch = ref(isSelectableBaseBranchName(props.baseBranch) ? props.baseBranch : '')
+const targetBranch = ref(props.targetBranch || (isSelectableBaseBranchName(props.baseBranch) ? props.baseBranch : ''))
 const branches = ref<string[]>([])
 const branchesLoading = ref(false)
 const loadingTargetLabel = computed(() => getSelectableBaseBranchLabel(targetBranch.value || props.baseBranch))
+
+watch(() => props.targetBranch, (value) => {
+  if (typeof value === 'string' && value.length > 0 && value !== targetBranch.value) {
+    targetBranch.value = value
+  }
+})
+
+watch(targetBranch, value => emit('update:targetBranch', value))
 
 let commitCountSeq = 0
 async function fetchCommitCount(targetBranchName: string) {

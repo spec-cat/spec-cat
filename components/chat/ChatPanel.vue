@@ -73,9 +73,100 @@ function handleDeleteCancel() {
   showDeleteConfirm.value = false
 }
 
-// Finalize flow
-const showFinalizeConfirm = ref(false)
-const finalizeStatus = ref<{ type: 'success' | 'error'; message: string } | null>(null)
+type FinalizeStatus = { type: 'success' | 'error'; message: string }
+
+interface ConversationPanelState {
+  showFinalizeConfirm: boolean
+  showRebaseConfirm: boolean
+  finalizeStatus: FinalizeStatus | null
+  finalizeCommitMessage: string
+  finalizeTargetBranch: string
+  rebaseTargetBranch: string
+}
+
+function createConversationPanelState(): ConversationPanelState {
+  return {
+    showFinalizeConfirm: false,
+    showRebaseConfirm: false,
+    finalizeStatus: null,
+    finalizeCommitMessage: '',
+    finalizeTargetBranch: '',
+    rebaseTargetBranch: '',
+  }
+}
+
+const conversationPanelStates = reactive<Record<string, ConversationPanelState>>({})
+
+function getConversationPanelState(conversationId: string): ConversationPanelState {
+  conversationPanelStates[conversationId] ??= createConversationPanelState()
+  return conversationPanelStates[conversationId]
+}
+
+const activePanelState = computed(() => {
+  const id = chatStore.activeConversationId
+  return id ? getConversationPanelState(id) : null
+})
+
+const showFinalizeConfirm = computed({
+  get: () => activePanelState.value?.showFinalizeConfirm ?? false,
+  set: (value: boolean) => {
+    const id = chatStore.activeConversationId
+    if (id) getConversationPanelState(id).showFinalizeConfirm = value
+  },
+})
+
+const showRebaseConfirm = computed({
+  get: () => activePanelState.value?.showRebaseConfirm ?? false,
+  set: (value: boolean) => {
+    const id = chatStore.activeConversationId
+    if (id) getConversationPanelState(id).showRebaseConfirm = value
+  },
+})
+
+const finalizeStatus = computed({
+  get: () => activePanelState.value?.finalizeStatus ?? null,
+  set: (value: FinalizeStatus | null) => {
+    const id = chatStore.activeConversationId
+    if (id) getConversationPanelState(id).finalizeStatus = value
+  },
+})
+
+const finalizeCommitMessage = computed({
+  get: () => activePanelState.value?.finalizeCommitMessage ?? '',
+  set: (value: string) => {
+    const id = chatStore.activeConversationId
+    if (id) getConversationPanelState(id).finalizeCommitMessage = value
+  },
+})
+
+const finalizeTargetBranch = computed({
+  get: () => activePanelState.value?.finalizeTargetBranch ?? '',
+  set: (value: string) => {
+    const id = chatStore.activeConversationId
+    if (id) getConversationPanelState(id).finalizeTargetBranch = value
+  },
+})
+
+const rebaseTargetBranch = computed({
+  get: () => activePanelState.value?.rebaseTargetBranch ?? '',
+  set: (value: string) => {
+    const id = chatStore.activeConversationId
+    if (id) getConversationPanelState(id).rebaseTargetBranch = value
+  },
+})
+
+function setConversationStatus(conversationId: string, status: FinalizeStatus | null) {
+  getConversationPanelState(conversationId).finalizeStatus = status
+}
+
+function clearConversationStatusLater(conversationId: string, status: FinalizeStatus, delayMs: number) {
+  setTimeout(() => {
+    const state = conversationPanelStates[conversationId]
+    if (state?.finalizeStatus === status) {
+      state.finalizeStatus = null
+    }
+  }, delayMs)
+}
 
 const isFinalized = computed(() => chatStore.activeConversation?.finalized === true)
 const isReadOnly = computed(() => isFinalized.value)
@@ -126,13 +217,9 @@ watch(
   { immediate: true }
 )
 
-// Reset conversation-specific UI when switching conversations
 watch(
   () => chatStore.activeConversationId,
   () => {
-    showFinalizeConfirm.value = false
-    showRebaseConfirm.value = false
-    finalizeStatus.value = null
     focusChatInput()
   },
 )
@@ -157,8 +244,11 @@ const canRebase = computed(() => {
 })
 
 function handleFinalizeClick() {
-  showFinalizeConfirm.value = true
-  finalizeStatus.value = null
+  const id = chatStore.activeConversationId
+  if (!id) return
+  const state = getConversationPanelState(id)
+  state.showFinalizeConfirm = true
+  state.finalizeStatus = null
 }
 
 async function handleFinalizeConfirm(message: string, targetBranch: string) {
@@ -166,30 +256,34 @@ async function handleFinalizeConfirm(message: string, targetBranch: string) {
   if (!convId) return
 
   const result = await chatStore.finalizeConversation(convId, message, targetBranch)
-  showFinalizeConfirm.value = false
+  getConversationPanelState(convId).showFinalizeConfirm = false
 
   if (result.success) {
-    finalizeStatus.value = { type: 'success', message: `Merged to ${targetBranch}` }
-    setTimeout(() => { finalizeStatus.value = null }, 5000)
+    const status: FinalizeStatus = { type: 'success', message: `Merged to ${targetBranch}` }
+    setConversationStatus(convId, status)
+    clearConversationStatusLater(convId, status, 5000)
   } else if (result.rebaseInProgress) {
-    finalizeStatus.value = null
+    setConversationStatus(convId, null)
   } else {
     const errorMsg = result.conflictFiles?.length
       ? `Conflict in: ${result.conflictFiles.join(', ')}`
       : result.error || 'Finalize failed'
-    finalizeStatus.value = { type: 'error', message: errorMsg }
+    setConversationStatus(convId, { type: 'error', message: errorMsg })
   }
 }
 
 function handleFinalizeCancel() {
-  showFinalizeConfirm.value = false
+  const id = chatStore.activeConversationId
+  if (id) getConversationPanelState(id).showFinalizeConfirm = false
 }
 
 function handleConflictResolutionClose() {
-  if (!chatStore.conflictState && chatStore.activeConversation?.hasWorktree) {
-    const baseBranch = chatStore.activeConversation?.baseBranch || 'main'
-    finalizeStatus.value = { type: 'success', message: `Rebased onto ${baseBranch}` }
-    setTimeout(() => { finalizeStatus.value = null }, 5000)
+  const conv = chatStore.activeConversation
+  if (!chatStore.conflictState && conv?.hasWorktree) {
+    const baseBranch = conv.baseBranch || 'main'
+    const status: FinalizeStatus = { type: 'success', message: `Rebased onto ${baseBranch}` }
+    setConversationStatus(conv.id, status)
+    clearConversationStatusLater(conv.id, status, 5000)
   } else {
     finalizeStatus.value = null
   }
@@ -207,7 +301,7 @@ async function handlePreviewToggle() {
   if (!convId) return
 
   previewLoading.value = true
-  finalizeStatus.value = null
+  setConversationStatus(convId, null)
 
   const wasActive = isPreviewActive.value
   const result = await chatStore.togglePreview(convId)
@@ -216,21 +310,22 @@ async function handlePreviewToggle() {
     const msg = wasActive
       ? `Switched back to ${chatStore.activeConversation?.baseBranch}`
       : 'Preview active — main worktree updated'
-    finalizeStatus.value = { type: 'success', message: msg }
-    setTimeout(() => { finalizeStatus.value = null }, 3000)
+    const status: FinalizeStatus = { type: 'success', message: msg }
+    setConversationStatus(convId, status)
+    clearConversationStatusLater(convId, status, 3000)
   } else {
-    finalizeStatus.value = { type: 'error', message: result.error || 'Preview toggle failed' }
+    setConversationStatus(convId, { type: 'error', message: result.error || 'Preview toggle failed' })
   }
 
   previewLoading.value = false
 }
 
-// Rebase sync flow
-const showRebaseConfirm = ref(false)
-
 function handleRebaseClick() {
-  showRebaseConfirm.value = true
-  finalizeStatus.value = null
+  const id = chatStore.activeConversationId
+  if (!id) return
+  const state = getConversationPanelState(id)
+  state.showRebaseConfirm = true
+  state.finalizeStatus = null
 }
 
 async function handleRebaseConfirm(targetBranch: string) {
@@ -238,20 +333,22 @@ async function handleRebaseConfirm(targetBranch: string) {
   if (!convId) return
 
   const result = await chatStore.rebaseConversation(convId, targetBranch)
-  showRebaseConfirm.value = false
+  getConversationPanelState(convId).showRebaseConfirm = false
 
   if (result.success) {
-    finalizeStatus.value = { type: 'success', message: `Rebased onto ${targetBranch}` }
-    setTimeout(() => { finalizeStatus.value = null }, 5000)
+    const status: FinalizeStatus = { type: 'success', message: `Rebased onto ${targetBranch}` }
+    setConversationStatus(convId, status)
+    clearConversationStatusLater(convId, status, 5000)
   } else if (result.rebaseInProgress) {
-    finalizeStatus.value = null
+    setConversationStatus(convId, null)
   } else {
-    finalizeStatus.value = { type: 'error', message: result.error || 'Rebase failed' }
+    setConversationStatus(convId, { type: 'error', message: result.error || 'Rebase failed' })
   }
 }
 
 function handleRebaseCancel() {
-  showRebaseConfirm.value = false
+  const id = chatStore.activeConversationId
+  if (id) getConversationPanelState(id).showRebaseConfirm = false
 }
 </script>
 
@@ -366,6 +463,8 @@ function handleRebaseCancel() {
       :base-branch="chatStore.activeConversation.baseBranch || 'main'"
       :worktree-branch="chatStore.activeConversation.worktreeBranch || ''"
       :worktree-path="chatStore.activeConversation.worktreePath || ''"
+      v-model:commit-message="finalizeCommitMessage"
+      v-model:target-branch="finalizeTargetBranch"
       @confirm="handleFinalizeConfirm"
       @cancel="handleFinalizeCancel"
     />
@@ -376,6 +475,7 @@ function handleRebaseCancel() {
       :base-branch="chatStore.activeConversation.baseBranch || 'main'"
       :worktree-branch="chatStore.activeConversation.worktreeBranch || ''"
       :worktree-path="chatStore.activeConversation.worktreePath || ''"
+      v-model:target-branch="rebaseTargetBranch"
       @confirm="handleRebaseConfirm"
       @cancel="handleRebaseCancel"
     />

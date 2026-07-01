@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onMounted, watch } from 'vue'
 import { CheckIcon, XMarkIcon, SparklesIcon, ChevronUpDownIcon, StopCircleIcon } from '@heroicons/vue/24/outline'
 import LiveTerminalView from './LiveTerminalView.vue'
 import {
@@ -14,6 +14,8 @@ interface Props {
   baseBranch: string
   worktreeBranch: string
   worktreePath: string
+  commitMessage?: string
+  targetBranch?: string
 }
 
 const props = defineProps<Props>()
@@ -21,9 +23,11 @@ const props = defineProps<Props>()
 const emit = defineEmits<{
   confirm: [message: string, targetBranch: string]
   cancel: []
+  'update:commitMessage': [message: string]
+  'update:targetBranch': [targetBranch: string]
 }>()
 
-const commitMessage = ref('')
+const commitMessage = ref(props.commitMessage ?? '')
 const commitCount = ref<number | null>(null)
 const loading = ref(false)
 const generating = ref(false)
@@ -31,11 +35,26 @@ const generateStatus = ref<'idle' | 'running' | 'done' | 'error' | 'aborted'>('i
 const generateError = ref('')
 const generateAbortController = ref<AbortController | null>(null)
 const previewSessionId = ref('')
-const targetBranch = ref(isSelectableBaseBranchName(props.baseBranch) ? props.baseBranch : '')
+const targetBranch = ref(props.targetBranch || (isSelectableBaseBranchName(props.baseBranch) ? props.baseBranch : ''))
 const branches = ref<string[]>([])
 const branchesLoading = ref(false)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const loadingTargetLabel = computed(() => getSelectableBaseBranchLabel(targetBranch.value || props.baseBranch))
+
+watch(() => props.commitMessage, (value) => {
+  if (typeof value === 'string' && value !== commitMessage.value) {
+    commitMessage.value = value
+  }
+})
+
+watch(() => props.targetBranch, (value) => {
+  if (typeof value === 'string' && value.length > 0 && value !== targetBranch.value) {
+    targetBranch.value = value
+  }
+})
+
+watch(commitMessage, value => emit('update:commitMessage', value))
+watch(targetBranch, value => emit('update:targetBranch', value))
 
 async function generateMessage() {
   if (generating.value) return
@@ -61,6 +80,7 @@ async function generateMessage() {
     })
     if (res.success && res.message) {
       commitMessage.value = res.message
+      emit('update:commitMessage', res.message)
       generateStatus.value = 'done'
     } else {
       generateStatus.value = 'error'
