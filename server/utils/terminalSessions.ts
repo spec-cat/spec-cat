@@ -105,7 +105,7 @@ function resolveTerminalCommand(
     }
   }
 
-  const args = ['--dangerously-skip-permissions']
+  const args = ['--dangerously-skip-permissions', '--ax-screen-reader']
   if (resumeSessionId) {
     args.unshift('--resume', resumeSessionId)
   }
