@@ -142,7 +142,7 @@ describe('cliHookMonitor', () => {
     const monitor = startCliHookMonitor({
       conversationId: 'conv-1',
       emit: (event) => {
-        if (event.type === 'cli_prompt_submitted') prompts.push(event.prompt)
+        if (event.type === 'cli_prompt_submitted') prompts.push(typeof event.prompt === 'string' ? event.prompt : undefined)
       },
     })
 
