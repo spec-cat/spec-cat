@@ -140,12 +140,15 @@ function connect() {
 }
 
 onMounted(async () => {
-  if (!terminalEl.value) return
+  const host = terminalEl.value as HTMLElement | null
+  if (!host) return
 
   const term = new Terminal({
     cursorBlink: false,
     disableStdin: true,
-    convertEol: true,
+    // Replay the source PTY exactly; converting line endings corrupts
+    // cursor-positioned TUI redraws.
+    convertEol: false,
     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
     fontSize: 12,
     lineHeight: 1.2,
@@ -153,7 +156,7 @@ onMounted(async () => {
     theme: terminalThemeFor(isDark.value),
   })
 
-  term.open(terminalEl.value)
+  term.open(host)
   terminal.value = term
 
   await nextTick()

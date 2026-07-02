@@ -105,7 +105,20 @@ function resolveTerminalCommand(
     }
   }
 
-  const args = ['--dangerously-skip-permissions', '--settings', '{"tui":"classic"}']
+  const claudeWebTerminalSettings = {
+    // Claude documents "default" for the classic main-screen renderer and
+    // "fullscreen" for the alternate-screen renderer. The embedded xterm
+    // behaves like a real terminal, so fullscreen keeps redraws inside the grid
+    // instead of flattening UI chrome into scrollback.
+    tui: 'fullscreen',
+    terminalProgressBarEnabled: false,
+  }
+
+  const args = [
+    '--dangerously-skip-permissions',
+    '--settings',
+    JSON.stringify(claudeWebTerminalSettings),
+  ]
   if (resumeSessionId) {
     args.unshift('--resume', resumeSessionId)
   }

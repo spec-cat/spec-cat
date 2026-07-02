@@ -596,11 +596,14 @@ async function connect() {
 }
 
 onMounted(async () => {
-  if (!terminalEl.value) return
+  const host = terminalEl.value as HTMLElement | null
+  if (!host) return
 
   const term = new Terminal({
     cursorBlink: true,
-    convertEol: true,
+    // Provider TUIs use cursor movement and explicit line control. Let xterm
+    // render the PTY byte stream as-is instead of rewriting LF into CRLF.
+    convertEol: false,
     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
     fontSize: 13,
     lineHeight: 1.25,
@@ -618,7 +621,7 @@ onMounted(async () => {
   term.loadAddon(unicode11)
   term.unicode.activeVersion = '11'
 
-  term.open(terminalEl.value)
+  term.open(host)
 
   // WebGL renderer — the default DOM renderer flickers under the rapid
   // full-screen repaints these TUIs emit. Fall back silently if WebGL is
@@ -644,7 +647,7 @@ onMounted(async () => {
   fitAddon.value = fit
 
   resizeObserver = new ResizeObserver(() => scheduleFitAndResize())
-  resizeObserver.observe(terminalEl.value)
+  resizeObserver.observe(host)
 
   await nextTick()
   fitAndResize()
