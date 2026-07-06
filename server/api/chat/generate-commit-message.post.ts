@@ -102,7 +102,9 @@ export default defineEventHandler(async (event) => {
       `"${worktreeBranch || '(unknown)'}" (base "${baseBranch}"). ` +
       `Commits: ${flatten(log)}. File changes: ${flatten(diffStat)}. ` +
       `Use conventional commit format (feat/fix/refactor/docs/chore). First line max 72 chars, no emoji. ` +
-      `Add a short body of 2-3 lines only if the changes are complex. Output only the commit message.`
+      `Add a short body of 2-3 lines only if the changes are complex. ` +
+      `Use only the supplied commit list and file changes. Do not inspect files, run commands, or use tools. ` +
+      `Output only the commit message.`
 
     const result = await queryInteractiveProvider({
       conversationId,

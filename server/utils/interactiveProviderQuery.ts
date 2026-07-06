@@ -14,6 +14,7 @@
 import { stripTerminalControlSequences } from '~/utils/terminalText'
 import { normalizeScrapedTerminalText, stripTuiChrome } from './interactiveProviderText'
 import { logger } from './logger'
+import { readProviderSessionMarkedText } from './providerSessionTranscript'
 import {
   getOrCreateTerminalSession,
   subscribeTerminalSession,
@@ -53,6 +54,7 @@ const SUBMIT_RETRY_MS = 2000
 const MAX_SUBMIT_ATTEMPTS = 4
 const RESPONSE_MAX_MS = 90_000
 const POLL_MS = 250
+const TRANSCRIPT_GRACE_MS = 5000
 
 export interface InteractiveProviderQueryOptions {
   conversationId: string
@@ -103,12 +105,14 @@ export async function queryInteractiveProvider(
     || `commitgen:${opts.conversationId}:${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
   let session
+  let providerSessionId = ''
   try {
     session = getOrCreateTerminalSession({
       sessionId,
       cwd: opts.cwd,
       providerId: opts.providerId,
       modelKey: opts.modelKey,
+      onProviderSessionId: id => { providerSessionId = id },
     })
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : String(error) }
@@ -123,11 +127,25 @@ export async function queryInteractiveProvider(
     let settled = false
     let lastSubmitAt = 0
     let submitAttempts = 0
+    let finishSeenAt = 0
     const startedAt = Date.now()
 
     const extract = (): string | null => {
       // Cheap guard before the (potentially large) strip+search.
       if (!session.buffer.includes('FINISH')) return null
+      const now = Date.now()
+      if (!finishSeenAt) finishSeenAt = now
+      const transcriptText = readProviderSessionMarkedText({
+        providerId: opts.providerId,
+        cwd: opts.cwd,
+        providerSessionId,
+        startMarker: START,
+        endMarker: END,
+      })
+      if (transcriptText) return transcriptText
+      if ((opts.providerId === 'claude' || opts.providerId === 'codex') && now - finishSeenAt < TRANSCRIPT_GRACE_MS) {
+        return null
+      }
       const clean = normalizeScrapedTerminalText(stripTerminalControlSequences(session.buffer))
       const startIdx = clean.lastIndexOf(START)
       if (startIdx === -1) return null
@@ -223,6 +241,15 @@ export async function queryInteractiveProvider(
       // no response output is flowing and we're under the attempt cap, re-send
       // Enter. Once the model starts streaming, onData keeps lastDataAt fresh so
       // the idle condition fails and retries stop on their own.
+      const text = extract()
+      if (text) {
+        finish({ success: true, text })
+        return
+      }
+      if (finishSeenAt && now - finishSeenAt < TRANSCRIPT_GRACE_MS) {
+        return
+      }
+
       if (submitAttempts < MAX_SUBMIT_ATTEMPTS
         && now - lastDataAt >= SUBMIT_RETRY_IDLE_MS
         && now - lastSubmitAt >= SUBMIT_RETRY_MS) {
