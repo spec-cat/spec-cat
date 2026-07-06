@@ -12,7 +12,7 @@
  */
 
 import { stripTerminalControlSequences } from '~/utils/terminalText'
-import { stripTuiChrome } from './interactiveProviderText'
+import { normalizeScrapedTerminalText, stripTuiChrome } from './interactiveProviderText'
 import { logger } from './logger'
 import {
   getOrCreateTerminalSession,
@@ -128,13 +128,13 @@ export async function queryInteractiveProvider(
     const extract = (): string | null => {
       // Cheap guard before the (potentially large) strip+search.
       if (!session.buffer.includes('FINISH')) return null
-      const clean = stripTerminalControlSequences(session.buffer)
+      const clean = normalizeScrapedTerminalText(stripTerminalControlSequences(session.buffer))
       const startIdx = clean.lastIndexOf(START)
       if (startIdx === -1) return null
       const endIdx = clean.indexOf(END, startIdx + START.length)
       if (endIdx === -1) return null
       const region = clean.slice(startIdx + START.length, endIdx)
-      const text = opts.cleanChrome === false ? region.trim() : stripTuiChrome(region)
+      const text = opts.cleanChrome === false ? normalizeScrapedTerminalText(region).trim() : stripTuiChrome(region)
       return text.length > 0 ? text : null
     }
 

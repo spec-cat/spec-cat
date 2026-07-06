@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { stripTuiChrome } from '~/server/utils/interactiveProviderText'
+import { normalizeScrapedTerminalText, stripTuiChrome } from '~/server/utils/interactiveProviderText'
+
+describe('normalizeScrapedTerminalText', () => {
+  it('normalizes PTY carriage returns before scraped text is used as a message', () => {
+    const scraped = 'd01bc28 customer groups\r\rAdd shared customer grouping'
+
+    expect(normalizeScrapedTerminalText(scraped)).toBe(
+      'd01bc28 customer groups\n\nAdd shared customer grouping',
+    )
+  })
+})
 
 describe('stripTuiChrome', () => {
   it('drops Codex composer and footer chrome around a single-line message', () => {
@@ -53,6 +63,26 @@ describe('stripTuiChrome', () => {
   it('leaves a clean message untouched', () => {
     expect(stripTuiChrome('refactor: extract worktree helper')).toBe(
       'refactor: extract worktree helper',
+    )
+  })
+
+  it('normalizes carriage-return separated commit message lines', () => {
+    const scraped = [
+      'feat: support customer groups',
+      '',
+      'Add shared customer grouping.',
+      'Add group type filters.',
+      'Replace page-level filtering.',
+    ].join('\r')
+
+    expect(stripTuiChrome(scraped)).toBe(
+      [
+        'feat: support customer groups',
+        '',
+        'Add shared customer grouping.',
+        'Add group type filters.',
+        'Replace page-level filtering.',
+      ].join('\n'),
     )
   })
 })

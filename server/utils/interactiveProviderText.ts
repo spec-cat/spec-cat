@@ -4,6 +4,10 @@
  * (node-pty-free) parsing logic can be unit-tested in isolation.
  */
 
+export function normalizeScrapedTerminalText(text: string): string {
+  return text.replace(/\r\n?/g, '\n')
+}
+
 /**
  * Remove full-screen TUI chrome (composer line, footer status bar, panel
  * borders, banner leftovers) that a provider like Codex continuously redraws
@@ -12,7 +16,7 @@
  * patterns can legitimately appear in a commit message.
  */
 export function stripTuiChrome(text: string): string {
-  return text
+  return normalizeScrapedTerminalText(text)
     .split('\n')
     .map(line => line.replace(/\s+$/, ''))
     .filter((line) => {
