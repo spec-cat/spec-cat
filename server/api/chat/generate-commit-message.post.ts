@@ -1,7 +1,7 @@
 /**
  * POST /api/chat/generate-commit-message
  * Generate a squash commit message by summarizing all commits in a worktree branch.
- * Uses the AI provider (Claude fallback) to produce a conventional commit message.
+ * Uses the conversation's AI provider (settings fallback) to produce a conventional commit message.
  */
 
 import { execFile } from 'node:child_process'
@@ -10,8 +10,13 @@ import { existsSync } from 'node:fs'
 import { queryInteractiveProvider } from '~/server/utils/interactiveProviderQuery'
 import { logger } from '~/server/utils/logger'
 import { getProjectDir } from '~/server/utils/projectDir'
-import { guardServerProviderCapability } from '~/server/utils/aiProviderSelection'
+import {
+  guardProviderCapability,
+  guardServerProviderCapability,
+  resolveServerProviderSelection,
+} from '~/server/utils/aiProviderSelection'
 import { resolveExistingBaseBranch } from '~/server/utils/baseBranch'
+import { readConversationFromStorage } from '~/server/utils/conversationStore'
 import { getChatWorktreePath } from '~/server/utils/worktreePaths'
 import { validateWorktreePath } from '~/server/utils/validateWorktree'
 
@@ -20,6 +25,35 @@ const execFileAsync = promisify(execFile)
 async function git(cwd: string, args: string[]): Promise<string> {
   const { stdout } = await execFileAsync('git', args, { cwd })
   return stdout.trim()
+}
+
+function readNonEmptyString(record: unknown, key: string): string {
+  if (!record || typeof record !== 'object') return ''
+  const value = (record as Record<string, unknown>)[key]
+  return typeof value === 'string' && value.length > 0 ? value : ''
+}
+
+async function guardConversationProviderCapability(conversationId: string) {
+  const conversation = await readConversationFromStorage(conversationId)
+  const providerId = readNonEmptyString(conversation, 'providerId')
+
+  if (!providerId) {
+    return guardServerProviderCapability(
+      'autoCommit',
+      'Switch to a provider with auto-commit support or disable AI-generated commit messages.',
+    )
+  }
+
+  const selection = await resolveServerProviderSelection({
+    providerId,
+    modelKey: readNonEmptyString(conversation, 'providerModelKey'),
+  })
+
+  return guardProviderCapability(
+    selection,
+    'autoCommit',
+    'Switch to a provider with auto-commit support or disable AI-generated commit messages.',
+  )
 }
 
 export default defineEventHandler(async (event) => {
@@ -54,10 +88,7 @@ export default defineEventHandler(async (event) => {
     }
     validateWorktreePath(worktreePath)
 
-    const providerGuard = await guardServerProviderCapability(
-      'autoCommit',
-      'Switch to a provider with auto-commit support or disable AI-generated commit messages.',
-    )
+    const providerGuard = await guardConversationProviderCapability(conversationId)
     if ('failure' in providerGuard) {
       return providerGuard.failure
     }
