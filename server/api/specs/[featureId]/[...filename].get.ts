@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
-import { getProjectDir } from '../../../utils/projectDir'
+import { join, normalize } from 'node:path'
+import { projectDir } from '../../../utils/project-dir'
 
 export default defineEventHandler(async (event) => {
   const featureId = getRouterParam(event, 'featureId')
@@ -10,34 +10,23 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Missing featureId or filename' })
   }
 
-  // Path traversal protection
-  if (featureId.includes('..') || filename.includes('..')) {
-    throw createError({ statusCode: 400, statusMessage: 'Invalid path: must not contain path traversal' })
+  if (featureId.includes('..') || filename.includes('..') || !filename.endsWith('.md')) {
+    throw createError({ statusCode: 400, statusMessage: 'Invalid spec file path' })
   }
 
-  // Only serve .md files
-  if (!filename.endsWith('.md')) {
-    throw createError({ statusCode: 400, statusMessage: 'Only .md files are supported' })
+  const specsRoot = join(projectDir(), 'specs')
+  const filePath = normalize(join(specsRoot, featureId, filename))
+  if (!filePath.startsWith(normalize(join(specsRoot, featureId)))) {
+    throw createError({ statusCode: 400, statusMessage: 'Invalid spec file path' })
   }
-
-  const projectDir = getProjectDir()
-  const filePath = join(projectDir, 'specs', featureId, filename)
 
   try {
-    const content = await readFile(filePath, 'utf-8')
-    return { content, filename, featureId }
-  } catch (err: unknown) {
-    const code = (err as NodeJS.ErrnoException).code
-    if (code === 'ENOENT') {
-      throw createError({
-        statusCode: 404,
-        statusMessage: 'Spec file not found',
-        data: { featureId, filename },
-      })
+    return {
+      featureId,
+      filename,
+      content: await readFile(filePath, 'utf8')
     }
-    throw createError({
-      statusCode: 500,
-      statusMessage: 'Failed to read spec file',
-    })
+  } catch {
+    throw createError({ statusCode: 404, statusMessage: 'Spec file not found' })
   }
 })

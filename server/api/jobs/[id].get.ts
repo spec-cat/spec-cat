@@ -1,34 +1,26 @@
+import { getJobQueue } from '../../utils/job-executor'
+import { eventsAfter, isValidJobId, toJobSummary } from '../../utils/job-queue'
+
 /**
- * GET /api/jobs/:id — Get job status and buffered events
- *
- * Query params:
- *   cursor - event index to start from (for incremental replay)
+ * GET /api/jobs/:id?cursor=N — job status plus the events with seq > cursor
+ * (cursor-based replay; omit or pass 0 to receive every buffered event).
  */
-
-import { jobQueue } from '~/server/utils/jobQueue'
-
-export default defineEventHandler((event) => {
-  const id = getRouterParam(event, 'id')
-  if (!id) {
-    throw createError({ statusCode: 400, statusMessage: 'Job ID is required' })
+export default defineEventHandler(async (event) => {
+  const id = getRouterParam(event, 'id') || ''
+  if (!isValidJobId(id)) {
+    throw createError({ statusCode: 400, statusMessage: 'Invalid job id' })
   }
 
-  const job = jobQueue.getJob(id)
-  if (!job) {
-    throw createError({ statusCode: 404, statusMessage: 'Job not found' })
+  const cursorRaw = getQuery(event).cursor
+  const cursor = cursorRaw === undefined ? 0 : Number(cursorRaw)
+  if (!Number.isFinite(cursor) || cursor < 0) {
+    throw createError({ statusCode: 400, statusMessage: 'Cursor must be a non-negative number' })
   }
 
-  const query = getQuery(event)
-  const cursor = typeof query.cursor === 'string' ? parseInt(query.cursor, 10) : 0
-  const validCursor = Number.isFinite(cursor) && cursor >= 0 ? cursor : 0
+  const queue = getJobQueue()
+  await queue.ready
+  const job = await queue.getJob(id)
+  if (!job) throw createError({ statusCode: 404, statusMessage: 'Job not found' })
 
-  return {
-    id: job.id,
-    conversationId: job.conversationId,
-    source: job.source,
-    status: job.status,
-    createdAt: job.createdAt,
-    events: job.events.slice(validCursor),
-    nextCursor: job.events.length,
-  }
+  return { job: toJobSummary(job), events: eventsAfter(job, cursor) }
 })

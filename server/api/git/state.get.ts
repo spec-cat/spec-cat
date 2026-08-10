@@ -1,37 +1,42 @@
-import type { GitStateResponse, RepositoryState } from "~/types/git";
-import {
-  getHeadCommit,
-  getBranchListHash,
-  getUncommittedFileCount,
-  getWorkingTreeHash,
-  getStashListHash,
-} from "~/server/utils/git";
-import {
-  resolveWorkingDirectoryFromQuery,
-  handleGitApiError,
-} from "~/server/utils/gitApiHelpers";
+import { requireAllowedGitCwd } from '../../utils/git-access'
+import { countPorcelainEntries, hashText, runGit } from '../../utils/git-state'
 
-/**
- * GET /api/git/state
- * Returns a lightweight repository state snapshot for change detection (FR-029, FR-030).
- * This endpoint is designed to be fast (<500ms per NFR-004) for polling every 5 seconds.
- */
+type GitStateSnapshot = {
+  headCommit: string
+  branchListHash: string
+  uncommittedFileCount: number
+  workingTreeHash: string
+  stashListHash: string
+  timestamp: number
+}
+
 export default defineEventHandler(async (event) => {
+  const query = getQuery(event)
+  const cwd = await requireAllowedGitCwd(query.dir ?? query.cwd)
+
   try {
-    const workingDirectory = resolveWorkingDirectoryFromQuery(event);
+    const root = await runGit(cwd, ['rev-parse', '--show-toplevel'])
+    const [headCommit, refList, status, stashList] = await Promise.all([
+      runGit(root, ['rev-parse', 'HEAD']).catch(() => ''),
+      runGit(root, ['for-each-ref', '--format=%(refname):%(objectname)', 'refs/heads', 'refs/remotes'], { trim: false }),
+      runGit(root, ['status', '--porcelain'], { trim: false }),
+      runGit(root, ['stash', 'list', '--format=%gd:%H'], { trim: false }).catch(() => '')
+    ])
 
-    const state: RepositoryState = {
-      headCommit: getHeadCommit(workingDirectory),
-      branchListHash: getBranchListHash(workingDirectory),
-      uncommittedFileCount: getUncommittedFileCount(workingDirectory),
-      workingTreeHash: getWorkingTreeHash(workingDirectory),
-      stashListHash: getStashListHash(workingDirectory),
-      timestamp: Date.now(),
-    };
-
-    const response: GitStateResponse = { state };
-    return response;
+    const state: GitStateSnapshot = {
+      headCommit,
+      branchListHash: hashText(refList),
+      uncommittedFileCount: countPorcelainEntries(status),
+      workingTreeHash: hashText(status),
+      stashListHash: hashText(stashList),
+      timestamp: Date.now()
+    }
+    return state
   } catch (error) {
-    handleGitApiError(error, "Error reading git state", "Failed to read git state");
+    const message = error instanceof Error ? error.message : 'Failed to read git state'
+    throw createError({
+      statusCode: message.includes('not a git repository') ? 400 : 500,
+      statusMessage: message
+    })
   }
-});
+})

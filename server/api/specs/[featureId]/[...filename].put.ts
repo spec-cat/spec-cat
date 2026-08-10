@@ -1,6 +1,8 @@
-import { writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
-import { getProjectDir } from '../../../utils/projectDir'
+import { mkdir, rename, stat, writeFile } from 'node:fs/promises'
+import { dirname, join, normalize } from 'node:path'
+import { projectDir } from '../../../utils/project-dir'
+
+const MAX_SPEC_BYTES = 1024 * 1024
 
 export default defineEventHandler(async (event) => {
   const featureId = getRouterParam(event, 'featureId')
@@ -10,39 +12,37 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Missing featureId or filename' })
   }
 
-  // Path traversal protection
-  if (featureId.includes('..') || filename.includes('..')) {
-    throw createError({ statusCode: 400, statusMessage: 'Invalid path: must not contain path traversal' })
+  if (featureId.includes('..') || filename.includes('..') || !filename.endsWith('.md')) {
+    throw createError({ statusCode: 400, statusMessage: 'Invalid spec file path' })
   }
 
-  // Only allow .md files
-  if (!filename.endsWith('.md')) {
-    throw createError({ statusCode: 400, statusMessage: 'Only .md files are supported' })
+  const body = await readBody(event)
+  const content = body?.content
+  if (typeof content !== 'string') {
+    throw createError({ statusCode: 400, statusMessage: 'Body must contain a string "content"' })
+  }
+  if (Buffer.byteLength(content, 'utf8') > MAX_SPEC_BYTES) {
+    throw createError({ statusCode: 400, statusMessage: 'Spec file too large' })
   }
 
-  const body = await readBody<{ content: string }>(event)
-  if (typeof body?.content !== 'string') {
-    throw createError({ statusCode: 400, statusMessage: 'Missing content in request body' })
+  const specsRoot = join(projectDir(), 'specs')
+  const filePath = normalize(join(specsRoot, featureId, filename))
+  if (!filePath.startsWith(normalize(join(specsRoot, featureId)))) {
+    throw createError({ statusCode: 400, statusMessage: 'Invalid spec file path' })
   }
 
-  const projectDir = getProjectDir()
-  const filePath = join(projectDir, 'specs', featureId, filename)
-
+  // Only allow updating files that already exist; creating specs stays with
+  // the speckit workflow.
   try {
-    await writeFile(filePath, body.content, 'utf-8')
-    return { success: true, filename, featureId }
-  } catch (err: unknown) {
-    const code = (err as NodeJS.ErrnoException).code
-    if (code === 'ENOENT') {
-      throw createError({
-        statusCode: 404,
-        statusMessage: 'Spec file or directory not found',
-        data: { featureId, filename },
-      })
-    }
-    throw createError({
-      statusCode: 500,
-      statusMessage: 'Failed to write spec file',
-    })
+    await stat(filePath)
+  } catch {
+    throw createError({ statusCode: 404, statusMessage: 'Spec file not found' })
   }
+
+  await mkdir(dirname(filePath), { recursive: true })
+  const tmpPath = `${filePath}.tmp`
+  await writeFile(tmpPath, content, 'utf8')
+  await rename(tmpPath, filePath)
+
+  return { featureId, filename, saved: true, bytes: Buffer.byteLength(content, 'utf8') }
 })

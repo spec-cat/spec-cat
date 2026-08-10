@@ -1,402 +1,182 @@
 /**
- * WebSocket endpoint for AI provider chat streaming
- * Path: /_ws
+ * External automation WebSocket API (/_ws).
  *
- * Thin transport layer: validates input, delegates execution to JobQueue,
- * and forwards EventBus events to the connected peer.
+ * External tools submit chat turns as browserless jobs and follow their event
+ * stream live:
+ *
+ *   -> {"type":"submit","sessionId":"conv-...","prompt":"..."}
+ *   <- {"type":"job","jobId":"job-...","sessionId":"conv-...","status":"queued"}
+ *   <- {"type":"event","jobId":"job-...","seq":1,"event":"queued","at":"..."}
+ *   <- ... (started, submitted, tool, ...)
+ *   <- {"type":"done","jobId":"job-...","status":"done","result":{...}}
+ *
+ *   -> {"type":"subscribe","jobId":"job-...","cursor":3}   // replay seq > 3, then follow
+ *
+ * Origin policy mirrors the /api/terminal upgrade: same-origin browsers are
+ * accepted, cross-origin browsers are rejected, and local automation tools
+ * that send no Origin header pass through.
  */
+import type { Peer } from 'crossws'
+import { readStoredSession } from '../utils/session-store'
+import { getJobQueue } from '../utils/job-executor'
+import {
+  eventsAfter,
+  isTerminalJobStatus,
+  isValidJobId,
+  type JobEvent,
+  type JobRecord
+} from '../utils/job-queue'
 
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
-import { eventBus, GLOBAL_CHANNEL } from '~/server/utils/eventBus'
-import { jobQueue, normalizeImageAttachments } from '~/server/utils/jobQueue'
-import type { ChatJobMessage } from '~/server/utils/jobQueue'
-import { startPersisting } from '~/server/utils/jobPersister'
-import { setupConversationWorktree } from '~/server/utils/worktreeSetup'
-import { isSpecCatWorktreePath } from '~/server/utils/worktreePaths'
-import { getProjectDir } from '~/server/utils/projectDir'
+const MAX_PROMPT_BYTES = 32 * 1024
 
-type PermissionMode = 'plan' | 'ask' | 'auto' | 'bypass'
-
-// Extract featureId from speckit commands (/speckit.plan 001-auth) or bare feature ID patterns
-const SPECKIT_FEATURE_PATTERN = /^\/speckit\.\w+\s+(\S+)/
-const FEATURE_ID_PATTERN = /\b(\d{3}-[a-z0-9][a-z0-9-]*)\b/i
-
-function extractFeatureIdFromMessage(message: string): string | undefined {
-  const trimmed = message.trim()
-
-  // 1. Speckit command: /speckit.plan 001-auth
-  const speckitMatch = trimmed.match(SPECKIT_FEATURE_PATTERN)
-  if (speckitMatch) return speckitMatch[1]
-
-  // 2. Feature ID pattern in message (e.g. "001-auth" mentioned in natural text)
-  const featureMatch = trimmed.match(FEATURE_ID_PATTERN)
-  return featureMatch?.[1]
-}
-
-function isValidFeatureId(featureId: string): boolean {
-  const projectDir = getProjectDir()
-  const specDir = join(projectDir, 'specs', featureId)
-  return existsSync(specDir)
-}
-
-interface ChatMessage {
-  type: 'chat'
-  message: string
-  conversationId: string
-  assistantMessageId?: string
-  attachments?: unknown[]
-  requestId: string
+type ClientMessage = {
+  type?: string
   sessionId?: string
-  permissionMode?: PermissionMode
-  cwd?: string
-  worktreeBranch?: string
-  baseBranch?: string
-  featureId?: string
-  providerId?: string
-  providerModelKey?: string
+  prompt?: string
+  jobId?: string
+  cursor?: number
 }
 
-interface PingMessage {
-  type: 'ping'
-}
-
-interface PermissionResponse {
-  type: 'permission_response'
-  allow: boolean
-}
-
-interface AbortMessage {
-  type: 'abort'
-  conversationId?: string
-}
-
-interface ResetContextMessage {
-  type: 'reset_context'
-}
-
-interface SubscribeMessage {
-  type: 'subscribe'
-  conversationId: string
-  cursor?: number // event index to replay from (0 = all)
-}
-
-type ClientMessage = ChatMessage | PingMessage | PermissionResponse | AbortMessage | ResetContextMessage | SubscribeMessage
-
-// Track peer → conversation mapping and EventBus subscriptions.
-// A peer may observe MULTIPLE conversations at once (e.g. the global
-// notification socket watching several concurrent server/CLI jobs), so event
-// subscriptions are kept in a map keyed by conversationId. `conversationId`
-// still records the most-recently-bound conversation, which command messages
-// (permission_response / abort / reset_context) target — chat peers only ever
-// bind a single conversation, so this preserves their behaviour.
-interface PeerConnection {
-  conversationId: string | null
-  subscriptions: Map<string, () => void>
-  unsubscribeGlobal: (() => void) | null
-}
-
-const peerConnections = new Map<string, PeerConnection>()
-
-function getPeerConnection(peerId: string): PeerConnection {
-  let conn = peerConnections.get(peerId)
-  if (!conn) {
-    conn = { conversationId: null, subscriptions: new Map(), unsubscribeGlobal: null }
-    peerConnections.set(peerId, conn)
-  }
-  return conn
-}
-
-function subscribePeerToConversation(peer: any, conversationId: string): void {
-  const conn = getPeerConnection(peer.id)
-
-  // Record the most-recent conversation for command routing.
-  conn.conversationId = conversationId
-
-  // Already forwarding this conversation's events.
-  if (conn.subscriptions.has(conversationId)) {
-    return
-  }
-
-  const unsubscribe = eventBus.subscribe(conversationId, (event) => {
-    try {
-      // Inject conversationId so a peer observing multiple conversations can
-      // route each event to the right job. Conversation-channel events don't
-      // otherwise carry it.
-      peer.send(JSON.stringify({ ...event, conversationId }))
-    } catch (err) {
-      console.error('[WS] Failed to send event to peer:', err)
-    }
-  })
-  conn.subscriptions.set(conversationId, unsubscribe)
-}
+const peerSubscriptions = new WeakMap<Peer, Set<() => void>>()
 
 export default defineWebSocketHandler({
+  upgrade(request) {
+    const origin = request.headers.get('origin')
+    if (!origin) return
+    const host = request.headers.get('host')
+    try {
+      if (host && new URL(origin).host === host) return
+    } catch {
+      // Malformed Origin header — treat as cross-origin.
+    }
+    return new Response('Cross-origin WebSocket denied', { status: 403 })
+  },
+
   open(peer) {
-    console.log('[WS] Peer connected:', peer.id)
-    // Subscribe to global notification channel for push events
-    const conn = getPeerConnection(peer.id)
-    conn.unsubscribeGlobal = eventBus.subscribe(GLOBAL_CHANNEL, (event) => {
-      try {
-        const payload = JSON.stringify(event)
-        if (event.type === 'notification') {
-          console.log('[WS] Forwarding global notification to peer', peer.id, ':', (event as any).notificationEvent)
-        }
-        peer.send(payload)
-      } catch (err) {
-        console.error('[WS] Failed to send global event to peer:', err)
-      }
-    })
+    send(peer, { type: 'hello', protocol: 'code-cat-jobs/1' })
+  },
+
+  async message(peer, message) {
+    let parsed: ClientMessage
+    try {
+      parsed = JSON.parse(message.text()) as ClientMessage
+      if (!parsed || typeof parsed !== 'object') throw new Error('not an object')
+    } catch {
+      send(peer, { type: 'error', error: 'Messages must be JSON objects' })
+      return
+    }
+
+    if (parsed.type === 'submit') return handleSubmit(peer, parsed)
+    if (parsed.type === 'subscribe') return handleSubscribe(peer, parsed)
+    send(peer, { type: 'error', error: `Unknown message type: ${String(parsed.type)}` })
   },
 
   close(peer) {
-    const conn = peerConnections.get(peer.id)
-    if (conn) {
-      for (const unsubscribe of conn.subscriptions.values()) unsubscribe()
-      conn.subscriptions.clear()
-      if (conn.unsubscribeGlobal) conn.unsubscribeGlobal()
-      // Jobs are NOT aborted on disconnect — they run to completion
-      // so reconnecting clients can subscribe and replay buffered events.
-    }
-    peerConnections.delete(peer.id)
-  },
-
-  error(peer, error) {
-    console.error('[WS] Error for peer', peer.id, ':', error)
-  },
-
-  message(peer, rawMessage) {
-    let msg: ClientMessage
-    try {
-      msg = JSON.parse(rawMessage.text())
-    } catch {
-      peer.send(JSON.stringify({ type: 'error', error: 'Invalid JSON' }))
-      return
-    }
-
-    if (msg.type === 'ping') {
-      peer.send(JSON.stringify({ type: 'pong' }))
-      return
-    }
-
-    if (msg.type === 'chat') {
-      handleChatMessage(peer, msg).catch((err) => {
-        console.error('[WS] handleChatMessage error:', err)
-        try {
-          peer.send(JSON.stringify({ type: 'error', error: 'Internal server error', requestId: msg.requestId }))
-        } catch {}
-      })
-      return
-    }
-
-    if (msg.type === 'permission_response') {
-      handlePermissionResponse(peer, msg)
-      return
-    }
-
-    if (msg.type === 'abort') {
-      handleAbort(peer, msg)
-      return
-    }
-
-    if (msg.type === 'reset_context') {
-      handleResetContext(peer)
-      return
-    }
-
-    if (msg.type === 'subscribe') {
-      handleSubscribe(peer, msg)
-      return
-    }
-  },
+    const subscriptions = peerSubscriptions.get(peer)
+    if (!subscriptions) return
+    for (const unsubscribe of subscriptions) unsubscribe()
+    subscriptions.clear()
+  }
 })
 
-async function handleChatMessage(peer: any, msg: ChatMessage) {
-  const attachments = normalizeImageAttachments(msg.attachments)
-
-  // Validate message content
-  if (typeof msg.message !== 'string') {
-    console.error('[WS] Invalid chat message - missing or invalid message property:', msg)
-    peer.send(JSON.stringify({
-      type: 'error',
-      error: 'Invalid message: message property is required',
-      requestId: msg.requestId,
-    }))
-    return
+async function handleSubmit(peer: Peer, parsed: ClientMessage) {
+  const sessionId = typeof parsed.sessionId === 'string' ? parsed.sessionId : ''
+  if (!/^[a-zA-Z0-9_-]{8,120}$/.test(sessionId)) {
+    return send(peer, { type: 'error', error: 'Invalid session id' })
   }
-  if (msg.message.trim().length === 0 && attachments.length === 0) {
-    peer.send(JSON.stringify({
-      type: 'error',
-      error: 'Invalid message: message or image attachment is required',
-      requestId: msg.requestId,
-    }))
-    return
+  const prompt = typeof parsed.prompt === 'string' ? parsed.prompt : ''
+  if (!prompt.trim()) {
+    return send(peer, { type: 'error', error: 'Prompt must be a non-empty string' })
   }
-  if (!msg.conversationId) {
-    peer.send(JSON.stringify({
-      type: 'error',
-      error: 'Invalid message: conversationId is required',
-      requestId: msg.requestId,
-    }))
-    return
+  if (Buffer.byteLength(prompt, 'utf8') > MAX_PROMPT_BYTES) {
+    return send(peer, { type: 'error', error: 'Prompt must be at most 32KB' })
   }
 
-  // Auto-detect featureId from message when not explicitly provided.
-  // Matches speckit commands (/speckit.plan 001-auth) and bare feature ID patterns.
-  let resolvedFeatureId = msg.featureId
-  if (!resolvedFeatureId) {
-    const extracted = extractFeatureIdFromMessage(msg.message)
-    if (extracted && isValidFeatureId(extracted)) {
-      resolvedFeatureId = extracted
-      console.log('[WS] Auto-detected featureId from message:', resolvedFeatureId)
+  const session = await readStoredSession(sessionId).catch(() => null)
+  if (!session) return send(peer, { type: 'error', error: 'Session not found' })
+  if (session.archived) return send(peer, { type: 'error', error: 'Session is archived' })
+  if (session.finalized) return send(peer, { type: 'error', error: 'Session is finalized' })
+
+  const queue = getJobQueue()
+  const job = queue.enqueue({ sessionId, provider: session.provider, prompt })
+  send(peer, { type: 'job', jobId: job.id, sessionId, status: job.status })
+  // enqueue() emits its events synchronously, so the live record is in memory
+  // and followLiveJob attaches without missing anything.
+  followLiveJob(peer, job, 0)
+}
+
+async function handleSubscribe(peer: Peer, parsed: ClientMessage) {
+  const jobId = parsed.jobId
+  if (!isValidJobId(jobId)) {
+    return send(peer, { type: 'error', error: 'Invalid job id' })
+  }
+  const cursor = typeof parsed.cursor === 'number' && Number.isFinite(parsed.cursor) && parsed.cursor > 0
+    ? parsed.cursor
+    : 0
+
+  const queue = getJobQueue()
+  await queue.ready
+  const live = queue.peekJob(jobId)
+  if (live) return followLiveJob(peer, live, cursor)
+
+  const stored = await queue.getJob(jobId)
+  if (!stored) return send(peer, { type: 'error', error: 'Job not found' })
+  // Jobs that only exist on disk belong to earlier runs and are terminal
+  // (restart reconciliation guarantees it): replay and finish immediately.
+  replayEvents(peer, stored, cursor)
+  sendDone(peer, stored)
+}
+
+/**
+ * Replays buffered events past `cursor`, then streams new events until the
+ * job reaches a terminal status. Snapshot and subscription happen in the same
+ * synchronous slice, so no event can slip between them.
+ */
+function followLiveJob(peer: Peer, job: JobRecord, cursor: number) {
+  let lastSeq = replayEvents(peer, job, cursor)
+  if (isTerminalJobStatus(job.status)) return sendDone(peer, job)
+
+  const queue = getJobQueue()
+  const unsubscribe = queue.onJobEvent(job.id, (current, event) => {
+    if (event.seq > lastSeq) {
+      lastSeq = event.seq
+      sendEvent(peer, current.id, event)
     }
+    if (!isTerminalJobStatus(current.status)) return
+    sendDone(peer, current)
+    unsubscribe()
+    peerSubscriptions.get(peer)?.delete(unsubscribe)
+  })
+
+  let subscriptions = peerSubscriptions.get(peer)
+  if (!subscriptions) {
+    subscriptions = new Set()
+    peerSubscriptions.set(peer, subscriptions)
   }
-
-  // Ensure worktree isolation when no worktree cwd is provided.
-  // Client UI and POST /api/jobs create worktrees before submitting;
-  // external WS clients may not, so we handle it here.
-  let resolvedCwd = msg.cwd
-  let resolvedWorktreeBranch = msg.worktreeBranch
-  if (!resolvedCwd || !isSpecCatWorktreePath(resolvedCwd)) {
-    const wtResult = await setupConversationWorktree({
-      conversationId: msg.conversationId,
-      message: msg.message,
-      featureId: resolvedFeatureId,
-      baseBranch: msg.baseBranch,
-      providerId: msg.providerId,
-      providerModelKey: msg.providerModelKey,
-    })
-    if (wtResult.success) {
-      resolvedCwd = wtResult.cwd
-      resolvedWorktreeBranch = wtResult.worktreeBranch
-    } else if (msg.baseBranch) {
-      peer.send(JSON.stringify({
-        type: 'error',
-        error: wtResult.error || `Failed to create worktree from base branch "${msg.baseBranch}"`,
-        requestId: msg.requestId,
-      }))
-      return
-    }
-  }
-
-  // Subscribe peer to conversation events via EventBus
-  subscribePeerToConversation(peer, msg.conversationId)
-
-  // Delegate to JobQueue
-  const jobMessage: ChatJobMessage = {
-    message: msg.message,
-    conversationId: msg.conversationId,
-    attachments: attachments.length > 0 ? attachments : undefined,
-    requestId: msg.requestId,
-    sessionId: msg.sessionId,
-    permissionMode: msg.permissionMode,
-    cwd: resolvedCwd,
-    worktreeBranch: resolvedWorktreeBranch,
-    baseBranch: msg.baseBranch,
-    featureId: resolvedFeatureId,
-    providerId: msg.providerId,
-    providerModelKey: msg.providerModelKey,
-  }
-
-  // Subscribe server-side persister BEFORE submit so no events are missed.
-  // This ensures the server owns the conversation state for ALL jobs,
-  // not just server-initiated ones (POST /api/jobs).
-  startPersisting(msg.conversationId, msg.message, msg.assistantMessageId)
-
-  jobQueue.submit(jobMessage)
+  subscriptions.add(unsubscribe)
 }
 
-function handlePermissionResponse(peer: any, msg: PermissionResponse) {
-  const conn = getPeerConnection(peer.id)
-  if (!conn.conversationId) return
-
-  console.log('[WS] Permission response:', { allow: msg.allow, conversationId: conn.conversationId })
-  jobQueue.respondToPermission(conn.conversationId, msg.allow)
+function replayEvents(peer: Peer, job: JobRecord, cursor: number) {
+  let lastSeq = cursor
+  for (const event of eventsAfter(job, cursor)) {
+    lastSeq = event.seq
+    sendEvent(peer, job.id, event)
+  }
+  return lastSeq
 }
 
-function handleAbort(peer: any, msg: AbortMessage) {
-  const conn = getPeerConnection(peer.id)
-  const conversationId = msg.conversationId || conn.conversationId
-
-  console.log('[WS] Abort requested for peer:', peer.id, 'conversationId:', conversationId)
-
-  if (conversationId) {
-    jobQueue.abort(conversationId)
-    console.log('[WS] jobQueue.abort() called for conversation:', conversationId)
-  } else {
-    console.warn('[WS] Abort skipped — no conversationId bound to this peer!')
-  }
-  peer.send(JSON.stringify({ type: 'aborted' }))
-
-  console.log('[WS] Abort completed for peer:', peer.id)
+function sendEvent(peer: Peer, jobId: string, event: JobEvent) {
+  send(peer, { type: 'event', jobId, seq: event.seq, event: event.type, data: event.data, at: event.at })
 }
 
-function handleSubscribe(peer: any, msg: SubscribeMessage) {
-  if (!msg.conversationId) {
-    peer.send(JSON.stringify({ type: 'error', error: 'conversationId is required for subscribe' }))
-    return
-  }
-
-  // Subscribe to future events
-  subscribePeerToConversation(peer, msg.conversationId)
-
-  // Replay buffered events from active job
-  const activeJob = jobQueue.getActiveJob(msg.conversationId)
-  if (activeJob) {
-    const cursor = typeof msg.cursor === 'number' && msg.cursor >= 0 ? msg.cursor : 0
-    const bufferedEvents = activeJob.events.slice(cursor)
-
-    if (bufferedEvents.length > 0) {
-      // Replay messages are sent directly (not via the eventBus callback), so
-      // inject conversationId here too for multi-conversation routing.
-      peer.send(JSON.stringify({
-        type: 'replay_start',
-        conversationId: msg.conversationId,
-        jobId: activeJob.id,
-        jobStatus: activeJob.status,
-        eventCount: bufferedEvents.length,
-        cursor,
-      }))
-
-      for (const event of bufferedEvents) {
-        try {
-          peer.send(JSON.stringify({ ...event, conversationId: msg.conversationId }))
-        } catch {
-          break
-        }
-      }
-
-      peer.send(JSON.stringify({
-        type: 'replay_end',
-        conversationId: msg.conversationId,
-        jobId: activeJob.id,
-        nextCursor: activeJob.events.length,
-      }))
-    } else {
-      peer.send(JSON.stringify({
-        type: 'subscribed',
-        conversationId: msg.conversationId,
-        jobId: activeJob.id,
-        jobStatus: activeJob.status,
-      }))
-    }
-  } else {
-    peer.send(JSON.stringify({
-      type: 'subscribed',
-      conversationId: msg.conversationId,
-    }))
-  }
+function sendDone(peer: Peer, job: JobRecord) {
+  send(peer, { type: 'done', jobId: job.id, status: job.status, result: job.result, error: job.error })
 }
 
-function handleResetContext(peer: any) {
-  const conn = getPeerConnection(peer.id)
-
-  console.log('[WS] Reset context requested for peer:', peer.id)
-
-  if (conn.conversationId) {
-    jobQueue.resetContext(conn.conversationId)
+function send(peer: Peer, payload: Record<string, unknown>) {
+  try {
+    peer.send(JSON.stringify(payload))
+  } catch {
+    // Peer already gone — the close handler cleans up subscriptions.
   }
-  peer.send(JSON.stringify({ type: 'context_reset' }))
-
-  console.log('[WS] Context reset completed for peer:', peer.id)
 }

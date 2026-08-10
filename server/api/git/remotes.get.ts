@@ -1,27 +1,21 @@
-import { listRemotes } from "~/server/utils/git";
-import { logger } from "~/server/utils/logger";
-import { resolveWorkingDirectoryFromQuery, handleGitApiError } from "~/server/utils/gitApiHelpers";
+import { access } from 'node:fs/promises'
+import { requireAllowedGitCwd } from '../../utils/git-access'
+import { parseRemoteDetails, runGit } from '../../utils/git-state'
 
-/**
- * GET /api/git/remotes
- * Returns a list of configured remotes for the repository.
- */
 export default defineEventHandler(async (event) => {
-  try {
-    const workingDirectory = resolveWorkingDirectoryFromQuery(event);
+  const query = getQuery(event)
+  const cwd = await requireAllowedGitCwd(query.cwd)
 
-    try {
-      const remotes = listRemotes(workingDirectory);
-      return { remotes };
-    } catch (gitError) {
-      const errorMessage =
-        gitError instanceof Error ? gitError.message : "Unknown error";
-      throw createError({
-        statusCode: 500,
-        statusMessage: `Failed to list remotes: ${errorMessage}`,
-      });
+  try {
+    await access(cwd)
+    const root = await runGit(cwd, ['rev-parse', '--show-toplevel'])
+    const output = await runGit(root, ['remote', '-v'], { trim: false })
+
+    return {
+      remotes: parseRemoteDetails(output)
     }
   } catch (error) {
-    handleGitApiError(error, "Error listing git remotes", "Failed to list remotes");
+    const message = error instanceof Error ? error.message : 'Failed to load git remotes'
+    throw createError({ statusCode: 400, statusMessage: message })
   }
-});
+})

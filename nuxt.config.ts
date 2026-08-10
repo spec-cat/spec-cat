@@ -1,58 +1,28 @@
-import pkg from './package.json'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import tailwindcss from '@tailwindcss/vite'
 
-// https://nuxt.com/docs/api/configuration/nuxt-config
+const pkg = JSON.parse(
+  readFileSync(fileURLToPath(new URL('./package.json', import.meta.url)), 'utf8')
+) as { version?: string }
+
 export default defineNuxtConfig({
   ssr: false,
-  compatibilityDate: '2024-11-01',
+  compatibilityDate: '2026-07-08',
   devtools: { enabled: true },
-
-  // Runtime configuration - server-side only
+  css: ['~/assets/css/main.css'],
   runtimeConfig: {
-    // Project directory (set by server plugin from CLI args or env var)
-    projectDir: process.cwd(),
     public: {
-      appVersion: pkg.version,
-    },
+      appVersion: pkg.version || '0.0.0'
+    }
   },
-
-  // Enable WebSocket support
+  vite: {
+    plugins: [tailwindcss()]
+  },
   nitro: {
     experimental: {
       websocket: true,
-    },
-  },
-
-  components: [
-    {
-      path: '~/components',
-      pathPrefix: false,
-    },
-  ],
-
-  modules: [
-    '@pinia/nuxt',
-    '@nuxtjs/tailwindcss'
-  ],
-
-  // Pinia auto-imports
-  pinia: {
-    storesDirs: ['./stores/**']
-  },
-
-  typescript: {
-    strict: true
-  },
-
-  // Tailwind CSS configuration
-  tailwindcss: {
-    cssPath: '~/assets/css/tailwind.css',
-    configPath: 'tailwind.config.ts'
-  },
-  app: {
-    head: {
-      link: [
-        { rel: 'icon', type: 'image/svg+xml', href: '/app-logo.svg' }
-      ]
+      openAPI: true
     }
   }
 })

@@ -1,101 +1,93 @@
-/**
- * DELETE /api/worktrees/:name
- * Remove a worktree
- */
-
-import { exec } from 'node:child_process'
-import { promisify } from 'node:util'
-import { existsSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
-import type { WorktreeDeleteResponse } from '~/types/worktree'
-import { logger } from '~/server/utils/logger'
-import { getProjectDir } from '~/server/utils/projectDir'
+import { join, resolve } from 'node:path'
+import { requireAllowedGitCwd, requireRef } from '../../utils/git-access'
+import { runGit } from '../../utils/git-state'
+import { listStoredSessions } from '../../utils/session-store'
+import {
+  describeWorktrees,
+  getManagedWorktreeRoot,
+  isManagedWorktreeChild,
+  parseWorktreeList
+} from '../../utils/worktree'
 
-const execAsync = promisify(exec)
+const SAFE_DIR_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,200}$/
 
-async function findWorktreePath(projectPath: string, branchName: string): Promise<string | null> {
-  try {
-    const { stdout } = await execAsync('git worktree list --porcelain', {
-      cwd: projectPath,
-    })
-
-    let currentPath = ''
-    for (const line of stdout.split('\n')) {
-      if (line.startsWith('worktree ')) {
-        currentPath = line.substring('worktree '.length)
-      } else if (line.startsWith('branch refs/heads/')) {
-        const branch = line.substring('branch refs/heads/'.length)
-        if (branch === branchName) {
-          return currentPath
-        }
-      }
-    }
-
-    return null
-  } catch {
-    return null
+export default defineEventHandler(async (event) => {
+  const name = decodeURIComponent(getRouterParam(event, 'name') || '')
+  if (!SAFE_DIR_NAME.test(name) || name.includes('..')) {
+    throw createError({ statusCode: 400, statusMessage: 'Invalid worktree name' })
   }
-}
 
-export default defineEventHandler(async (event): Promise<WorktreeDeleteResponse> => {
-  const name = getRouterParam(event, 'name')
   const query = getQuery(event)
-  const workingDirectory = (query.workingDirectory as string) || getProjectDir()
-  const deleteBranch = query.deleteBranch === 'true'
-
-  if (!name) {
+  const cwd = await requireAllowedGitCwd(query.cwd).catch((error) => {
     throw createError({
       statusCode: 400,
-      message: 'Worktree name is required',
+      statusMessage: error instanceof Error ? error.message : 'Invalid git working directory'
+    })
+  })
+  const deleteBranch = query.deleteBranch === 'true' || query.deleteBranch === '1'
+
+  const managedRoot = getManagedWorktreeRoot()
+  const targetPath = join(managedRoot, name)
+  if (!isManagedWorktreeChild(targetPath, managedRoot)) {
+    throw createError({ statusCode: 400, statusMessage: 'Worktree is outside the managed worktree directory' })
+  }
+
+  const root = await runGit(cwd, ['rev-parse', '--show-toplevel']).catch((error) => {
+    throw createError({
+      statusCode: 400,
+      statusMessage: error instanceof Error ? error.message : 'Not a git repository'
+    })
+  })
+
+  const output = await runGit(root, ['worktree', 'list', '--porcelain'], { trim: false })
+  const entries = describeWorktrees(parseWorktreeList(output))
+  const main = entries.find((entry) => entry.isMain)
+  const target = entries.find((entry) => resolve(entry.path) === resolve(targetPath))
+
+  if (!target) {
+    throw createError({ statusCode: 404, statusMessage: `Worktree ${name} not found in this repository` })
+  }
+  if (target.isMain) {
+    throw createError({ statusCode: 400, statusMessage: 'Refusing to remove the main worktree' })
+  }
+
+  const sessions = await listStoredSessions()
+  const owner = sessions.find((session) =>
+    name === `sc-${session.id}` || (target.branch !== null && session.worktreeBranch === target.branch)
+  )
+  if (owner) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: `Worktree belongs to active conversation ${owner.id}`
     })
   }
 
-  logger.api.info('Deleting worktree', { name, workingDirectory, deleteBranch })
-
   try {
-    // Find worktree path
-    const worktreePath = await findWorktreePath(workingDirectory, name)
+    await runGit(root, ['worktree', 'remove', '--force', targetPath])
+  } catch {
+    // Mirrors deleteSessionWorktree: fall back to deleting the directory so
+    // prune can drop the stale registration.
+    await rm(targetPath, { recursive: true, force: true })
+  }
+  await runGit(root, ['worktree', 'prune'])
 
-    if (worktreePath) {
-      // Try git worktree remove first
-      try {
-        await execAsync(`git worktree remove "${worktreePath}" --force`, {
-          cwd: workingDirectory,
-        })
-      } catch {
-        // If git worktree remove fails, try direct removal
-        if (existsSync(worktreePath)) {
-          await rm(worktreePath, { recursive: true, force: true })
-        }
-      }
+  let branchDeleted = false
+  if (deleteBranch && target.branch && !target.detached) {
+    const branch = requireRef(target.branch, 'branch')
+    // Never delete the branch currently checked out in the main worktree.
+    if (branch !== main?.branch) {
+      branchDeleted = await runGit(root, ['branch', '-D', branch])
+        .then(() => true)
+        .catch(() => false)
     }
+  }
 
-    // Prune worktree references
-    await execAsync('git worktree prune', { cwd: workingDirectory })
-
-    // Optionally delete the branch
-    if (deleteBranch) {
-      try {
-        await execAsync(`git branch -D "${name}"`, { cwd: workingDirectory })
-        logger.api.info('Branch deleted', { name })
-      } catch (branchError) {
-        logger.api.warn('Failed to delete branch', {
-          name,
-          error: branchError instanceof Error ? branchError.message : String(branchError),
-        })
-      }
-    }
-
-    logger.api.info('Worktree deleted', { name })
-
-    return { success: true }
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error)
-    logger.api.error('Failed to delete worktree', { name, error: errorMessage })
-
-    return {
-      success: false,
-      error: errorMessage,
-    }
+  return {
+    deleted: true,
+    name,
+    path: targetPath,
+    branch: target.branch,
+    branchDeleted
   }
 })

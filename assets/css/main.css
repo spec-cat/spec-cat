@@ -1,0 +1,152 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+html,
+body,
+#__nuxt {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+body {
+  margin: 0;
+}
+
+.app-shell {
+  height: 100vh;
+  height: 100dvh;
+}
+
+.workspace-tab {
+  height: 1.375rem;
+  border-radius: 0.1875rem;
+  padding-inline: 0.5rem;
+  font-size: 11px;
+  line-height: 1.375rem;
+  color: var(--rg-muted);
+  transition: color 120ms ease, background-color 120ms ease;
+}
+
+.workspace-tab:hover {
+  color: var(--rg-foreground);
+  background: var(--rg-editor);
+}
+
+.workspace-tab-active {
+  color: var(--rg-accent);
+  background: color-mix(in srgb, var(--rg-accent) 12%, transparent);
+}
+
+@media (min-width: 769px) {
+  .brick-workspace > nav {
+    display: none;
+  }
+
+  .brick-specs { grid-column: 2; grid-row: 1; }
+  .brick-threads { grid-column: 3; grid-row: 1; }
+  .brick-chat { grid-column: 4; grid-row: 1; }
+  .brick-git {
+    grid-column: 1;
+    grid-row: 1;
+    position: relative !important;
+    inset: auto !important;
+    width: auto !important;
+    box-shadow: none !important;
+  }
+  /* A file diff opened from the commit details covers every track right of the
+     Git column: spec browser, conversation list and chat. */
+  .brick-diff-preview {
+    grid-column: 2 / -1;
+    grid-row: 1;
+    position: relative !important;
+    inset: auto !important;
+  }
+
+  /* Maximized chat: the spec browser and conversation list give up their
+     tracks, leaving the Git column plus a wide chat. */
+  .brick-chat-max > .brick-specs,
+  .brick-chat-max > .brick-threads {
+    display: none !important;
+  }
+
+  .brick-chat-max > .brick-chat { grid-column: 2; }
+}
+
+.terminal-frame {
+  contain: layout paint size;
+}
+
+.terminal,
+.terminal .xterm,
+.terminal .xterm-screen,
+.terminal .xterm-viewport {
+  max-width: 100%;
+}
+
+.terminal {
+  position: relative;
+  contain: strict;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.terminal .xterm {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.terminal .xterm-screen {
+  width: 100%;
+  max-height: 100%;
+}
+
+.terminal .xterm-viewport {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+/* Theme-aware scrollbars — colors resolve from the --rg-* vars injected on
+   .app-shell and the overlay roots; fallbacks cover any unthemed element. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--rg-border, #605e57) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--rg-border, #605e57);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 8px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--rg-muted, #88857c);
+}
+
+::-webkit-scrollbar-thumb:active {
+  background-color: var(--rg-accent, #26a6a6);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
