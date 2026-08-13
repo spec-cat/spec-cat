@@ -2,6 +2,7 @@ import { afterAll, describe, expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { randomUUID } from 'node:crypto'
 import type { StoredTerminalSession } from '../server/utils/session-store'
 
 // The store resolves its root from the environment at import time, so the
@@ -116,7 +117,7 @@ describe('Archive flag round-trip', () => {
   })
 
   test('archived terminal history remains available for read-only browsing', async () => {
-    const id = 'conv-archive-log-1'
+    const id = `conv-archive-log-${randomUUID()}`
     await writeStoredSession(makeSession(id, {
       archived: true,
       archivedAt: new Date().toISOString()
