@@ -219,7 +219,7 @@ const worktreesCreateRef = ref<HTMLButtonElement | null>(null)
 const remotesAddRef = ref<HTMLButtonElement | null>(null)
 const conflictCloseRef = ref<HTMLButtonElement | null>(null)
 const showIntegrationModal = ref(false)
-const integrationMode = ref<'rebase' | 'finalize'>('rebase')
+const integrationMode = ref<'rebase' | 'finalize' | 'squash'>('rebase')
 const integrationBaseBranch = ref('')
 const integrationCommitMessage = ref('')
 const integrationRunning = ref(false)
@@ -230,6 +230,7 @@ const conflictReport = ref('')
 const showConflictReport = ref(false)
 const previewRunning = ref(false)
 const previewError = ref('')
+const branchReviewRunning = ref(false)
 const activeSidebarPanel = ref<'conversations' | 'terminal'>('conversations')
 const databaseOpen = ref(false)
 const sidebarCollapsed = ref(false)
@@ -2804,6 +2805,10 @@ function sendTerminalText(text: string) {
   return true
 }
 
+function delay(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms))
+}
+
 /**
  * Waits until the terminal socket is attached to `id`. Switching conversations
  * tears the socket down and reconnects, so a prompt sent immediately after
@@ -3158,7 +3163,7 @@ function handleNewConversationEnter(event: KeyboardEvent) {
   void createNewSession()
 }
 
-async function openIntegrationModal(mode: 'rebase' | 'finalize') {
+async function openIntegrationModal(mode: 'rebase' | 'finalize' | 'squash') {
   if (!activeSession.value || activeSession.value.finalized) return
   integrationMode.value = mode
   integrationError.value = ''
@@ -3280,11 +3285,48 @@ async function runSessionIntegration() {
     } else {
       await refreshSessions()
       refreshGitGraph()
+      pushToast('success', mode === 'squash' ? `Squashed conversation commits onto ${targetBranch}.` : `Rebased onto ${targetBranch}.`)
     }
   } catch (error) {
     integrationError.value = extractFetchError(error)
   } finally {
     integrationRunning.value = false
+  }
+}
+
+async function injectBranchReviewPrompt() {
+  const session = activeSession.value
+  if (!session || session.archived || session.finalized || branchReviewRunning.value) return
+  if (socket?.readyState !== WebSocket.OPEN) {
+    pushToast('error', 'Terminal is not connected.', 5000)
+    return
+  }
+
+  branchReviewRunning.value = true
+  try {
+    const targetId = session.id
+    if (!sendTerminalCommand('/new')) {
+      pushToast('error', 'Terminal is not connected.', 5000)
+      return
+    }
+
+    await delay(1500)
+    await refreshSessions()
+    if (!(await waitForSessionIdle(targetId, 20000))) {
+      pushToast('error', 'The CLI did not become ready after /new; review prompt was not sent.', 8000)
+      return
+    }
+    if (sessionId.value !== targetId || socket?.readyState !== WebSocket.OPEN) {
+      pushToast('error', 'Conversation changed before the review prompt could be sent.', 6000)
+      return
+    }
+    if (sendTerminalText('Check the specs and implementation of this branch.')) {
+      pushToast('info', 'Started a fresh branch review.')
+    } else {
+      pushToast('error', 'Terminal is not connected.', 5000)
+    }
+  } finally {
+    branchReviewRunning.value = false
   }
 }
 
@@ -4460,12 +4502,12 @@ function getXtermTheme() {
         <section class="brick-chat relative grid min-h-0 min-w-0 overflow-hidden grid-rows-[35px_minmax(0,1fr)_128px] bg-[var(--rg-editor)]">
           <div class="flex min-w-0 items-center justify-between border-b border-black/40 bg-[var(--rg-editor-group)]">
             <div class="flex min-w-0 items-center">
-              <div class="flex h-[35px] min-w-0 max-w-[52vw] items-center gap-2 border-r border-black/40 bg-[var(--rg-editor)] px-3 text-[12px] text-[var(--rg-foreground)]">
+              <div
+                class="flex h-[35px] min-w-0 items-center gap-2 border-r border-black/40 bg-[var(--rg-editor)] px-3 text-[12px] text-[var(--rg-foreground)]"
+                :title="activeSession?.tmuxName || 'new-session'"
+              >
                 <span class="text-[var(--rg-accent)]">●</span>
-                <span class="truncate font-mono">{{ activeSession?.tmuxName || 'new-session' }}</span>
-              </div>
-              <div class="flex h-[35px] items-center px-3 text-[12px] text-[#88857c]">
-                terminal
+                <span class="font-mono">{{ activeSession?.provider || 'provider' }}</span>
               </div>
             </div>
             <div class="flex h-[35px] shrink-0 items-center gap-1.5 px-2 font-mono text-[10px]">
@@ -4495,6 +4537,23 @@ function getXtermTheme() {
                   @click="openIntegrationModal('rebase')"
                 >
                   Rebase
+                </button>
+                <button
+                  type="button"
+                  class="h-6 border border-[var(--rg-border)] bg-[var(--rg-input)] px-2 text-[var(--rg-foreground)] hover:border-[var(--rg-accent)] hover:text-[var(--rg-accent)]"
+                  title="Squash this conversation branch into one temporary commit without asking AI for a message"
+                  @click="openIntegrationModal('squash')"
+                >
+                  Squash
+                </button>
+                <button
+                  type="button"
+                  class="h-6 border border-[var(--rg-border)] bg-[var(--rg-input)] px-2 text-[var(--rg-foreground)] hover:border-[var(--rg-accent)] hover:text-[var(--rg-accent)] disabled:cursor-wait disabled:opacity-50"
+                  :disabled="branchReviewRunning"
+                  title="Send /new, then ask the provider to check this branch's specs and implementation"
+                  @click="injectBranchReviewPrompt"
+                >
+                  {{ branchReviewRunning ? 'Reviewing...' : 'Review' }}
                 </button>
                 <button
                   type="button"
@@ -5403,7 +5462,10 @@ function getXtermTheme() {
           </select>
         </div>
         <div v-show="!isMobile" class="truncate text-center">{{ sessionId || 'no session selected' }}</div>
-        <div class="truncate text-right">{{ sessions.length }} conversations · {{ statusText }}</div>
+        <div class="flex min-w-0 justify-end gap-2 text-right">
+          <span class="min-w-0 truncate" :title="activeSession?.tmuxName || ''">current: {{ activeSession?.tmuxName || '-' }}</span>
+          <span class="shrink-0">{{ sessions.length }} conversations · {{ statusText }}</span>
+        </div>
       </footer>
     </section>
 
@@ -5804,7 +5866,7 @@ function getXtermTheme() {
           @submit.prevent="runSessionIntegration"
         >
           <div class="flex h-10 items-center justify-between border-b border-[var(--rg-border)] px-4 text-xs font-bold uppercase">
-            <span>{{ integrationMode === 'finalize' ? 'Finalize Conversation' : 'Rebase Worktree' }}</span>
+            <span>{{ integrationMode === 'finalize' ? 'Finalize Conversation' : integrationMode === 'squash' ? 'Squash Worktree' : 'Rebase Worktree' }}</span>
             <button type="button" class="text-lg text-[var(--rg-muted)] hover:text-white" @click="showIntegrationModal = false">×</button>
           </div>
           <div class="grid min-h-0 gap-4 overflow-y-auto p-4 font-mono text-xs">
@@ -5840,6 +5902,7 @@ function getXtermTheme() {
             <p v-if="previewError" class="whitespace-pre-wrap text-[#f03e5f]">{{ previewError }}</p>
             <p v-if="integrationError" class="whitespace-pre-wrap text-[#f03e5f]">{{ integrationError }}</p>
             <p v-else-if="integrationMode === 'finalize'" class="text-[var(--rg-muted)]">Commits will be rebased and squashed, the target branch will be fast-forwarded, then the tmux session and worktree will be removed.</p>
+            <p v-else-if="integrationMode === 'squash'" class="text-[var(--rg-muted)]">Commits will be rebased onto the target base branch, then rewritten as one temporary commit. The conversation stays active.</p>
             <p v-else class="text-[var(--rg-muted)]">The worktree remains active after rebase so the conversation can continue.</p>
           </div>
           <div class="flex justify-end gap-2 border-t border-[var(--rg-border)] p-3">
@@ -5849,7 +5912,7 @@ function getXtermTheme() {
               class="bg-[var(--rg-button)] px-4 py-1.5 font-bold text-white disabled:opacity-40"
               :disabled="integrationRunning || !integrationBaseBranch || (integrationMode === 'finalize' && !integrationCommitMessage.trim())"
             >
-              {{ integrationRunning ? 'Working...' : integrationMode === 'finalize' ? 'Finalize' : 'Rebase' }}
+              {{ integrationRunning ? 'Working...' : integrationMode === 'finalize' ? 'Finalize' : integrationMode === 'squash' ? 'Squash' : 'Rebase' }}
             </button>
           </div>
         </form>

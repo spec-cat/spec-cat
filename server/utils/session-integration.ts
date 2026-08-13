@@ -40,6 +40,41 @@ export async function rebaseSession(sessionId: string, targetBranch: string) {
   })
 }
 
+export async function squashSession(sessionId: string, targetBranch: string) {
+  return serialize(sessionId, async () => {
+    const session = await requireManagedSession(sessionId)
+    const target = await requireTargetBranch(session.projectDir!, targetBranch)
+    await ensureNoRebaseInProgress(session.cwd)
+    await autoCommitAndSyncPreview(session)
+
+    const ahead = Number(await gitOutput(session.cwd, ['rev-list', '--count', `${target}..HEAD`]))
+    let newHead = await gitOutput(session.cwd, ['rev-parse', 'HEAD'])
+    let conflictReport = ''
+
+    if (ahead > 0) {
+      conflictReport = await runRebaseWithAutoResolve(session, target)
+      await git(session.cwd, ['reset', '--soft', target])
+
+      if (await isIndexClean(session.cwd)) {
+        await git(session.cwd, ['reset', '--hard', target])
+      } else {
+        await git(session.cwd, ['commit', '-m', 'chore: squash conversation commits'])
+      }
+      newHead = await gitOutput(session.cwd, ['rev-parse', 'HEAD'])
+    }
+
+    if (session.previewBranch) await syncPreviewBranch(session.projectDir!, session.cwd, session.previewBranch)
+
+    await writeStoredSession({
+      ...session,
+      baseBranch: target,
+      updatedAt: new Date().toISOString()
+    })
+
+    return { success: true, baseBranch: target, newCommit: newHead, squashed: ahead > 0, ...(conflictReport ? { conflictReport } : {}) }
+  })
+}
+
 /**
  * Runs `git rebase <target>` and, if it stops on conflicts, hands them to the
  * session's provider through the live tmux PTY to resolve automatically. On
