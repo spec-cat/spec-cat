@@ -10,6 +10,7 @@ const props = defineProps<{
   activePanel: 'conversations' | 'terminal'
   previewRunning: boolean
   previewError: string
+  skillPreparationLabel: string
   branchReviewRunning: boolean
   canPreview: boolean
   isPreviewing: boolean
@@ -113,6 +114,14 @@ defineExpose({
                 {{ previewError }}
               </span>
               <template v-if="activeSession && !activeSession.archived && !activeSession.finalized">
+                <span
+                  v-if="skillPreparationLabel"
+                  class="flex max-w-[150px] items-center gap-1.5 truncate px-1 text-[var(--rg-accent)]"
+                  :title="`Resetting context before ${skillPreparationLabel}`"
+                >
+                  <span class="h-3 w-3 shrink-0 animate-spin rounded-full border border-current border-t-transparent" />
+                  <span class="truncate">Preparing…</span>
+                </span>
                 <button
                   v-if="canPreview"
                   type="button"

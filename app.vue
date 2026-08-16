@@ -123,6 +123,7 @@ const pendingFeatureAction = computed({
   set: (value) => { if (!value) specWorkspaceRef.value?.clearPendingAction() }
 })
 const pendingFeatureActionLabel = computed(() => specWorkspaceRef.value?.getPendingActionLabel() || '')
+const skillPreparationLabel = computed(() => specWorkspaceRef.value?.getSkillPreparationLabel() || '')
 const {
   showNewSessionModal, showSettingsModal, sessionOptions, loadingSessionOptions,
   creatingSession, newSessionProvider, newSessionBaseBranch, newSessionBaseBranchRef,
@@ -676,6 +677,7 @@ function getXtermTheme() {
         <ConversationWorkspace ref="conversationWorkspaceRef" :active-session="activeSession" :session-id="sessionId"
           :initial-shell-id="activeShellId"
           :active-panel="activeSidebarPanel" :preview-running="previewRunning" :preview-error="previewError"
+          :skill-preparation-label="skillPreparationLabel"
           :branch-review-running="branchReviewRunning" :can-preview="canPreviewActiveSession"
           :is-previewing="isActiveSessionPreviewing" :font-size="terminalFontSize" :terminal-theme="getXtermTheme()"
           :push-toast="pushToast" :active-provider="activeSession?.provider" @toggle-preview="toggleSessionPreview"

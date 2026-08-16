@@ -65,6 +65,7 @@ defineExpose<SpecWorkspaceExpose>({
   dispatchFeatureAction: workflow.dispatchFeatureAction,
   getPendingAction: () => workflow.pendingFeatureAction.value,
   getPendingActionLabel: () => workflow.pendingFeatureActionLabel.value,
+  getSkillPreparationLabel: () => workflow.skillPreparationLabel.value,
   clearPendingAction: () => { workflow.pendingFeatureAction.value = null },
   closeTopmost,
   submitTopmost

@@ -187,6 +187,7 @@ export type SpecWorkspaceExpose = {
   dispatchFeatureAction: (action: PendingFeatureAction) => void
   getPendingAction: () => PendingFeatureAction | null
   getPendingActionLabel: () => string
+  getSkillPreparationLabel: () => string
   clearPendingAction: () => void
   closeTopmost: () => boolean
   submitTopmost: () => boolean
