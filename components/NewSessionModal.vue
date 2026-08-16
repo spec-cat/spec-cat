@@ -55,7 +55,7 @@ function handleEnter(event: KeyboardEvent) {
           class="border border-[var(--rg-accent)]/60 bg-[var(--rg-accent)]/10 px-3 py-2 leading-5 text-[var(--rg-accent)]"
         >
           No conversation is on <span class="font-bold">{{ pendingAction.featureId }}</span>.
-          Creating one, then running {{ pendingActionLabel }}.
+          Creating a linked conversation from its spec branch, then running {{ pendingActionLabel }}.
         </p>
         <label class="grid gap-1.5">
           <span class="text-[var(--rg-muted)]">Base Branch</span>

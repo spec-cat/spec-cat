@@ -214,6 +214,7 @@ export type CascadeState = {
 }
 
 export type PendingFeatureAction =
+  | { kind: 'conversation'; featureId: string }
   | { kind: 'speckit'; featureId: string; step: string }
   | { kind: 'skill'; featureId: string; skillId: string }
   | { kind: 'cascade'; featureId: string }

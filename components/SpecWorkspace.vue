@@ -76,6 +76,7 @@ defineExpose<SpecWorkspaceExpose>({
     :session-id="sessionId" :feature-session-map="featureSessionMap" :traceability="documents.traceability.value"
     :cascade="workflow.cascade.value" :skills="documents.skills.value" :speckit-steps="workflow.speckitSteps"
     @refresh="documents.refreshFeatures" @open-feature="documents.openSpecViewer"
+    @open-conversation="workflow.openFeatureConversation"
     @run-speckit-step="workflow.runSpeckitStep" @start-cascade="workflow.startCascade"
     @cancel-cascade="workflow.cancelCascade" @run-skill="workflow.runSkill" />
   <Teleport to="body">

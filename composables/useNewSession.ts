@@ -39,7 +39,16 @@ export function useNewSession(options: {
       sessionOptions.value = await $fetch<SessionOptions>('/api/sessions/options')
       const provider = sessionOptions.value.providers.find((entry) => entry.id === newSessionProvider.value) || sessionOptions.value.providers[0]
       if (provider) newSessionProvider.value = provider.id
-      if (!sessionOptions.value.branches.includes(newSessionBaseBranch.value)) {
+      const featureId = options.pendingAction.value?.featureId
+      const featureBranch = featureId && sessionOptions.value.branches.find((branch) => branch === featureId || branch.split('/').pop() === featureId)
+      if (featureBranch) {
+        // Spec-created conversations branch from the feature itself while
+        // retaining their own managed sc/<conversation> branch.
+        newSessionBaseBranch.value = featureBranch
+      } else if (options.pendingAction.value?.kind === 'conversation') {
+        newSessionBaseBranch.value = ''
+        options.integrationError.value = `No local branch matches spec ${featureId}. Create or fetch the spec branch before starting its conversation.`
+      } else if (!sessionOptions.value.branches.includes(newSessionBaseBranch.value)) {
         newSessionBaseBranch.value = sessionOptions.value.branches.includes('main') ? 'main' : sessionOptions.value.branches[0] || ''
       }
     } catch (error) { options.integrationError.value = extractFetchError(error) }

@@ -25,6 +25,7 @@ export function useSpecWorkflow(options: {
   const pendingFeatureActionLabel = computed(() => {
     const action = pendingFeatureAction.value
     if (!action) return ''
+    if (action.kind === 'conversation') return `a clean chat for ${action.featureId}`
     if (action.kind === 'speckit') return `/speckit.${action.step} ${action.featureId}`
     if (action.kind === 'skill') return `skill ${action.skillId}`
     return 'the auto cascade'
@@ -82,7 +83,23 @@ export function useSpecWorkflow(options: {
     dispatchFeatureAction(action)
   }
 
-  function dispatchFeatureAction(action: PendingFeatureAction) {
+  async function dispatchFeatureAction(action: PendingFeatureAction) {
+    if (action.kind === 'conversation') {
+      const targetId = options.sessionId.value
+      if (!targetId || options.status.value !== 'connected') {
+        options.pushToast('error', 'Terminal is not connected.', 5000)
+        return
+      }
+      if (!(await waitForSessionIdle(targetId))) {
+        options.pushToast('error', 'The conversation did not become ready; the context was not reset.', 8000)
+        return
+      }
+      const sent = options.sendCommand('/new')
+      options.pushToast(sent ? 'success' : 'error', sent
+        ? `Attached to ${action.featureId} with a clean context.`
+        : 'Terminal is not connected.', sent ? 4000 : 5000)
+      return
+    }
     if (action.kind === 'speckit') {
       const sent = options.sendCommand(`/speckit.${action.step} ${action.featureId}`)
       options.pushToast(sent ? 'info' : 'error', sent ? `Sent /speckit.${action.step} for ${action.featureId}.` : 'Terminal is not connected.', sent ? 3500 : 5000)
@@ -98,6 +115,7 @@ export function useSpecWorkflow(options: {
   }
 
   const runSpeckitStep = (feature: SpecFeature, step: string, event?: MouseEvent) => void runFeatureAction({ kind: 'speckit', featureId: feature.id, step }, event?.shiftKey)
+  const openFeatureConversation = (feature: SpecFeature) => void runFeatureAction({ kind: 'conversation', featureId: feature.id })
   const runSkill = (skill: SkillInfo, feature: SpecFeature, event?: MouseEvent) => void runFeatureAction({ kind: 'skill', featureId: feature.id, skillId: skill.id }, event?.shiftKey)
   function startCascade(feature: SpecFeature, event?: MouseEvent) {
     if (cascade.value) return options.pushToast('warning', 'A cascade is already running.')
@@ -160,5 +178,5 @@ export function useSpecWorkflow(options: {
   }
 
   return { cascade, pendingFeatureAction, pendingFeatureActionLabel, speckitSteps, waitForNewSessionAttached,
-    waitForSessionIdle, dispatchFeatureAction, runSpeckitStep, runSkill, startCascade, cancelCascade, trackCascadeState }
+    waitForSessionIdle, dispatchFeatureAction, openFeatureConversation, runSpeckitStep, runSkill, startCascade, cancelCascade, trackCascadeState }
 }

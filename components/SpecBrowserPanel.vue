@@ -22,6 +22,7 @@ const searchQuery = defineModel<string>('searchQuery', { required: true })
 defineEmits<{
   refresh: []
   openFeature: [feature: SpecFeature]
+  openConversation: [feature: SpecFeature]
   runSpeckitStep: [feature: SpecFeature, step: string, event: MouseEvent]
   startCascade: [feature: SpecFeature, event: MouseEvent]
   cancelCascade: []
@@ -108,6 +109,16 @@ function featureRiskClass(risk: TraceabilityInfo['risk']) {
             <span class="ml-auto border border-transparent px-1 text-[#88857c]">{{ feature.files.length }} files</span>
           </div>
           <div class="flex flex-wrap items-center gap-1 border-t border-black/30 pt-1.5">
+            <button
+              type="button"
+              class="border border-[var(--rg-accent)] bg-[var(--rg-accent)]/10 px-1.5 py-0.5 text-[9px] font-bold uppercase text-[var(--rg-accent)] hover:bg-[var(--rg-accent)] hover:text-white"
+              :title="featureSessionMap.get(feature.id)
+                ? `Attach to ${featureSessionMap.get(feature.id)!.title || featureSessionMap.get(feature.id)!.id} and start a clean context`
+                : `Create a conversation from ${feature.id} and start a clean context`"
+              @click.stop="$emit('openConversation', feature)"
+            >
+              chat
+            </button>
             <button
               v-for="step in speckitSteps"
               :key="step"
