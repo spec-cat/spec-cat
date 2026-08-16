@@ -1,6 +1,6 @@
 {
   "name": "spec-cat",
-  "version": "0.1.75",
+  "version": "0.1.76",
   "description": "Spec-driven development workbench",
   "license": "MIT",
   "keywords": [
@@ -24,6 +24,11 @@
   },
   "engines": {
     "node": ">=20.0.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "node-pty"
+    ]
   },
   "scripts": {
     "dev": "nuxt dev",
