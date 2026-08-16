@@ -648,6 +648,7 @@ function getXtermTheme() {
           :sessions="sessions"
           :session-id="sessionId"
           :status="status"
+          :active-provider="activeSession?.provider"
           :theme-vars="themeVars"
           :push-toast="pushToast"
           :select-session="selectSession"

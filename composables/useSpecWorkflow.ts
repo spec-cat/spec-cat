@@ -1,13 +1,15 @@
 import type { Ref } from 'vue'
-import type { SessionListItem } from '~/server/utils/session-store'
+import type { ProviderId, SessionListItem } from '~/server/utils/session-store'
 import type { CascadeState, PendingFeatureAction, SkillInfo, SpecFeature, ToastType } from '~/types/app'
 import { extractFetchError } from '~/utils/fetch-error'
+import { buildSpeckitCommand } from '~/utils/spec-workflow'
 
 type PushToast = (type: ToastType, message: string, duration?: number) => void
 
 export function useSpecWorkflow(options: {
   sessionId: Ref<string>
   status: Ref<'connecting' | 'connected' | 'closed'>
+  activeProvider: Ref<ProviderId | undefined>
   sessions: Ref<SessionListItem[]>
   features: Ref<SpecFeature[]>
   skills: Ref<SkillInfo[]>
@@ -26,7 +28,7 @@ export function useSpecWorkflow(options: {
     const action = pendingFeatureAction.value
     if (!action) return ''
     if (action.kind === 'conversation') return `a clean chat for ${action.featureId}`
-    if (action.kind === 'speckit') return `/speckit.${action.step} ${action.featureId}`
+    if (action.kind === 'speckit') return buildSpeckitCommand(options.activeProvider.value, action.step, action.featureId)
     if (action.kind === 'skill') return `skill ${action.skillId}`
     return 'the auto cascade'
   })
@@ -65,6 +67,28 @@ export function useSpecWorkflow(options: {
   }
   const delay = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms))
 
+  async function resetContext(sessionId: string) {
+    if (!(await waitForSessionIdle(sessionId))) {
+      options.pushToast('error', 'The conversation did not become ready; the skill was not started.', 8000)
+      return false
+    }
+    if (options.sessionId.value !== sessionId || !options.sendCommand('/new')) {
+      options.pushToast('error', 'Terminal is not connected.', 5000)
+      return false
+    }
+    // A provider can still report the previous idle state briefly after /new.
+    await delay(1500)
+    if (!(await waitForSessionIdle(sessionId, 20000))) {
+      options.pushToast('error', 'The CLI did not become ready after /new; the skill was not started.', 8000)
+      return false
+    }
+    if (options.sessionId.value !== sessionId || options.status.value !== 'connected') {
+      options.pushToast('error', 'Conversation changed before the skill could start.', 6000)
+      return false
+    }
+    return true
+  }
+
   async function runFeatureAction(action: PendingFeatureAction, forceNew = false) {
     const target = forceNew ? null : options.findSessionForFeature(action.featureId)
     if (!target) {
@@ -101,14 +125,22 @@ export function useSpecWorkflow(options: {
       return
     }
     if (action.kind === 'speckit') {
-      const sent = options.sendCommand(`/speckit.${action.step} ${action.featureId}`)
-      options.pushToast(sent ? 'info' : 'error', sent ? `Sent /speckit.${action.step} for ${action.featureId}.` : 'Terminal is not connected.', sent ? 3500 : 5000)
+      const targetId = options.sessionId.value
+      if (!targetId || !(await resetContext(targetId))) return
+      const command = buildSpeckitCommand(options.activeProvider.value, action.step, action.featureId)
+      const sent = options.sendCommand(command)
+      options.pushToast(sent ? 'info' : 'error', sent ? `Sent ${command}.` : 'Terminal is not connected.', sent ? 3500 : 5000)
       return
     }
     if (action.kind === 'skill') {
       const skill = options.skills.value.find((entry) => entry.id === action.skillId)
-      if (skill) void sendSkillPrompt(skill, action.featureId)
-      else options.pushToast('error', `Skill ${action.skillId} is no longer available.`, 5000)
+      if (!skill) {
+        options.pushToast('error', `Skill ${action.skillId} is no longer available.`, 5000)
+        return
+      }
+      const targetId = options.sessionId.value
+      if (!targetId || !(await resetContext(targetId))) return
+      void sendSkillPrompt(skill, action.featureId)
       return
     }
     beginCascade(action.featureId)
@@ -140,9 +172,9 @@ export function useSpecWorkflow(options: {
     }
     const steps = [...(!feature.hasSpec ? ['specify'] : []), ...(!feature.hasPlan ? ['plan'] : []), ...(!feature.hasTasks ? ['tasks'] : []), 'implement']
     cascade.value = { sessionId: options.sessionId.value, featureId, steps, index: -1, phase: 'waiting-start' }
-    advanceCascade()
+    void advanceCascade()
   }
-  function advanceCascade() {
+  async function advanceCascade() {
     const state = cascade.value
     if (!state) return
     state.index += 1
@@ -152,7 +184,19 @@ export function useSpecWorkflow(options: {
       void options.refreshFeatures()
       return
     }
-    if (options.sessionId.value !== state.sessionId || !options.sendCommand(`/speckit.${state.steps[state.index]} ${state.featureId}`)) {
+    state.phase = 'resetting'
+    if (!(await resetContext(state.sessionId))) {
+      cascade.value = null
+      return
+    }
+    const step = state.steps[state.index]
+    if (!step) {
+      options.pushToast('error', 'Cascade aborted: the next Spec Kit step is unavailable.', 6000)
+      cascade.value = null
+      return
+    }
+    const command = buildSpeckitCommand(options.activeProvider.value, step, state.featureId)
+    if (options.sessionId.value !== state.sessionId || !options.sendCommand(command)) {
       options.pushToast('error', 'Cascade aborted: terminal is not connected to its conversation.', 6000)
       cascade.value = null
       return
@@ -173,7 +217,7 @@ export function useSpecWorkflow(options: {
     } else if (current.phase === 'waiting-start' && state === 'working') current.phase = 'waiting-idle'
     else if (current.phase === 'waiting-idle' && state === 'idle') {
       void options.refreshFeatures()
-      advanceCascade()
+      void advanceCascade()
     }
   }
 

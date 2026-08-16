@@ -210,7 +210,7 @@ export type CascadeState = {
   featureId: string
   steps: string[]
   index: number
-  phase: 'waiting-start' | 'waiting-idle'
+  phase: 'resetting' | 'waiting-start' | 'waiting-idle'
 }
 
 export type PendingFeatureAction =

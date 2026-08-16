@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { SessionListItem } from '~/server/utils/session-store'
+import type { ProviderId, SessionListItem } from '~/server/utils/session-store'
 import type { SpecWorkspaceExpose, ToastType } from '~/types/app'
 
 const props = defineProps<{
@@ -8,6 +8,7 @@ const props = defineProps<{
   sessions: SessionListItem[]
   sessionId: string
   status: 'connecting' | 'connected' | 'closed'
+  activeProvider?: ProviderId
   themeVars: Record<string, string>
   pushToast: (type: ToastType, message: string, duration?: number) => void
   selectSession: (id: string) => void
@@ -19,6 +20,7 @@ const props = defineProps<{
 const sessions = toRef(props, 'sessions')
 const sessionId = toRef(props, 'sessionId')
 const status = toRef(props, 'status')
+const activeProvider = toRef(props, 'activeProvider')
 const documents = useSpecDocuments(props.pushToast)
 
 function branchOwnsFeature(branch: string | undefined, featureId: string) {
@@ -38,7 +40,7 @@ const featureSessionMap = computed(() => {
   return map
 })
 const workflow = useSpecWorkflow({
-  sessionId, status, sessions, features: documents.features, skills: documents.skills,
+  sessionId, status, activeProvider, sessions, features: documents.features, skills: documents.skills,
   pushToast: props.pushToast, selectSession: props.selectSession, findSessionForFeature,
   openNewSessionModal: props.openNewSession, sendCommand: props.sendCommand,
   sendText: props.sendText, refreshFeatures: documents.refreshFeatures

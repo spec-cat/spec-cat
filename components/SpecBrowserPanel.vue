@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import type { SessionListItem } from '~/server/utils/session-store'
 import type { CascadeState, SkillInfo, SpecFeature, TraceabilityInfo } from '~/types/app'
+import { buildSpeckitCommand } from '~/utils/spec-workflow'
 
-defineProps<{
+const props = defineProps<{
   collapsed: boolean
   mobile: boolean
   features: SpecFeature[]
@@ -16,6 +17,10 @@ defineProps<{
   skills: SkillInfo[]
   speckitSteps: string[]
 }>()
+
+function speckitCommand(feature: SpecFeature, step: string) {
+  return buildSpeckitCommand(props.featureSessionMap.get(feature.id)?.provider, step, feature.id)
+}
 
 const searchQuery = defineModel<string>('searchQuery', { required: true })
 
@@ -126,8 +131,8 @@ function featureRiskClass(risk: TraceabilityInfo['risk']) {
               class="border border-[var(--rg-border)] bg-[var(--rg-input)] px-1.5 py-0.5 text-[9px] font-bold uppercase text-[var(--rg-foreground)] hover:border-[var(--rg-accent)] disabled:opacity-40"
               :disabled="Boolean(cascade)"
               :title="(featureSessionMap.get(feature.id)
-                ? `Send /speckit.${step} ${feature.id} to ${featureSessionMap.get(feature.id)!.title || featureSessionMap.get(feature.id)!.id}`
-                : `Send /speckit.${step} ${feature.id} in a new conversation`) + ' (Shift+click: new conversation)'"
+                ? `Send ${speckitCommand(feature, step)} to ${featureSessionMap.get(feature.id)!.title || featureSessionMap.get(feature.id)!.id}`
+                : `Send the ${step} Spec Kit skill in a new conversation`) + ' (Shift+click: new conversation)'"
               @click.stop="$emit('runSpeckitStep', feature, step, $event)"
             >
               {{ step }}
