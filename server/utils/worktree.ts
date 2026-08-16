@@ -35,9 +35,10 @@ export type ManagedWorktree = {
 export async function createSessionWorktree(
   projectDir: string,
   sessionId: string,
-  requestedBaseBranch?: string
+  requestedBaseBranch?: string,
+  featureId?: string
 ): Promise<ManagedWorktree> {
-  const branch = `sc/${sessionId}`
+  const branch = sessionWorktreeBranch(sessionId, featureId)
   const worktreePath = join(WORKTREE_ROOT, `sc-${sessionId}`)
   const baseBranch = requestedBaseBranch
     ? await resolveRequestedBaseBranch(projectDir, requestedBaseBranch)
@@ -53,6 +54,18 @@ export async function createSessionWorktree(
   await git(projectDir, ['worktree', 'add', '-b', branch, worktreePath, baseCommit])
 
   return { projectDir, worktreePath, branch, baseBranch }
+}
+
+/** Spec-created conversations use the spec directory name as their branch. */
+export function sessionWorktreeBranch(sessionId: string, featureId?: string) {
+  if (!featureId) return `sc/${sessionId}`
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,199}$/.test(featureId)) {
+    throw new Error(`Invalid spec feature id for branch: ${featureId}`)
+  }
+  if (PROTECTED_BRANCHES.has(featureId) || featureId.startsWith('sc/')) {
+    throw new Error(`Refusing to use protected branch for spec: ${featureId}`)
+  }
+  return featureId
 }
 
 async function resolveRequestedBaseBranch(projectDir: string, branch: string) {

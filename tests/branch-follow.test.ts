@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { decideBranchFollow, managedSessionBranch } from '../server/utils/branch-follow'
-import { isDeletableSessionBranch } from '../server/utils/worktree'
+import { isDeletableSessionBranch, sessionWorktreeBranch } from '../server/utils/worktree'
 
 const SESSION_ID = 'abc12345'
 const MANAGED = managedSessionBranch(SESSION_ID)
@@ -85,5 +85,21 @@ describe('isDeletableSessionBranch', () => {
     expect(isDeletableSessionBranch('-D')).toBe(false)
     expect(isDeletableSessionBranch('')).toBe(false)
     expect(isDeletableSessionBranch('a branch')).toBe(false)
+  })
+})
+
+describe('sessionWorktreeBranch', () => {
+  test('uses the spec name for a spec-created conversation', () => {
+    expect(sessionWorktreeBranch(SESSION_ID, '042-spec-browser')).toBe('042-spec-browser')
+  })
+
+  test('keeps the managed sc branch for a regular conversation', () => {
+    expect(sessionWorktreeBranch(SESSION_ID)).toBe(MANAGED)
+  })
+
+  test('rejects unsafe spec branch names', () => {
+    expect(() => sessionWorktreeBranch(SESSION_ID, '-invalid')).toThrow()
+    expect(() => sessionWorktreeBranch(SESSION_ID, 'feature/name')).toThrow()
+    expect(() => sessionWorktreeBranch(SESSION_ID, 'main')).toThrow()
   })
 })

@@ -43,6 +43,7 @@ import { startWorktreeCommitWatcher, type WorktreeCommitWatcher } from '../utils
 import { createTurnMonitor, type TurnMonitor } from '../utils/turn-monitor'
 import { isProviderTurnComplete } from '../utils/providers/turn-completion'
 import { projectDir as defaultProjectDir, projectKey } from '../utils/project-dir'
+import { submitPromptTurn } from '../utils/tmux-input'
 
 type TerminalMessage = {
   type?: string
@@ -157,6 +158,22 @@ export default defineWebSocketHandler({
       session.cols = cols
       session.rows = rows
       pty.resize(cols, rows)
+      return
+    }
+
+    if (parsed?.type === 'submit' && typeof parsed.data === 'string' && parsed.data) {
+      // Codex can treat a CR appended to pasted text as modified Enter, leaving
+      // the prompt on a new line without submitting it. The shared tmux helper
+      // pastes first, waits for the input widget to settle, then sends a real
+      // Enter key as a separate event.
+      recordTerminalInput(session.id, `${parsed.data}\r`)
+      session.turnMonitor.submitted()
+      try {
+        await submitPromptTurn(session.tmuxName, parsed.data)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        peer.send(`\r\n[failed to submit terminal prompt: ${message}]\r\n`)
+      }
       return
     }
 
@@ -303,7 +320,7 @@ async function createSession(
   const cliBin = buildProviderCommand(provider)
   const tmuxName = stored?.tmuxName || `${provider}-web-${projectKey()}-${sanitizeTmuxName(id)}`
   const projectDir = stored?.projectDir || defaultProjectDir()
-  const worktree = stored ? null : await createSessionWorktree(projectDir, id, requestedBaseBranch)
+  const worktree = stored ? null : await createSessionWorktree(projectDir, id, requestedBaseBranch, requestedFeatureId)
   const cwd = stored?.cwd || worktree!.worktreePath
 
   let tmuxCreated = false

@@ -39,16 +39,7 @@ export function useNewSession(options: {
       sessionOptions.value = await $fetch<SessionOptions>('/api/sessions/options')
       const provider = sessionOptions.value.providers.find((entry) => entry.id === newSessionProvider.value) || sessionOptions.value.providers[0]
       if (provider) newSessionProvider.value = provider.id
-      const featureId = options.pendingAction.value?.featureId
-      const featureBranch = featureId && sessionOptions.value.branches.find((branch) => branch === featureId || branch.split('/').pop() === featureId)
-      if (featureBranch) {
-        // Spec-created conversations branch from the feature itself while
-        // retaining their own managed sc/<conversation> branch.
-        newSessionBaseBranch.value = featureBranch
-      } else if (options.pendingAction.value?.kind === 'conversation') {
-        newSessionBaseBranch.value = ''
-        options.integrationError.value = `No local branch matches spec ${featureId}. Create or fetch the spec branch before starting its conversation.`
-      } else if (!sessionOptions.value.branches.includes(newSessionBaseBranch.value)) {
+      if (!sessionOptions.value.branches.includes(newSessionBaseBranch.value)) {
         newSessionBaseBranch.value = sessionOptions.value.branches.includes('main') ? 'main' : sessionOptions.value.branches[0] || ''
       }
     } catch (error) { options.integrationError.value = extractFetchError(error) }
@@ -85,6 +76,10 @@ export function useNewSession(options: {
     options.pushToast('info', `Waiting for the CLI to start before running ${label}...`)
     await options.refreshSessions()
     if (!(await options.waitForIdle(newSessionId))) return options.pushToast('error', `The CLI never became ready; ${label} was not sent.`, 8000)
+    if (pending.kind === 'conversation') {
+      options.pushToast('success', `Started a clean conversation for ${pending.featureId}.`, 4000)
+      return
+    }
     options.dispatchAction(pending)
   }
   watch(showNewSessionModal, (open) => { if (!open) options.pendingAction.value = null })

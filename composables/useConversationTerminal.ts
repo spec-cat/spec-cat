@@ -119,12 +119,14 @@ export function useConversationTerminal(options: {
 
   function sendCommand(command: string) {
     if (!isConnected()) return false
-    socket!.send(JSON.stringify({ type: 'input', data: `${command}\r` }))
+    // Automated prompts need a real, separate Enter key in Codex. Sending the
+    // text and CR in one PTY write is interpreted as a modified Enter there.
+    socket!.send(JSON.stringify({ type: 'submit', data: command }))
     return true
   }
   function sendText(value: string) {
     if (!isConnected()) return false
-    socket!.send(JSON.stringify({ type: 'input', data: `\x1b[200~${value}\x1b[201~\r` }))
+    socket!.send(JSON.stringify({ type: 'submit', data: value }))
     return true
   }
   function isConnected() { return socket?.readyState === WebSocket.OPEN }
