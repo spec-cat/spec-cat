@@ -17,8 +17,8 @@ describe('extractRequirementIds', () => {
     expect(extractRequirementIds(spec)).toEqual(['FR-001', 'FR-002', 'FR-003', 'FR-004'])
   })
 
-  test('normalizes case and missing dash to upper-case FR-NNN', () => {
-    expect(extractRequirementIds('fr-001 and FR002 and Fr-3')).toEqual(['FR-001', 'FR-002', 'FR-3'])
+  test('normalizes canonical ids to upper case and rejects non-canonical ids', () => {
+    expect(extractRequirementIds('fr-001 and FR002 and Fr-3 and FR-001A')).toEqual(['FR-001', 'FR-001a'])
   })
 
   test('deduplicates repeated mentions while preserving order', () => {
@@ -50,7 +50,7 @@ describe('analyzeTraceability', () => {
     const report = analyzeTraceability({
       spec: '- **FR-007**: Bold requirement.',
       plan: 'FR-007 is handled by the parser.',
-      tasks: 'Covers fr-007 end to end.'
+      tasks: '- [ ] Covers fr-007 end to end.'
     })
     expect(report.requirements).toEqual([{ id: 'FR-007', inPlan: true, inTasks: true }])
     expect(report.risk).toBe('none')
@@ -86,7 +86,7 @@ describe('analyzeTraceability', () => {
     const report = analyzeTraceability({
       spec: specWith(['FR-001', 'FR-002', 'FR-003']),
       plan: 'FR-001 FR-002 FR-003',
-      tasks: 'FR-001 FR-002'
+      tasks: '- [ ] FR-001 FR-002'
     })
     expect(report.alerts).toEqual(['FR-003 not referenced in tasks.md'])
     expect(report.counts.uncovered).toBe(1)
@@ -97,7 +97,7 @@ describe('analyzeTraceability', () => {
     const report = analyzeTraceability({
       spec: specWith(ids),
       plan: ids.join(' '),
-      tasks: ids.slice(0, 9).join(' ')
+      tasks: `- [ ] ${ids.slice(0, 9).join(' ')}`
     })
     expect(report.counts.coveredInTasks).toBe(9)
     expect(report.risk).toBe('low')
@@ -108,7 +108,7 @@ describe('analyzeTraceability', () => {
     const report = analyzeTraceability({
       spec: specWith(ids),
       plan: ids.join(' '),
-      tasks: ids.slice(0, 7).join(' ')
+      tasks: `- [ ] ${ids.slice(0, 7).join(' ')}`
     })
     expect(report.counts.coveredInTasks).toBe(7)
     expect(report.risk).toBe('medium')
@@ -119,7 +119,7 @@ describe('analyzeTraceability', () => {
     const report = analyzeTraceability({
       spec: specWith(ids),
       plan: ids.join(' '),
-      tasks: ids.slice(0, 4).join(' ')
+      tasks: `- [ ] ${ids.slice(0, 4).join(' ')}`
     })
     expect(report.counts.coveredInTasks).toBe(4)
     expect(report.risk).toBe('high')
@@ -129,10 +129,22 @@ describe('analyzeTraceability', () => {
     const report = analyzeTraceability({
       spec: specWith(['FR-001', 'FR-002']),
       plan: 'FR-001',
-      tasks: 'FR-001 FR-002'
+      tasks: '- [ ] FR-001 FR-002'
     })
     expect(report.counts).toEqual({ total: 2, coveredInPlan: 1, coveredInTasks: 2, uncovered: 1 })
     expect(report.alerts).toEqual(['FR-002 not referenced in plan.md'])
     expect(report.risk).toBe('low')
+  })
+
+  test('counts FR references only on checkbox task lines and reports orphan task FRs', () => {
+    const report = analyzeTraceability({
+      spec: specWith(['FR-001']),
+      plan: 'FR-001',
+      tasks: 'Notes mention FR-001\n- [ ] T001 [FR-002] orphan task'
+    })
+    expect(report.alerts).toEqual([
+      'FR-001 not referenced in tasks.md',
+      'FR-002 referenced in tasks.md but not defined in spec.md'
+    ])
   })
 })

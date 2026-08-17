@@ -26,14 +26,15 @@ export type TraceabilityReport = {
   risk: TraceabilityRisk
 }
 
-const FR_PATTERN = /\bFR-?(\d{1,4})\b/gi
+const FR_PATTERN = /\bFR-(\d{3})([a-z]?)\b/gi
+const TASK_LINE_PATTERN = /^\s*-\s+\[( |x|X)\]\s+(.+)$/
 
 export function extractRequirementIds(text: string): string[] {
   const ids: string[] = []
   const seen = new Set<string>()
 
   for (const match of text.matchAll(FR_PATTERN)) {
-    const id = `FR-${match[1]}`
+    const id = `FR-${match[1]}${(match[2] ?? '').toLowerCase()}`
     if (seen.has(id)) continue
     seen.add(id)
     ids.push(id)
@@ -45,7 +46,12 @@ export function extractRequirementIds(text: string): string[] {
 export function analyzeTraceability(input: TraceabilityInput): TraceabilityReport {
   const specIds = extractRequirementIds(input.spec ?? '')
   const planIds = new Set(extractRequirementIds(input.plan ?? ''))
-  const taskIds = new Set(extractRequirementIds(input.tasks ?? ''))
+  const taskIds = new Set(
+    (input.tasks ?? '')
+      .split(/\r?\n/)
+      .filter((line) => TASK_LINE_PATTERN.test(line))
+      .flatMap((line) => extractRequirementIds(line))
+  )
 
   const requirements: RequirementCoverage[] = specIds.map((id) => ({
     id,
@@ -63,6 +69,10 @@ export function analyzeTraceability(input: TraceabilityInput): TraceabilityRepor
     if (!requirement.inPlan) alerts.push(`${requirement.id} not referenced in plan.md`)
     if (!requirement.inTasks) alerts.push(`${requirement.id} not referenced in tasks.md`)
   }
+  const specIdSet = new Set(specIds)
+  for (const taskId of taskIds) {
+    if (!specIdSet.has(taskId)) alerts.push(`${taskId} referenced in tasks.md but not defined in spec.md`)
+  }
 
   let risk: TraceabilityRisk = 'none'
   if (total > 0) {
@@ -78,4 +88,21 @@ export function analyzeTraceability(input: TraceabilityInput): TraceabilityRepor
     alerts,
     risk
   }
+}
+
+export function formatTraceabilityContextForPrompt(report: TraceabilityReport): string {
+  if (report.alerts.length === 0) {
+    return [
+      '## Detected Traceability Issues',
+      '',
+      'Repository checker found no active traceability gaps for this feature.'
+    ].join('\n')
+  }
+
+  return [
+    '## Detected Traceability Issues',
+    '',
+    'Treat these repository-checker errors as mandatory remediation targets:',
+    ...report.alerts.map((alert) => `- ${alert}`)
+  ].join('\n')
 }

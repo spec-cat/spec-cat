@@ -1,6 +1,7 @@
 import { readdir, readFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { isAbsolute, join, normalize, relative, resolve } from 'node:path'
 import { projectDir as defaultProjectDir } from './project-dir'
+import { analyzeTraceability, formatTraceabilityContextForPrompt } from './traceability'
 
 export type Skill = {
   id: string
@@ -22,7 +23,18 @@ that they follow the What/How/Track separation used by this project:
   not restate requirements already captured in spec.md.
 - tasks.md (Track): an ordered, checkable list of work items derived from the plan.
 
-Perform the following checks and report every violation you find:
+## Repository Checker Results
+
+{{detectedTraceabilityIssues}}
+
+## Checker Compatibility Contract
+
+- Recognize FR IDs only as \`FR-XXX\` or \`FR-XXXa\` (three digits and an optional lowercase suffix).
+- Count plan coverage only when the literal FR token appears in \`plan.md\`.
+- Count task coverage only when the FR token appears on the same markdown checkbox line (\`- [ ]\` or \`- [x]\`) in \`tasks.md\`.
+- Treat an FR token on a checkbox task that is absent from \`spec.md\` as an error.
+
+Perform the following checks and directly fix every violation you find:
 
 1. Flag any implementation detail (frameworks, file paths, data structures,
    API shapes) that appears in spec.md instead of plan.md.
@@ -36,9 +48,9 @@ Perform the following checks and report every violation you find:
 5. Verify terminology, entity names, and identifiers are used consistently
    across all three documents.
 
-Present the findings as a prioritized list. For each finding include the file,
-the section or line, the problem, and a concrete suggested fix. Finish with a
-short verdict on whether the feature is ready for implementation.
+Start with the injected repository-checker errors and continue editing until
+all of them are resolved. Re-read the three documents and repeat the exact
+checks before finishing. Report the applied changes and final coverage status.
 
 Feature to review: {{args}}
 `
@@ -118,6 +130,29 @@ async function readSkillBody(skillId: string, projectDir: string): Promise<strin
   }
 }
 
+async function buildBetterSpecTraceabilityContext(args: string, projectDir: string): Promise<string> {
+  const specsRoot = resolve(projectDir, 'specs')
+  const requestedPath = isAbsolute(args) ? resolve(args) : resolve(projectDir, args.startsWith('specs/') ? args : join('specs', args))
+  const pathFromRoot = relative(specsRoot, requestedPath)
+  if (!args || pathFromRoot.startsWith('..') || isAbsolute(pathFromRoot)) {
+    return '## Detected Traceability Issues\n\nUnable to inspect traceability: the feature path is missing or invalid.'
+  }
+
+  const readOptional = async (filename: string) => {
+    try {
+      return await readFile(join(normalize(requestedPath), filename), 'utf8')
+    } catch {
+      return null
+    }
+  }
+  const [spec, plan, tasks] = await Promise.all([
+    readOptional('spec.md'),
+    readOptional('plan.md'),
+    readOptional('tasks.md')
+  ])
+  return formatTraceabilityContextForPrompt(analyzeTraceability({ spec, plan, tasks }))
+}
+
 export async function renderSkillPrompt(
   skillId: string,
   args?: string,
@@ -127,11 +162,18 @@ export async function renderSkillPrompt(
   if (body === null) return null
 
   const substitution = (args ?? '').trim()
-  if (body.includes('{{args}}')) {
-    return body.replaceAll('{{args}}', substitution)
+  let renderedBody = body
+  if (skillId === 'better-spec') {
+    renderedBody = renderedBody.replaceAll(
+      '{{detectedTraceabilityIssues}}',
+      await buildBetterSpecTraceabilityContext(substitution, projectDir)
+    )
+  }
+  if (renderedBody.includes('{{args}}')) {
+    return renderedBody.replaceAll('{{args}}', substitution)
   }
   if (substitution) {
-    return `${body.trimEnd()}\n\n## Context\n\n${substitution}\n`
+    return `${renderedBody.trimEnd()}\n\n## Context\n\n${substitution}\n`
   }
-  return body
+  return renderedBody
 }

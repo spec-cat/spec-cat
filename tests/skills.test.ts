@@ -107,10 +107,18 @@ describe('renderSkillPrompt', () => {
   })
 
   test('renders the built-in better-spec skill', async () => {
+    await mkdir(join(projectDir, 'specs', '002-feature'), { recursive: true })
+    await writeFile(join(projectDir, 'specs', '002-feature', 'spec.md'), '- **FR-001**: Works.\n')
+    await writeFile(join(projectDir, 'specs', '002-feature', 'plan.md'), 'No mapping yet.\n')
+    await writeFile(join(projectDir, 'specs', '002-feature', 'tasks.md'), '- [ ] T001 [FR-002] orphan.\n')
     const prompt = await renderSkillPrompt('better-spec', 'specs/002-feature', projectDir)
     expect(prompt).toContain('Feature to review: specs/002-feature')
     expect(prompt).toContain('What/How/Track')
     expect(prompt).toContain('testable')
+    expect(prompt).toContain('FR-001 not referenced in plan.md')
+    expect(prompt).toContain('FR-001 not referenced in tasks.md')
+    expect(prompt).toContain('FR-002 referenced in tasks.md but not defined in spec.md')
+    expect(prompt).not.toContain('{{detectedTraceabilityIssues}}')
   })
 
   test('returns null for unknown skills', async () => {
