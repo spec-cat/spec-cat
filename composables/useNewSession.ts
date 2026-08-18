@@ -15,7 +15,7 @@ export function useNewSession(options: {
   connect: (id?: string, provider?: ProviderId, creation?: { baseBranch?: string; featureId?: string }) => void
   waitForAttached: () => Promise<string>
   waitForIdle: (id: string) => Promise<boolean>
-  dispatchAction: (action: PendingFeatureAction) => void
+  dispatchAction: (action: PendingFeatureAction, freshConversation?: boolean) => void
   refreshSessions: () => Promise<void>
   pushToast: PushToast
 }) {
@@ -80,7 +80,7 @@ export function useNewSession(options: {
       options.pushToast('success', `Started a clean conversation for ${pending.featureId}.`, 4000)
       return
     }
-    options.dispatchAction(pending)
+    options.dispatchAction(pending, true)
   }
   watch(showNewSessionModal, (open) => { if (!open) options.pendingAction.value = null })
   return { showNewSessionModal, showSettingsModal, sessionOptions, loadingSessionOptions,

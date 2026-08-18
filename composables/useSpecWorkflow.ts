@@ -117,7 +117,7 @@ export function useSpecWorkflow(options: {
     dispatchFeatureAction(action)
   }
 
-  async function dispatchFeatureAction(action: PendingFeatureAction) {
+  async function dispatchFeatureAction(action: PendingFeatureAction, freshConversation = false) {
     if (action.kind === 'conversation') {
       const targetId = options.sessionId.value
       if (!targetId || options.status.value !== 'connected') {
@@ -137,7 +137,15 @@ export function useSpecWorkflow(options: {
     if (action.kind === 'speckit') {
       const targetId = options.sessionId.value
       const command = buildSpeckitCommand(options.activeProvider.value, action.step, action.featureId)
-      if (!targetId || !(await resetContext(targetId, command))) return
+      if (!targetId || options.status.value !== 'connected') {
+        options.pushToast('error', 'Terminal is not connected.', 5000)
+        return
+      }
+      if (!freshConversation && !(await resetContext(targetId, command))) return
+      if (options.sessionId.value !== targetId || options.status.value !== 'connected') {
+        options.pushToast('error', 'Conversation changed before the command could be sent.', 6000)
+        return
+      }
       const sent = options.sendCommand(command)
       options.pushToast(sent ? 'info' : 'error', sent ? `Sent ${command}.` : 'Terminal is not connected.', sent ? 3500 : 5000)
       return
@@ -149,11 +157,15 @@ export function useSpecWorkflow(options: {
         return
       }
       const targetId = options.sessionId.value
-      if (!targetId || !(await resetContext(targetId, `skill ${skill.id}`))) return
-      void sendSkillPrompt(skill, action.featureId)
+      if (!targetId || options.status.value !== 'connected') {
+        options.pushToast('error', 'Terminal is not connected.', 5000)
+        return
+      }
+      if (!freshConversation && !(await resetContext(targetId, `skill ${skill.id}`))) return
+      void sendSkillPrompt(skill, action.featureId, targetId)
       return
     }
-    beginCascade(action.featureId)
+    beginCascade(action.featureId, freshConversation)
   }
 
   const runSpeckitStep = (feature: SpecFeature, step: string, event?: MouseEvent) => void runFeatureAction({ kind: 'speckit', featureId: feature.id, step }, event?.shiftKey)
@@ -163,17 +175,21 @@ export function useSpecWorkflow(options: {
     if (cascade.value) return options.pushToast('warning', 'A cascade is already running.')
     void runFeatureAction({ kind: 'cascade', featureId: feature.id }, event?.shiftKey)
   }
-  async function sendSkillPrompt(skill: SkillInfo, featureId: string) {
+  async function sendSkillPrompt(skill: SkillInfo, featureId: string, targetId: string) {
     try {
       const url: string = `/api/skills/${encodeURIComponent(skill.id)}/render`
       const response = await $fetch<{ prompt: string }>(url, { method: 'POST', body: { args: featureId } })
+      if (options.sessionId.value !== targetId || options.status.value !== 'connected') {
+        options.pushToast('error', 'Conversation changed before the skill prompt could be sent.', 6000)
+        return
+      }
       const sent = options.sendText(response.prompt)
       options.pushToast(sent ? 'info' : 'error', sent ? `Sent skill ${skill.id} for ${featureId}.` : 'Terminal is not connected.', sent ? 3500 : 5000)
     } catch (error) {
       options.pushToast('error', `Failed to render skill: ${extractFetchError(error)}`, 6000)
     }
   }
-  function beginCascade(featureId: string) {
+  function beginCascade(featureId: string, freshConversation = false) {
     if (cascade.value) return
     const feature = options.features.value.find((entry) => entry.id === featureId)
     if (!feature || !options.sessionId.value) {
@@ -182,9 +198,9 @@ export function useSpecWorkflow(options: {
     }
     const steps = [...(!feature.hasSpec ? ['specify'] : []), ...(!feature.hasPlan ? ['plan'] : []), ...(!feature.hasTasks ? ['tasks'] : []), 'implement']
     cascade.value = { sessionId: options.sessionId.value, featureId, steps, index: -1, phase: 'waiting-start' }
-    void advanceCascade()
+    void advanceCascade(freshConversation)
   }
-  async function advanceCascade() {
+  async function advanceCascade(skipReset = false) {
     const state = cascade.value
     if (!state) return
     state.index += 1
@@ -196,7 +212,7 @@ export function useSpecWorkflow(options: {
     }
     state.phase = 'resetting'
     const preparingStep = state.steps[state.index]
-    if (!preparingStep || !(await resetContext(state.sessionId, buildSpeckitCommand(options.activeProvider.value, preparingStep, state.featureId)))) {
+    if (!preparingStep || (!skipReset && !(await resetContext(state.sessionId, buildSpeckitCommand(options.activeProvider.value, preparingStep, state.featureId))))) {
       cascade.value = null
       return
     }

@@ -55,8 +55,43 @@ checks before finishing. Report the applied changes and final coverage status.
 Feature to review: {{args}}
 `
 
+const RENEW_SPEC_SKILL = `# Renew Spec
+
+Rewrite the target specification so it reads as the clean, authoritative
+definition of the product in its final intended state, as though it had been
+written from scratch with no earlier version.
+
+Remove all historical and transitional language, including:
+
+- descriptions of changing from A to B;
+- references to previous, legacy, old, current, or former behavior when they
+  exist only to explain how the specification evolved;
+- dates, timelines, changelogs, migration narratives, and statements about
+  when or why a requirement changed;
+- superseded requirements, before-and-after comparisons, and implementation
+  progress notes.
+
+Preserve the final intended behavior and all still-valid requirements. Resolve
+historical statements into direct, present-tense requirements instead of merely
+deleting information that defines the final state. Keep stable identifiers such
+as functional requirement IDs whenever the corresponding requirement remains.
+
+Refine the result as a Spec Kit specification focused only on user value,
+scenarios, testable functional requirements, key entities, success criteria,
+and assumptions. Keep implementation details out of spec.md. Ensure every
+functional requirement is observable and testable, terminology is consistent,
+and the document contains no trace of its revision history.
+
+Edit the specification files directly. Re-read the finished specification and
+remove any remaining historical framing before reporting a concise summary of
+the final-state definition and the changes applied.
+
+Feature to renew: {{args}}
+`
+
 const BUILTIN_SKILLS: Record<string, string> = {
-  'better-spec': BETTER_SPEC_SKILL
+  'better-spec': BETTER_SPEC_SKILL,
+  'renew-spec': RENEW_SPEC_SKILL
 }
 
 function parseSkill(id: string, markdown: string, path: string | null): Skill {

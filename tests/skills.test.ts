@@ -30,13 +30,19 @@ afterAll(async () => {
 })
 
 describe('listSkills', () => {
-  test('includes the built-in better-spec skill', async () => {
+  test('includes the built-in skills', async () => {
     const skills = await listSkills(projectDir)
-    const builtin = skills.find((skill) => skill.id === 'better-spec')
-    expect(builtin).toBeDefined()
-    expect(builtin?.name).toBe('Better Spec Review')
-    expect(builtin?.path).toBeNull()
-    expect(builtin?.description.length).toBeGreaterThan(0)
+    const betterSpec = skills.find((skill) => skill.id === 'better-spec')
+    expect(betterSpec).toBeDefined()
+    expect(betterSpec?.name).toBe('Better Spec Review')
+    expect(betterSpec?.path).toBeNull()
+    expect(betterSpec?.description.length).toBeGreaterThan(0)
+
+    const renewSpec = skills.find((skill) => skill.id === 'renew-spec')
+    expect(renewSpec).toBeDefined()
+    expect(renewSpec?.name).toBe('Renew Spec')
+    expect(renewSpec?.path).toBeNull()
+    expect(renewSpec?.description).toContain('authoritative definition')
   })
 
   test('lists project skill files with parsed metadata', async () => {
@@ -72,7 +78,7 @@ describe('listSkills', () => {
     const emptyDir = await mkdtemp(join(tmpdir(), 'skills-empty-'))
     try {
       const skills = await listSkills(emptyDir)
-      expect(skills.map((skill) => skill.id)).toEqual(['better-spec'])
+      expect(skills.map((skill) => skill.id)).toEqual(['better-spec', 'renew-spec'])
     } finally {
       await rm(emptyDir, { recursive: true, force: true })
     }
@@ -121,6 +127,16 @@ describe('renderSkillPrompt', () => {
     expect(prompt).not.toContain('{{detectedTraceabilityIssues}}')
   })
 
+  test('renders the built-in renew-spec skill', async () => {
+    const prompt = await renderSkillPrompt('renew-spec', 'specs/003-renew', projectDir)
+    expect(prompt).toContain('Feature to renew: specs/003-renew')
+    expect(prompt).toContain('written from scratch with no earlier version')
+    expect(prompt).toContain('descriptions of changing from A to B')
+    expect(prompt).toContain('dates, timelines, changelogs')
+    expect(prompt).toContain('Preserve the final intended behavior')
+    expect(prompt).not.toContain('{{args}}')
+  })
+
   test('returns null for unknown skills', async () => {
     expect(await renderSkillPrompt('does-not-exist', undefined, projectDir)).toBeNull()
   })
@@ -132,7 +148,7 @@ describe('renderSkillPrompt', () => {
 })
 
 describe('SKILL_ID_PATTERN', () => {
-  test.each(['better-spec', 'alpha', 'a1', '0skill'])('accepts %s', (id) => {
+  test.each(['better-spec', 'renew-spec', 'alpha', 'a1', '0skill'])('accepts %s', (id) => {
     expect(SKILL_ID_PATTERN.test(id)).toBe(true)
   })
 

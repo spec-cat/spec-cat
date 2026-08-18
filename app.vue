@@ -134,7 +134,7 @@ const {
   pendingActionLabel: pendingFeatureActionLabel, integrationError, connect,
   waitForAttached: () => specWorkspaceRef.value?.waitForNewSessionAttached() || Promise.resolve(''),
   waitForIdle: (id) => specWorkspaceRef.value?.waitForSessionIdle(id) || Promise.resolve(false),
-  dispatchAction: (action) => specWorkspaceRef.value?.dispatchFeatureAction(action), refreshSessions, pushToast
+  dispatchAction: (action, freshConversation) => specWorkspaceRef.value?.dispatchFeatureAction(action, freshConversation), refreshSessions, pushToast
 })
 const { loadAppSettings, persistAppSettings, disposeAppSettings } = useAppSettings({
   selectedThemeName, gitGraphState, defaultProvider, newSessionProvider, isMobile,
