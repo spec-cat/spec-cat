@@ -25,11 +25,6 @@
   "engines": {
     "node": ">=20.0.0"
   },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "node-pty"
-    ]
-  },
   "scripts": {
     "dev": "nuxt dev",
     "build": "node scripts/build-package.mjs",
