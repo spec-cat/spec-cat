@@ -16,6 +16,7 @@ export type SpecWorkflowStage =
 export type SpecWorkflowRecord = {
   id: string
   featureId: string
+  branch?: string
   sessionId: string
   provider: ProviderId
   status: SpecWorkflowStatus
@@ -31,7 +32,7 @@ export type SpecWorkflowRecord = {
 }
 
 export type SpecWorkflowDependencies = {
-  createSession: (options: { provider: ProviderId; baseBranch?: string }) => Promise<{ id: string }>
+  createSession: (options: { provider: ProviderId; branch?: string; baseBranch?: string }) => Promise<{ id: string }>
   runJob: (sessionId: string, prompt: string) => Promise<JobRecord>
   renderBetterSpec?: (featureId: string) => Promise<string>
   persist?: (workflow: SpecWorkflowRecord) => Promise<void>
@@ -40,6 +41,7 @@ export type SpecWorkflowDependencies = {
 export async function runSpecWorkflow(input: {
   featureId: string
   provider: ProviderId
+  branch?: string
   baseBranch?: string
   repairPlanning?: boolean
   maxPlanningRounds?: number
@@ -66,7 +68,11 @@ export async function runSpecWorkflow(input: {
   const reset = () => run('reset', '/new')
 
   try {
-    const session = await dependencies.createSession({ provider: input.provider, baseBranch: input.baseBranch })
+    const session = await dependencies.createSession({
+      provider: input.provider,
+      branch: input.branch,
+      baseBranch: input.baseBranch
+    })
     workflow.sessionId = session.id
     await save()
     let planningClean = input.repairPlanning === false
@@ -121,6 +127,7 @@ export async function runSpecWorkflow(input: {
 export function createSpecWorkflowRecord(input: {
   featureId: string
   provider: ProviderId
+  branch?: string
   maxPlanningRounds?: number
   maxReviewRounds?: number
 }): SpecWorkflowRecord {
@@ -128,6 +135,7 @@ export function createSpecWorkflowRecord(input: {
   return {
     id: `workflow-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     featureId: input.featureId,
+    branch: input.branch,
     sessionId: '',
     provider: input.provider,
     status: 'running',

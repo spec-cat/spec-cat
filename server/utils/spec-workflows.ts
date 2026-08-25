@@ -17,6 +17,7 @@ const workflowsDir = join(STORE_ROOT, 'workflows')
 export function startSpecWorkflow(input: {
   featureId: string
   provider: ProviderId
+  branch?: string
   baseBranch?: string
   repairPlanning?: boolean
   maxPlanningRounds?: number

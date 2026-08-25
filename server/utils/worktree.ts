@@ -36,9 +36,10 @@ export async function createSessionWorktree(
   projectDir: string,
   sessionId: string,
   requestedBaseBranch?: string,
-  featureId?: string
+  featureId?: string,
+  requestedBranch?: string
 ): Promise<ManagedWorktree> {
-  const branch = sessionWorktreeBranch(sessionId, featureId)
+  const branch = sessionWorktreeBranch(sessionId, featureId, requestedBranch)
   const worktreePath = join(WORKTREE_ROOT, `sc-${sessionId}`)
   const baseBranch = requestedBaseBranch
     ? await resolveRequestedBaseBranch(projectDir, requestedBaseBranch)
@@ -57,15 +58,22 @@ export async function createSessionWorktree(
 }
 
 /** Spec-created conversations use the spec directory name as their branch. */
-export function sessionWorktreeBranch(sessionId: string, featureId?: string) {
-  if (!featureId) return `sc/${sessionId}`
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,199}$/.test(featureId)) {
-    throw new Error(`Invalid spec feature id for branch: ${featureId}`)
+export function sessionWorktreeBranch(sessionId: string, featureId?: string, requestedBranch?: string) {
+  const branch = requestedBranch || featureId
+  if (!branch) return `sc/${sessionId}`
+  const valid = requestedBranch
+    ? /^(?!-)[a-zA-Z0-9][a-zA-Z0-9._/-]{0,199}$/.test(branch)
+      && !branch.includes('..')
+      && !branch.endsWith('/')
+      && !branch.includes('//')
+    : /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,199}$/.test(branch)
+  if (!valid) {
+    throw new Error(`Invalid branch: ${branch}`)
   }
-  if (PROTECTED_BRANCHES.has(featureId) || featureId.startsWith('sc/')) {
-    throw new Error(`Refusing to use protected branch for spec: ${featureId}`)
+  if (PROTECTED_BRANCHES.has(branch) || branch.startsWith('sc/')) {
+    throw new Error(`Refusing to use protected branch for spec: ${branch}`)
   }
-  return featureId
+  return branch
 }
 
 async function resolveRequestedBaseBranch(projectDir: string, branch: string) {

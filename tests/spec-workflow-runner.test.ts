@@ -22,6 +22,32 @@ function completedJob(id: string, message = ''): JobRecord {
 }
 
 describe('spec workflow runner', () => {
+  test('creates the workflow conversation on the requested branch', async () => {
+    let creation: Parameters<Parameters<typeof runSpecWorkflow>[1]['createSession']>[0] | undefined
+    const workflow = await runSpecWorkflow({
+      featureId: '039-reviews',
+      provider: 'codex',
+      branch: 'automation/039-reviews',
+      baseBranch: 'develop',
+      repairPlanning: false
+    }, {
+      async createSession(options) {
+        creation = options
+        return { id: 'conv-test-session' }
+      },
+      async runJob(_sessionId, prompt) {
+        return completedJob('job-1', prompt.includes('REVIEW_STATUS') ? 'REVIEW_STATUS: CLEAN' : 'done')
+      }
+    })
+
+    expect(creation).toEqual({
+      provider: 'codex',
+      branch: 'automation/039-reviews',
+      baseBranch: 'develop'
+    })
+    expect(workflow.branch).toBe('automation/039-reviews')
+  })
+
   test('resets context and stops after a clean review', async () => {
     const prompts: string[] = []
     const snapshots: SpecWorkflowRecord[] = []

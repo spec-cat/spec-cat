@@ -119,6 +119,7 @@ export type AutomationConversation = {
 /** Creates a managed conversation without attaching a browser terminal. */
 export async function createAutomationConversation(options: {
   provider?: ProviderId
+  branch?: string
   baseBranch?: string
   featureId?: string
 } = {}): Promise<AutomationConversation> {
@@ -126,7 +127,8 @@ export async function createAutomationConversation(options: {
     undefined,
     options.provider,
     options.baseBranch,
-    options.featureId
+    options.featureId,
+    options.branch
   )
   if (session.peers.size === 0) scheduleSessionCleanup(session)
   return {
@@ -316,14 +318,15 @@ async function getOrCreateSession(
   id?: string | null,
   provider?: ProviderId,
   baseBranch?: string,
-  featureId?: string
+  featureId?: string,
+  branch?: string
 ) {
-  if (!id) return createSession(undefined, provider, baseBranch, featureId)
+  if (!id) return createSession(undefined, provider, baseBranch, featureId, branch)
   const existing = sessions.get(id)
   if (existing) return existing
   const pending = sessionCreations.get(id)
   if (pending) return pending
-  const creation = createSession(id, provider, baseBranch, featureId)
+  const creation = createSession(id, provider, baseBranch, featureId, branch)
   sessionCreations.set(id, creation)
   try {
     return await creation
@@ -336,7 +339,8 @@ async function createSession(
   requestedSessionId?: string,
   requestedProvider: ProviderId = 'claude',
   requestedBaseBranch?: string,
-  requestedFeatureId?: string
+  requestedFeatureId?: string,
+  requestedBranch?: string
 ): Promise<TerminalSession> {
   const id = requestedSessionId || generateConversationId()
   const stored = await readStoredSession(id)
@@ -348,7 +352,7 @@ async function createSession(
   const cliBin = buildProviderCommand(provider)
   const tmuxName = stored?.tmuxName || `${provider}-web-${projectKey()}-${sanitizeTmuxName(id)}`
   const projectDir = stored?.projectDir || defaultProjectDir()
-  const worktree = stored ? null : await createSessionWorktree(projectDir, id, requestedBaseBranch, requestedFeatureId)
+  const worktree = stored ? null : await createSessionWorktree(projectDir, id, requestedBaseBranch, requestedFeatureId, requestedBranch)
   const cwd = stored?.cwd || worktree!.worktreePath
 
   let tmuxCreated = false

@@ -89,6 +89,10 @@ describe('isDeletableSessionBranch', () => {
 })
 
 describe('sessionWorktreeBranch', () => {
+  test('uses an explicitly requested nested branch', () => {
+    expect(sessionWorktreeBranch(SESSION_ID, '042-spec-browser', 'automation/042-spec-browser')).toBe('automation/042-spec-browser')
+  })
+
   test('uses the spec name for a spec-created conversation', () => {
     expect(sessionWorktreeBranch(SESSION_ID, '042-spec-browser')).toBe('042-spec-browser')
   })
