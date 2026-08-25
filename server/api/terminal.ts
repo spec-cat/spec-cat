@@ -109,6 +109,34 @@ const sessions = new Map<string, TerminalSession>()
 const sessionCreations = new Map<string, Promise<TerminalSession>>()
 const providerSessionCaptures = new Map<string, ProviderSessionCapture>()
 
+export type AutomationConversation = {
+  id: string
+  provider: ProviderId
+  tmuxName: string
+  cwd: string
+}
+
+/** Creates a managed conversation without attaching a browser terminal. */
+export async function createAutomationConversation(options: {
+  provider?: ProviderId
+  baseBranch?: string
+  featureId?: string
+} = {}): Promise<AutomationConversation> {
+  const session = await getOrCreateSession(
+    undefined,
+    options.provider,
+    options.baseBranch,
+    options.featureId
+  )
+  if (session.peers.size === 0) scheduleSessionCleanup(session)
+  return {
+    id: session.id,
+    provider: session.provider,
+    tmuxName: session.tmuxName,
+    cwd: session.cwd
+  }
+}
+
 export default defineWebSocketHandler({
   open(peer) {
     sendControl(peer, { type: 'hello' })
