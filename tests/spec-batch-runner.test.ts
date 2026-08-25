@@ -4,6 +4,7 @@ import {
   runSpecBatch,
   selectBatchFeatures
 } from '../server/utils/spec-batch-runner'
+import { analyzePlanningRepair } from '../server/utils/traceability'
 
 const features = [
   { featureId: '001-clean', alerts: [] },
@@ -12,6 +13,12 @@ const features = [
 ]
 
 describe('spec batch runner', () => {
+  test('repairs planning when documents or functional requirements are missing', () => {
+    expect(analyzePlanningRepair({ spec: null, plan: null, tasks: null }).alerts).toContain('spec.md is missing')
+    expect(analyzePlanningRepair({ spec: '# Spec', plan: '# Plan', tasks: '# Tasks' }).alerts)
+      .toContain('spec.md defines no FR-### requirements')
+  })
+
   test('selects all features and marks only traceability errors for planning repair', () => {
     expect(selectBatchFeatures(features).map((item) => item.featureId)).toEqual([
       '001-clean', '002-plan-gap',

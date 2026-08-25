@@ -90,6 +90,18 @@ export function analyzeTraceability(input: TraceabilityInput): TraceabilityRepor
   }
 }
 
+/** Adds document-shape failures used to decide whether planning must be rebuilt. */
+export function analyzePlanningRepair(input: TraceabilityInput): TraceabilityReport {
+  const report = analyzeTraceability(input)
+  const structuralAlerts = [
+    ...(input.spec == null ? ['spec.md is missing'] : []),
+    ...(input.spec != null && report.counts.total === 0 ? ['spec.md defines no FR-### requirements'] : []),
+    ...(input.plan == null ? ['plan.md is missing'] : []),
+    ...(input.tasks == null ? ['tasks.md is missing'] : [])
+  ]
+  return { ...report, alerts: [...structuralAlerts, ...report.alerts] }
+}
+
 export function formatTraceabilityContextForPrompt(report: TraceabilityReport): string {
   if (report.alerts.length === 0) {
     return [

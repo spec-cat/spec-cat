@@ -73,7 +73,8 @@ describe('spec workflow runner', () => {
 
     expect(workflow.status).toBe('done')
     expect(workflow.round).toBe(1)
-    expect(prompts.filter((prompt) => prompt === '/new')).toHaveLength(5)
+    expect(prompts.filter((prompt) => prompt === '/new')).toHaveLength(6)
+    expect(prompts[prompts.findIndex((prompt) => prompt.startsWith('Determine whether')) - 1]).toBe('/new')
     expect(prompts).toContain('$speckit-plan 039-reviews')
     expect(prompts).toContain('$speckit-tasks 039-reviews')
     expect(prompts).toContain('$speckit-analyze 039-reviews')
@@ -104,7 +105,8 @@ describe('spec workflow runner', () => {
 
     expect(workflow.status).toBe('done')
     expect(workflow.round).toBe(2)
-    expect(prompts.filter((prompt) => prompt === '/new')).toHaveLength(6)
+    expect(prompts.filter((prompt) => prompt === '/new')).toHaveLength(8)
+    expect(prompts[prompts.findIndex((prompt) => prompt.startsWith('Fix all findings')) - 1]).toBe('/new')
     expect(prompts.filter((prompt) => prompt.startsWith('Fix all findings'))).toHaveLength(1)
   })
 

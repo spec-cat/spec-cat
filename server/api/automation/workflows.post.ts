@@ -1,4 +1,5 @@
 import type { ProviderId } from '../../utils/session-store'
+import { inspectSpecFeature } from '../../utils/spec-batches'
 import { startSpecWorkflow } from '../../utils/spec-workflows'
 import { sessionWorktreeBranch } from '../../utils/worktree'
 
@@ -10,6 +11,7 @@ export default defineEventHandler(async (event) => {
     baseBranch?: unknown
     maxPlanningRounds?: unknown
     maxReviewRounds?: unknown
+    repairPlanning?: unknown
   }>(event).catch(() => null)
   if (!body || typeof body !== 'object') {
     throw createError({ statusCode: 400, statusMessage: 'Request body must be a JSON object' })
@@ -44,12 +46,25 @@ export default defineEventHandler(async (event) => {
   if (!Number.isInteger(reviewRounds) || Number(reviewRounds) < 1 || Number(reviewRounds) > 10) {
     throw createError({ statusCode: 400, statusMessage: 'maxReviewRounds must be an integer from 1 to 10' })
   }
+  if (body.repairPlanning !== undefined && typeof body.repairPlanning !== 'boolean') {
+    throw createError({ statusCode: 400, statusMessage: 'repairPlanning must be a boolean' })
+  }
+  const candidate = body.repairPlanning === undefined
+    ? await inspectSpecFeature(body.featureId)
+    : null
+  if (body.repairPlanning === undefined && !candidate) {
+    throw createError({ statusCode: 404, statusMessage: `Spec feature not found: ${body.featureId}` })
+  }
+  const repairPlanning = typeof body.repairPlanning === 'boolean'
+    ? body.repairPlanning
+    : Boolean(candidate?.alerts.length)
 
   const workflow = startSpecWorkflow({
     featureId: body.featureId,
     provider: provider as ProviderId,
     branch,
     baseBranch,
+    repairPlanning,
     maxPlanningRounds: Number(planningRounds),
     maxReviewRounds: Number(reviewRounds)
   })

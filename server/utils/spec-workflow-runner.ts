@@ -25,6 +25,7 @@ export type SpecWorkflowRecord = {
   planningRound: number
   maxPlanningRounds: number
   maxReviewRounds: number
+  repairPlanning: boolean
   jobs: string[]
   createdAt: string
   updatedAt: string
@@ -75,7 +76,7 @@ export async function runSpecWorkflow(input: {
     })
     workflow.sessionId = session.id
     await save()
-    let planningClean = input.repairPlanning === false
+    let planningClean = !workflow.repairPlanning
     let analysis = ''
     for (let planningRound = 1; !planningClean && planningRound <= maxPlanningRounds; planningRound++) {
       workflow.planningRound = planningRound
@@ -91,6 +92,7 @@ export async function runSpecWorkflow(input: {
       await run('tasks', speckitPrompt(input.provider, 'tasks', input.featureId))
       await reset()
       analysis = await run('analyze', speckitPrompt(input.provider, 'analyze', input.featureId))
+      await reset()
       const check = await run('analyze-check', analyzeCheckPrompt(input.featureId, analysis))
       if (analysisIsClean(check)) {
         planningClean = true
@@ -110,6 +112,7 @@ export async function runSpecWorkflow(input: {
       await reset()
       const review = await run('review', reviewPrompt(input.featureId))
       if (reviewIsClean(review)) break
+      await reset()
       await run('fix', fixPrompt(input.featureId, review))
     }
 
@@ -128,6 +131,7 @@ export function createSpecWorkflowRecord(input: {
   featureId: string
   provider: ProviderId
   branch?: string
+  repairPlanning?: boolean
   maxPlanningRounds?: number
   maxReviewRounds?: number
 }): SpecWorkflowRecord {
@@ -144,6 +148,7 @@ export function createSpecWorkflowRecord(input: {
     planningRound: 0,
     maxPlanningRounds: Math.min(10, Math.max(1, input.maxPlanningRounds ?? 3)),
     maxReviewRounds: Math.min(10, Math.max(1, input.maxReviewRounds ?? 3)),
+    repairPlanning: input.repairPlanning !== false,
     jobs: [],
     createdAt: now,
     updatedAt: now

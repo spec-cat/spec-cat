@@ -1,8 +1,9 @@
+import type { Dirent } from 'node:fs'
 import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { projectDir } from './project-dir'
 import { STORE_ROOT, type ProviderId } from './session-store'
-import { analyzeTraceability } from './traceability'
+import { analyzePlanningRepair } from './traceability'
 import {
   createSpecBatchRecord,
   runSpecBatch,
@@ -35,11 +36,13 @@ export async function startSpecBatch(input: {
         maxPlanningRounds: input.maxPlanningRounds,
         maxReviewRounds: input.maxReviewRounds
       })
-      return (await waitForSpecWorkflow(workflow.id)) || {
+      const completed = await waitForSpecWorkflow(workflow.id)
+      if (!completed || completed.status === 'running') return {
         id: workflow.id,
         status: 'failed' as const,
-        error: 'Workflow disappeared'
+        error: completed ? 'Workflow did not reach a terminal state' : 'Workflow disappeared'
       }
+      return { id: completed.id, status: completed.status, error: completed.error }
     },
     persist: async (record) => {
       batches.set(record.id, record)
@@ -59,25 +62,30 @@ export async function getSpecBatch(id: string) {
   }
 }
 
+export async function inspectSpecFeature(featureId: string): Promise<TraceabilityCandidate | null> {
+  const featureDir = join(projectDir(), 'specs', featureId)
+  const readOptional = async (filename: string) => {
+    try { return await readFile(join(featureDir, filename), 'utf8') } catch { return null }
+  }
+  const [spec, plan, tasks] = await Promise.all([
+    readOptional('spec.md'),
+    readOptional('plan.md'),
+    readOptional('tasks.md')
+  ])
+  if (spec === null && plan === null && tasks === null) return null
+  return { featureId, alerts: analyzePlanningRepair({ spec, plan, tasks }).alerts }
+}
+
 async function scanTraceabilityCandidates(): Promise<TraceabilityCandidate[]> {
   const specsRoot = join(projectDir(), 'specs')
-  let entries: string[] = []
-  try { entries = await readdir(specsRoot) } catch { return [] }
+  let entries: Dirent[] = []
+  try { entries = await readdir(specsRoot, { withFileTypes: true }) } catch { return [] }
 
   const candidates: TraceabilityCandidate[] = []
-  for (const featureId of entries.sort()) {
-    const featureDir = join(specsRoot, featureId)
-    const readOptional = async (filename: string) => {
-      try { return await readFile(join(featureDir, filename), 'utf8') } catch { return null }
-    }
-    const [spec, plan, tasks] = await Promise.all([
-      readOptional('spec.md'),
-      readOptional('plan.md'),
-      readOptional('tasks.md')
-    ])
-    if (spec === null && plan === null && tasks === null) continue
-    const report = analyzeTraceability({ spec, plan, tasks })
-    candidates.push({ featureId, alerts: report.alerts })
+  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    if (!entry.isDirectory()) continue
+    const candidate = await inspectSpecFeature(entry.name)
+    if (candidate) candidates.push(candidate)
   }
   return candidates
 }
