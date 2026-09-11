@@ -29,11 +29,28 @@ export type TraceabilityReport = {
 const FR_PATTERN = /\bFR-(\d{3})([a-z]?)\b/gi
 const TASK_LINE_PATTERN = /^\s*-\s+\[( |x|X)\]\s+(.+)$/
 
+/**
+ * A citation of another spec's requirement, written as the three-digit feature
+ * number followed by the FR token — `094 FR-016c`, `(064 FR-038a)`.
+ *
+ * These are references, not requirements of the document they appear in.
+ * Counting them as local requirements produces alerts that cannot be satisfied
+ * without deleting a legitimate cross-reference, so they are excluded.
+ */
+const CROSS_SPEC_CITATION = /[^\w-]\d{3}[ \t]+$/
+const CITATION_LOOKBEHIND = 24
+
+function isCrossSpecCitation(text: string, matchStart: number): boolean {
+  const preceding = ` ${text.slice(Math.max(0, matchStart - CITATION_LOOKBEHIND), matchStart)}`
+  return CROSS_SPEC_CITATION.test(preceding)
+}
+
 export function extractRequirementIds(text: string): string[] {
   const ids: string[] = []
   const seen = new Set<string>()
 
   for (const match of text.matchAll(FR_PATTERN)) {
+    if (isCrossSpecCitation(text, match.index ?? 0)) continue
     const id = `FR-${match[1]}${(match[2] ?? '').toLowerCase()}`
     if (seen.has(id)) continue
     seen.add(id)

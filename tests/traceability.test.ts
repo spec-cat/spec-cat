@@ -28,9 +28,30 @@ describe('extractRequirementIds', () => {
   test('ignores non-matching tokens', () => {
     expect(extractRequirementIds('FRX-001 XFR-002 FR-12345 FR- none')).toEqual([])
   })
+
+  test('ignores citations of another spec\u2019s requirements', () => {
+    expect(extractRequirementIds('Reused by the voucher screen (094 FR-016c).')).toEqual([])
+    expect(extractRequirementIds('see 064 FR-038a and 094 FR-022a')).toEqual([])
+    expect(extractRequirementIds('094 FR-016c and FR-001')).toEqual(['FR-001'])
+  })
+
+  test('keeps ids that merely follow a number', () => {
+    expect(extractRequirementIds('covers 12 cases: FR-001')).toEqual(['FR-001'])
+    expect(extractRequirementIds('id 1094 FR-002')).toEqual(['FR-002'])
+  })
 })
 
 describe('analyzeTraceability', () => {
+  test('does not demand coverage for another spec\u2019s requirements', () => {
+    const report = analyzeTraceability({
+      spec: `${specWith(['FR-001'])}\nCreated by the voucher flow (094 FR-016c).`,
+      plan: 'Implements FR-001.',
+      tasks: '- [x] T001 covers FR-001, mirroring 094 FR-016c'
+    })
+    expect(report.requirements.map((requirement) => requirement.id)).toEqual(['FR-001'])
+    expect(report.alerts).toEqual([])
+  })
+
   test('reports full coverage with no alerts and none risk', () => {
     const report = analyzeTraceability({
       spec: specWith(['FR-001', 'FR-002']),

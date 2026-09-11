@@ -33,6 +33,14 @@ that they follow the What/How/Track separation used by this project:
 - Count plan coverage only when the literal FR token appears in \`plan.md\`.
 - Count task coverage only when the FR token appears on the same markdown checkbox line (\`- [ ]\` or \`- [x]\`) in \`tasks.md\`.
 - Treat an FR token on a checkbox task that is absent from \`spec.md\` as an error.
+- A three-digit feature number in front of an FR token (\`094 FR-016c\`) marks a
+  citation of another feature's requirement. The checker skips those, and so must
+  you: they are references, not requirements of this document.
+
+**Never delete or renumber an FR token to make an alert go away.** An alert is
+resolved by adding the missing definition to spec.md, adding the missing coverage
+to plan.md or tasks.md, or correcting a genuine typo confirmed against the other
+documents. Removing a requirement id destroys traceability and is never the fix.
 
 Perform the following checks and directly fix every violation you find:
 
