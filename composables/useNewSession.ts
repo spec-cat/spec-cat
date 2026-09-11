@@ -30,7 +30,7 @@ export function useNewSession(options: {
   const settingsDoneRef = ref<{ focusDone: () => void } | null>(null)
   const settingsProviderOptions = computed<SessionProviderOption[]>(() => sessionOptions.value.providers.length
     ? sessionOptions.value.providers
-    : [{ id: 'claude', name: 'Claude' }, { id: 'codex', name: 'Codex' }])
+    : [{ id: 'claude', name: 'Claude' }, { id: 'codex', name: 'Codex' }, { id: 'agy', name: 'Antigravity' }])
 
   async function loadSessionOptions() {
     loadingSessionOptions.value = true

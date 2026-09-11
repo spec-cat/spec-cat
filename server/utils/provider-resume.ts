@@ -44,6 +44,11 @@ export function buildProviderCommand(provider: ProviderId, resumeSessionId?: str
     if (!resumeSessionId) return `${bin} --dangerously-bypass-approvals-and-sandbox`
     return `${bin} resume ${quoteResumeSessionId(resumeSessionId)} --dangerously-bypass-approvals-and-sandbox`
   }
+  if (provider === 'agy') {
+    const bin = process.env.AGY_BIN || process.env.AGY_CLI_PATH || 'agy'
+    if (!resumeSessionId) return `${bin} --dangerously-skip-permissions`
+    return `${bin} --conversation ${quoteResumeSessionId(resumeSessionId)} --dangerously-skip-permissions`
+  }
 
   const bin = process.env.CLAUDE_BIN || 'claude'
   if (!resumeSessionId) return `${bin} --dangerously-skip-permissions`
@@ -54,11 +59,12 @@ export function buildProviderCommand(provider: ProviderId, resumeSessionId?: str
  * Builds the launch command for a throwaway one-shot query session. Claude is
  * started with an explicit `--session-id` so the transcript file the query
  * writes is known up front — resolving it by newest-mtime would race with any
- * other Claude session running in the same cwd. Codex has no equivalent flag,
- * so it launches plain and its rollout is found by exclusion instead.
+ * other Claude session running in the same cwd. Codex and AGY launch plain
+ * and their sessions are found by exclusion instead.
  */
 export function buildProviderQueryCommand(provider: ProviderId, claudeSessionId: string): string {
   if (provider === 'codex') return buildProviderCommand('codex')
+  if (provider === 'agy') return buildProviderCommand('agy')
   const bin = process.env.CLAUDE_BIN || 'claude'
   return `${bin} --session-id ${quoteResumeSessionId(claudeSessionId)} --dangerously-skip-permissions`
 }
@@ -134,6 +140,29 @@ export async function findCodexSessionId(
 /** Lowercased ids of every Codex rollout currently on disk. */
 export async function listCodexSessionIds(): Promise<Set<string>> {
   const candidates = await collectCodexCandidates(getCodexSessionsDir())
+  return new Set(candidates.map((candidate) => candidate.id.toLowerCase()))
+}
+
+/**
+ * Returns the session id (UUID) of the most recently modified AGY conversation
+ * whose recorded cwd matches `cwd` and whose file mtime is at or after
+ * `afterMs`, or null when no matching conversation exists yet.
+ */
+export async function findAgySessionId(
+  cwd: string,
+  afterMs: number,
+  excludeIds?: ReadonlySet<string>
+): Promise<string | null> {
+  let candidates = await collectAgyCandidates(afterMs)
+  if (excludeIds?.size) {
+    candidates = candidates.filter((candidate) => !excludeIds.has(candidate.id.toLowerCase()))
+  }
+  return pickStrictAgyCwdMatch(candidates, cwd)
+}
+
+/** Lowercased ids of every AGY conversation currently on disk. */
+export async function listAgySessionIds(): Promise<Set<string>> {
+  const candidates = await collectAgyCandidates()
   return new Set(candidates.map((candidate) => candidate.id.toLowerCase()))
 }
 
@@ -257,6 +286,76 @@ export function extractCodexAgentText(entry: unknown): string | undefined {
   return undefined
 }
 
+/**
+ * Best-effort: reads the last assistant message text from the AGY session for
+ * `cwd`. Prefers the session identified by `providerSessionId`; otherwise
+ * the newest session matching `cwd`. Returns undefined when none is found.
+ */
+export async function readLastAgyAssistantMessage(
+  cwd: string,
+  providerSessionId?: string
+): Promise<string | undefined> {
+  const agyHome = getAgyHomeDir()
+  let id = providerSessionId
+  if (!id) {
+    id = (await findAgySessionId(cwd, 0)) ?? undefined
+  }
+  if (!id) return undefined
+
+  const searchPaths = [
+    join(agyHome, 'brain', id, '.system_generated', 'logs', 'transcript_full.jsonl'),
+    join(agyHome, 'brain', id, '.system_generated', 'logs', 'transcript.jsonl'),
+    join(agyHome, 'conversations', `${id}.jsonl`),
+    join(agyHome, 'sessions', `${id}.jsonl`),
+    join(agyHome, `${id}.jsonl`)
+  ]
+
+  let raw: string | null = null
+  for (const path of searchPaths) {
+    try {
+      raw = await readFile(path, 'utf8')
+      break
+    } catch {}
+  }
+  if (!raw) return undefined
+
+  const lines = raw.split('\n')
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i]?.trim()
+    if (!line) continue
+    let entry: unknown
+    try {
+      entry = JSON.parse(line)
+    } catch {
+      continue
+    }
+    const text = extractAgyAgentText(entry)
+    if (text) return text
+  }
+  return undefined
+}
+
+export function extractAgyAgentText(entry: unknown): string | undefined {
+  if (!entry || typeof entry !== 'object') return undefined
+  const e = entry as Record<string, unknown>
+  if (e.type === 'PLANNER_RESPONSE' && typeof e.content === 'string') {
+    return e.content.trim() || undefined
+  }
+  if (typeof e.content === 'string' && e.content.trim()) {
+    return e.content.trim()
+  }
+  if (typeof e.last_agent_message === 'string' && e.last_agent_message.trim()) {
+    return e.last_agent_message.trim()
+  }
+  if (typeof e.message === 'string' && e.message.trim()) {
+    return e.message.trim()
+  }
+  if (e.payload && typeof e.payload === 'object') {
+    return extractAgyAgentText(e.payload)
+  }
+  return undefined
+}
+
 function quoteResumeSessionId(resumeSessionId: string): string {
   if (!RESUME_SESSION_ID_RE.test(resumeSessionId)) {
     throw new Error(`Invalid provider resume session id: ${JSON.stringify(resumeSessionId)}`)
@@ -339,4 +438,120 @@ async function getFileMtime(path: string): Promise<number | null> {
 
 function sortNewestFirst(candidates: SessionFileCandidate[]): SessionFileCandidate[] {
   return [...candidates].sort((a, b) => b.mtime - a.mtime)
+}
+
+function getAgyHomeDir(): string {
+  return process.env.AGY_HOME
+    || process.env.ANTIGRAVITY_HOME
+    || join(process.env.HOME || homedir(), '.gemini', 'antigravity-cli')
+}
+
+const AGY_SESSION_FILENAME_RE = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.(?:db|jsonl)$/i
+
+async function collectAgyCandidates(afterMs = 0): Promise<SessionFileCandidate[]> {
+  const agyHome = getAgyHomeDir()
+  const candidates: SessionFileCandidate[] = []
+  const seenIds = new Set<string>()
+
+  // 1. Check conversations/ directory (<uuid>.db or <uuid>.jsonl)
+  const convDir = join(agyHome, 'conversations')
+  try {
+    const entries = await readdir(convDir, { withFileTypes: true })
+    for (const entry of entries) {
+      if (!entry.isFile()) continue
+      const match = AGY_SESSION_FILENAME_RE.exec(entry.name)
+      if (!match) continue
+      const id = match[1]!
+      const fullPath = join(convDir, entry.name)
+      const mtime = await getFileMtime(fullPath)
+      if (mtime === null || mtime + 1 < afterMs) continue
+      candidates.push({ path: fullPath, id, mtime })
+      seenIds.add(id.toLowerCase())
+    }
+  } catch {}
+
+  // 2. Check brain/ directory (<uuid>/)
+  const brainDir = join(agyHome, 'brain')
+  try {
+    const entries = await readdir(brainDir, { withFileTypes: true })
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      const id = entry.name
+      if (!RESUME_SESSION_ID_RE.test(id) || seenIds.has(id.toLowerCase())) continue
+      const fullPath = join(brainDir, id)
+      const transcriptPath = join(fullPath, '.system_generated', 'logs', 'transcript.jsonl')
+      const mtime = (await getFileMtime(transcriptPath)) ?? (await getFileMtime(fullPath))
+      if (mtime === null || mtime + 1 < afterMs) continue
+      candidates.push({ path: fullPath, id, mtime })
+      seenIds.add(id.toLowerCase())
+    }
+  } catch {}
+
+  // 3. Check sessions/ directory (alternative/test layout)
+  const sessionsDir = join(agyHome, 'sessions')
+  try {
+    const entries = await readdir(sessionsDir, { withFileTypes: true })
+    for (const entry of entries) {
+      if (!entry.isFile()) continue
+      const match = AGY_SESSION_FILENAME_RE.exec(entry.name)
+      if (!match) continue
+      const id = match[1]!
+      if (seenIds.has(id.toLowerCase())) continue
+      const fullPath = join(sessionsDir, entry.name)
+      const mtime = await getFileMtime(fullPath)
+      if (mtime === null || mtime + 1 < afterMs) continue
+      candidates.push({ path: fullPath, id, mtime })
+      seenIds.add(id.toLowerCase())
+    }
+  } catch {}
+
+  return candidates
+}
+
+async function pickStrictAgyCwdMatch(
+  candidates: SessionFileCandidate[],
+  cwd: string
+): Promise<string | null> {
+  for (const candidate of sortNewestFirst(candidates)) {
+    if (await checkAgyCandidateMatchesCwd(candidate, cwd)) return candidate.id
+  }
+  return null
+}
+
+async function checkAgyCandidateMatchesCwd(
+  candidate: SessionFileCandidate,
+  cwd: string
+): Promise<boolean> {
+  let targetPath = candidate.path
+  try {
+    const st = await stat(targetPath)
+    if (st.isDirectory()) {
+      targetPath = join(targetPath, '.system_generated', 'logs', 'transcript.jsonl')
+    }
+  } catch {
+    return false
+  }
+
+  let handle
+  try {
+    handle = await open(targetPath, 'r')
+    const buffer = Buffer.alloc(65536)
+    const { bytesRead } = await handle.read(buffer, 0, 65536, 0)
+    const head = buffer.toString('utf-8', 0, bytesRead)
+    const escaped = CWD_RE.exec(head)?.[1]
+    if (escaped !== undefined) {
+      try {
+        if (JSON.parse(`"${escaped}"`) === cwd) return true
+      } catch {
+        if (escaped === cwd) return true
+      }
+    }
+    const fileUri = `file://${cwd}`
+    if (head.includes(fileUri) || head.includes(`"${cwd}"`)) return true
+    return false
+  } catch {
+    return false
+  } finally {
+    await handle?.close().catch(() => {})
+  }
 }

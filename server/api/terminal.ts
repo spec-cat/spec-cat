@@ -29,6 +29,7 @@ import {
 import { startCliHookMonitor, type CliHookMonitor } from '../utils/cli-hook-monitor'
 import {
   buildProviderCommand,
+  findAgySessionId,
   findClaudeSessionId,
   findCodexSessionId
 } from '../utils/provider-resume'
@@ -730,7 +731,11 @@ function startProviderSessionCapture(sessionId: string, provider: ProviderId, cw
   providerSessionCaptures.set(sessionId, capture)
 
   const deadline = afterMs + PROVIDER_SESSION_POLL_TIMEOUT_MS
-  const finder = provider === 'codex' ? findCodexSessionId : findClaudeSessionId
+  const finder = provider === 'codex'
+    ? findCodexSessionId
+    : provider === 'agy'
+    ? findAgySessionId
+    : findClaudeSessionId
   const finish = () => {
     capture.cancelled = true
     if (providerSessionCaptures.get(sessionId) === capture) {

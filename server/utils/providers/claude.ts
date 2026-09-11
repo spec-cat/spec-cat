@@ -4,6 +4,7 @@ import type { ProviderId, SessionRuntimeState, StoredTerminalSession } from '../
 import { getTerminalActivity, type TerminalRuntimeActivity } from '../runtime-activity'
 import { isClaudeTurnComplete } from './claude-turn'
 import { isCodexTurnComplete } from './codex-turn'
+import { isAgyTurnComplete } from './agy-turn'
 
 const TMUX_BIN = process.env.TMUX_BIN || 'tmux'
 const execFileAsync = promisify(execFile)
@@ -135,6 +136,8 @@ function classifyProviderScreen(
   const normalized = screen.toLowerCase()
   const hasPrompt = provider === 'codex'
     ? isCodexTurnComplete(screen)
+    : provider === 'agy'
+    ? isAgyTurnComplete(screen)
     : isClaudeTurnComplete(screen)
   const now = Date.now()
   const submittedRecently = Boolean(
@@ -199,6 +202,24 @@ function isWaitingForInput(provider: ProviderId, screen: string) {
     if (isCodexTurnComplete(screen)) return false
     const tail = screen.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).slice(-12)
     if (tail.some((line) => line.startsWith('›') && line !== '›')) return true
+  } else if (provider === 'agy') {
+    if (isAgyTurnComplete(screen)) return false
+    const stripped = normalized.replace(/esc to cancel/g, '')
+    return [
+      'do you want',
+      'permission',
+      'approve',
+      'allow',
+      'deny',
+      'continue?',
+      'yes/no',
+      'y/n',
+      'press enter',
+      'manual mode on',
+      'trust this directory',
+      'run this command',
+      'apply changes'
+    ].some((pattern) => stripped.includes(pattern))
   } else if (screen.includes('❯')) {
     return false
   }

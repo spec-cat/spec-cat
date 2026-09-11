@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { getConfiguredProjectRoot } from './git-access'
 import { projectStoreRoot } from './project-dir'
 
-export type ProviderId = 'claude' | 'codex'
+export type ProviderId = 'claude' | 'codex' | 'agy'
 
 export type StoredTerminalSession = {
   id: string
@@ -189,8 +189,8 @@ export async function readStoredSession(id: string): Promise<StoredTerminalSessi
     }
     return {
       ...parsed,
-      provider: parsed.provider === 'codex' ? 'codex' : 'claude',
-      cliBin: parsed.cliBin || parsed.claudeBin || 'claude'
+      provider: parsed.provider === 'codex' ? 'codex' : parsed.provider === 'agy' ? 'agy' : 'claude',
+      cliBin: parsed.cliBin || parsed.claudeBin || (parsed.provider === 'codex' ? 'codex' : parsed.provider === 'agy' ? 'agy' : 'claude')
     }
   } catch (error) {
     if (isMissingFile(error)) return null

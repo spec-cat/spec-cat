@@ -18,7 +18,7 @@ export function useAppSettings(options: {
       const settings = response.settings || {}
       if (settings.theme && options.isKnownTheme(settings.theme)) options.selectedThemeName.value = settings.theme
       if ((settings.gitGraphState === 'floating' || settings.gitGraphState === 'pinned') && options.isMobile.value) options.gitGraphState.value = settings.gitGraphState
-      if (settings.defaultProvider === 'claude' || settings.defaultProvider === 'codex') {
+      if (settings.defaultProvider === 'claude' || settings.defaultProvider === 'codex' || settings.defaultProvider === 'agy') {
         options.defaultProvider.value = settings.defaultProvider
         options.newSessionProvider.value = settings.defaultProvider
       }

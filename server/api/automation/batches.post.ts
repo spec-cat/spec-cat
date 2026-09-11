@@ -12,8 +12,8 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Request body must be a JSON object' })
   }
   const provider = body.provider === undefined ? 'codex' : body.provider
-  if (provider !== 'claude' && provider !== 'codex') {
-    throw createError({ statusCode: 400, statusMessage: 'Provider must be claude or codex' })
+  if (provider !== 'claude' && provider !== 'codex' && provider !== 'agy') {
+    throw createError({ statusCode: 400, statusMessage: 'Provider must be claude, codex, or agy' })
   }
   const baseBranch = body.baseBranch === undefined ? undefined : String(body.baseBranch).trim()
   if (body.baseBranch !== undefined && (!baseBranch || typeof body.baseBranch !== 'string')) {

@@ -25,7 +25,7 @@ import { promisify } from 'node:util'
 import { readStoredSession } from './session-store'
 import { getCliHookSpoolPath, providerSupportsCliHooks } from './cli-hooks'
 import { startCliHookMonitor, type CliHookMonitor } from './cli-hook-monitor'
-import { encodeClaudeProjectDir, readLastCodexAgentMessage } from './provider-resume'
+import { encodeClaudeProjectDir, readLastAgyAssistantMessage, readLastCodexAgentMessage } from './provider-resume'
 import { isProviderTurnComplete } from './providers/turn-completion'
 import { submitPromptTurn } from './tmux-input'
 import {
@@ -122,6 +122,8 @@ export function createTmuxJobExecutor(): JobExecutor {
 
       const lastAssistantMessage = job.provider === 'claude'
         ? await readLastClaudeAssistantMessage(context.cwd, context.providerSessionId).catch(() => undefined)
+        : job.provider === 'agy'
+        ? await readLastAgyAssistantMessage(context.cwd, context.providerSessionId).catch(() => undefined)
         : await readLastCodexAgentMessage(context.cwd, context.providerSessionId).catch(() => undefined)
       return lastAssistantMessage ? { lastAssistantMessage } : undefined
     } finally {

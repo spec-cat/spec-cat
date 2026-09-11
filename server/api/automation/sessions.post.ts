@@ -13,8 +13,8 @@ export default defineEventHandler(async (event) => {
   }
 
   const provider = body.provider === undefined ? 'codex' : body.provider
-  if (provider !== 'claude' && provider !== 'codex') {
-    throw createError({ statusCode: 400, statusMessage: 'Provider must be claude or codex' })
+  if (provider !== 'claude' && provider !== 'codex' && provider !== 'agy') {
+    throw createError({ statusCode: 400, statusMessage: 'Provider must be claude, codex, or agy' })
   }
   const baseBranch = optionalString(body.baseBranch, 'baseBranch')
   const featureId = optionalString(body.featureId, 'featureId')

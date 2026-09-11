@@ -11,7 +11,7 @@
  * serves, never another concurrently-running instance's.
  */
 export function managedTmuxNamePattern(projectKey: string): RegExp {
-  return new RegExp(`^(claude|codex)-web-${escapeRegExp(projectKey)}-`)
+  return new RegExp(`^(claude|codex|agy)-web-${escapeRegExp(projectKey)}-`)
 }
 
 /**
@@ -21,7 +21,7 @@ export function managedTmuxNamePattern(projectKey: string): RegExp {
  * and can be killed unconditionally — but still only within this project.
  */
 export function queryTmuxNamePattern(projectKey: string): RegExp {
-  return new RegExp(`^(claude|codex)-query-${escapeRegExp(projectKey)}-`)
+  return new RegExp(`^(claude|codex|agy)-query-${escapeRegExp(projectKey)}-`)
 }
 
 function escapeRegExp(value: string): string {

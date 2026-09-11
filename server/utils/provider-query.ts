@@ -21,8 +21,11 @@ import { promisify } from 'node:util'
 import { projectDir, projectKey } from './project-dir'
 import {
   buildProviderQueryCommand,
+  findAgySessionId,
   findCodexSessionId,
+  listAgySessionIds,
   listCodexSessionIds,
+  readLastAgyAssistantMessage,
   readLastCodexAgentMessage
 } from './provider-resume'
 import { readLastClaudeAssistantMessage } from './job-executor'
@@ -97,6 +100,8 @@ export async function runProviderQuery(
   const claudeSessionId = provider === 'claude' ? randomUUID() : null
   const preexistingCodexIds =
     provider === 'codex' ? await listCodexSessionIds().catch(() => new Set<string>()) : null
+  const preexistingAgyIds =
+    provider === 'agy' ? await listAgySessionIds().catch(() => new Set<string>()) : null
 
   try {
     // A single string makes tmux run the command through `sh -c`, so the CLI
@@ -135,7 +140,8 @@ export async function runProviderQuery(
       deadline,
       timeoutMs,
       claudeSessionId,
-      preexistingCodexIds
+      preexistingCodexIds,
+      preexistingAgyIds
     })
   } finally {
     if (options.trackKey && activeQueryTmuxNames.get(options.trackKey) === tmuxName) {
@@ -231,6 +237,7 @@ type AnswerWaitContext = {
   timeoutMs: number
   claudeSessionId: string | null
   preexistingCodexIds: Set<string> | null
+  preexistingAgyIds: Set<string> | null
 }
 
 /**
@@ -270,8 +277,8 @@ async function waitForAnswer(
 /**
  * Reads the agent's last message from the query session's OWN transcript and
  * nothing else: the Claude file is addressed by the session id the CLI was
- * launched with, and the Codex rollout is the strict-cwd match that did not
- * exist before launch. A concurrent session in the same cwd can therefore
+ * launched with, and the Codex rollout / AGY conversation is the strict-cwd match
+ * that did not exist before launch. A concurrent session in the same cwd can therefore
  * never be mistaken for the query's answer.
  */
 async function readOwnFinalMessage(
@@ -286,6 +293,17 @@ async function readOwnFinalMessage(
     ).catch(() => null)
     if (!sessionId) return ''
     const message = await readLastCodexAgentMessage(context.cwd, sessionId).catch(() => undefined)
+    return message?.trim() || ''
+  }
+
+  if (provider === 'agy') {
+    const sessionId = await findAgySessionId(
+      context.cwd,
+      context.launchedAtMs,
+      context.preexistingAgyIds ?? undefined
+    ).catch(() => null)
+    if (!sessionId) return ''
+    const message = await readLastAgyAssistantMessage(context.cwd, sessionId).catch(() => undefined)
     return message?.trim() || ''
   }
 
@@ -333,7 +351,7 @@ function describeQueryFailure(
   if (error && typeof error === 'object') {
     const failure = error as { code?: unknown; stderr?: unknown; message?: string }
     if (failure.code === 'ENOENT') {
-      return `${provider} CLI binary not found — check CLAUDE_BIN / CODEX_CLI_PATH / CODEX_BIN or PATH`
+      return `${provider} CLI binary not found — check CLAUDE_BIN / CODEX_CLI_PATH / CODEX_BIN / AGY_BIN / AGY_CLI_PATH or PATH`
     }
     const stderrTail =
       typeof failure.stderr === 'string'

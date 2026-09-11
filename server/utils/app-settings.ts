@@ -5,12 +5,12 @@ import { STORE_ROOT } from './session-store'
 export type AppSettings = {
   theme?: string
   gitGraphState?: 'floating' | 'pinned' | 'none'
-  defaultProvider?: 'claude' | 'codex'
+  defaultProvider?: 'claude' | 'codex' | 'agy'
 }
 
 const SETTINGS_PATH = join(STORE_ROOT, 'settings.json')
 const GIT_GRAPH_STATES = new Set(['floating', 'pinned', 'none'])
-const PROVIDERS = new Set(['claude', 'codex'])
+const PROVIDERS = new Set(['claude', 'codex', 'agy'])
 
 export function normalizeAppSettings(value: unknown): AppSettings {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}

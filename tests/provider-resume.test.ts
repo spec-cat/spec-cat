@@ -6,10 +6,14 @@ import {
   buildProviderCommand,
   buildProviderQueryCommand,
   encodeClaudeProjectDir,
+  extractAgyAgentText,
   extractCodexAgentText,
+  findAgySessionId,
   findClaudeSessionId,
   findCodexSessionId,
+  listAgySessionIds,
   listCodexSessionIds,
+  readLastAgyAssistantMessage,
   readLastCodexAgentMessage
 } from '../server/utils/provider-resume'
 
@@ -20,16 +24,23 @@ const savedEnv = {
   CODEX_BIN: process.env.CODEX_BIN,
   CODEX_CLI_PATH: process.env.CODEX_CLI_PATH,
   CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR,
-  CODEX_HOME: process.env.CODEX_HOME
+  CODEX_HOME: process.env.CODEX_HOME,
+  AGY_BIN: process.env.AGY_BIN,
+  AGY_CLI_PATH: process.env.AGY_CLI_PATH,
+  AGY_HOME: process.env.AGY_HOME
 }
 delete process.env.CLAUDE_BIN
 delete process.env.CODEX_BIN
 delete process.env.CODEX_CLI_PATH
+delete process.env.AGY_BIN
+delete process.env.AGY_CLI_PATH
 
 const claudeRoot = await mkdtemp(join(tmpdir(), 'provider-resume-claude-'))
 const codexRoot = await mkdtemp(join(tmpdir(), 'provider-resume-codex-'))
+const agyRoot = await mkdtemp(join(tmpdir(), 'provider-resume-agy-'))
 process.env.CLAUDE_CONFIG_DIR = claudeRoot
 process.env.CODEX_HOME = codexRoot
+process.env.AGY_HOME = agyRoot
 
 afterAll(async () => {
   for (const [key, value] of Object.entries(savedEnv)) {
@@ -38,6 +49,7 @@ afterAll(async () => {
   }
   await rm(claudeRoot, { recursive: true, force: true })
   await rm(codexRoot, { recursive: true, force: true })
+  await rm(agyRoot, { recursive: true, force: true })
 })
 
 const SESSION_ID = '123e4567-e89b-42d3-a456-426614174000'
@@ -51,11 +63,13 @@ describe('buildProviderCommand', () => {
   test('returns the plain launch commands without a resume id', () => {
     expect(buildProviderCommand('claude')).toBe('claude --dangerously-skip-permissions')
     expect(buildProviderCommand('codex')).toBe('codex --dangerously-bypass-approvals-and-sandbox')
+    expect(buildProviderCommand('agy')).toBe('agy --dangerously-skip-permissions')
   })
 
   test('treats null and undefined resume ids as absent', () => {
     expect(buildProviderCommand('claude', null)).toBe('claude --dangerously-skip-permissions')
     expect(buildProviderCommand('codex', undefined)).toBe('codex --dangerously-bypass-approvals-and-sandbox')
+    expect(buildProviderCommand('agy', null)).toBe('agy --dangerously-skip-permissions')
   })
 
   test('builds resume commands with a quoted session id', () => {
@@ -63,6 +77,8 @@ describe('buildProviderCommand', () => {
       .toBe(`claude --resume '${SESSION_ID}' --dangerously-skip-permissions`)
     expect(buildProviderCommand('codex', SESSION_ID))
       .toBe(`codex resume '${SESSION_ID}' --dangerously-bypass-approvals-and-sandbox`)
+    expect(buildProviderCommand('agy', SESSION_ID))
+      .toBe(`agy --conversation '${SESSION_ID}' --dangerously-skip-permissions`)
   })
 
   test.each([
@@ -75,6 +91,7 @@ describe('buildProviderCommand', () => {
   ])('rejects a non-uuid resume id: %p', (value) => {
     expect(() => buildProviderCommand('claude', value)).toThrow('Invalid provider resume session id')
     expect(() => buildProviderCommand('codex', value)).toThrow('Invalid provider resume session id')
+    expect(() => buildProviderCommand('agy', value)).toThrow('Invalid provider resume session id')
   })
 })
 
@@ -87,6 +104,11 @@ describe('buildProviderQueryCommand', () => {
   test('launches codex plain — it has no session-id flag', () => {
     expect(buildProviderQueryCommand('codex', SESSION_ID))
       .toBe('codex --dangerously-bypass-approvals-and-sandbox')
+  })
+
+  test('launches agy plain — it has no session-id flag', () => {
+    expect(buildProviderQueryCommand('agy', SESSION_ID))
+      .toBe('agy --dangerously-skip-permissions')
   })
 
   test('rejects a non-uuid claude session id', () => {
@@ -273,5 +295,108 @@ describe('readLastCodexAgentMessage', () => {
 
   test('returns undefined when no rollout matches the cwd', async () => {
     expect(await readLastCodexAgentMessage('/work/no-such-codex-cwd')).toBeUndefined()
+  })
+})
+
+describe('findAgySessionId', () => {
+  test('returns null when no session exists yet', async () => {
+    expect(await findAgySessionId('/nowhere/never', Date.now())).toBeNull()
+  })
+
+  test('picks the newest session whose recorded cwd matches', async () => {
+    const cwd = '/work/agy-newest'
+    const dir = join(agyRoot, 'conversations')
+    await mkdir(dir, { recursive: true })
+
+    const afterMs = Date.now() - 10_000
+    const olderId = '11111111-2222-4333-8444-555555555555'
+    const newerId = '22222222-3333-4444-8555-666666666666'
+    const otherCwdId = '33333333-4444-4555-8666-777777777777'
+    await writeSessionFile(join(dir, `${olderId}.jsonl`), cwd, afterMs + 1_000)
+    await writeSessionFile(join(dir, `${newerId}.jsonl`), cwd, afterMs + 5_000)
+    await writeSessionFile(join(dir, `${otherCwdId}.jsonl`), '/work/other', afterMs + 9_000)
+
+    expect(await findAgySessionId(cwd, afterMs)).toBe(newerId)
+  })
+
+  test('ignores sessions older than afterMs', async () => {
+    const cwd = '/work/agy-stale'
+    const dir = join(agyRoot, 'conversations')
+    await mkdir(dir, { recursive: true })
+
+    const afterMs = Date.now()
+    const staleId = '44444444-5555-4666-8777-888888888888'
+    await writeSessionFile(join(dir, `${staleId}.jsonl`), cwd, afterMs - 60_000)
+
+    expect(await findAgySessionId(cwd, afterMs)).toBeNull()
+  })
+
+  test('skips excluded ids', async () => {
+    const cwd = '/work/agy-excluded'
+    const dir = join(agyRoot, 'conversations')
+    await mkdir(dir, { recursive: true })
+
+    const afterMs = Date.now() - 10_000
+    const preexistingId = 'aaaaaaaa-1111-4aaa-8aaa-aaaaaaaaaaaa'
+    const queryId = 'bbbbbbbb-2222-4bbb-8bbb-bbbbbbbbbbbb'
+    await writeSessionFile(join(dir, `${preexistingId}.jsonl`), cwd, afterMs + 9_000)
+    await writeSessionFile(join(dir, `${queryId}.jsonl`), cwd, afterMs + 5_000)
+
+    expect(await findAgySessionId(cwd, afterMs)).toBe(preexistingId)
+    expect(await findAgySessionId(cwd, afterMs, new Set([preexistingId]))).toBe(queryId)
+    expect(await findAgySessionId(cwd, afterMs, new Set([preexistingId, queryId]))).toBeNull()
+  })
+})
+
+describe('listAgySessionIds', () => {
+  test('returns lowercased ids of every session on disk regardless of age', async () => {
+    const cwd = '/work/agy-list'
+    const dir = join(agyRoot, 'conversations')
+    await mkdir(dir, { recursive: true })
+
+    const oldId = 'dddddddd-1111-4ddd-8ddd-dddddddddddd'
+    await writeSessionFile(join(dir, `${oldId.toUpperCase()}.jsonl`), cwd, Date.now() - 600_000)
+
+    const ids = await listAgySessionIds()
+    expect(ids.has(oldId)).toBe(true)
+  })
+})
+
+describe('extractAgyAgentText', () => {
+  test('reads a PLANNER_RESPONSE content string', () => {
+    const entry = { type: 'PLANNER_RESPONSE', content: 'Here is the answer.' }
+    expect(extractAgyAgentText(entry)).toBe('Here is the answer.')
+  })
+
+  test('reads a last_agent_message string', () => {
+    const entry = { type: 'event_msg', payload: { last_agent_message: 'Done.' } }
+    expect(extractAgyAgentText(entry)).toBe('Done.')
+  })
+
+  test('returns undefined for non-agent entries', () => {
+    expect(extractAgyAgentText({ type: 'USER_INPUT' })).toBeUndefined()
+    expect(extractAgyAgentText(null)).toBeUndefined()
+  })
+})
+
+describe('readLastAgyAssistantMessage', () => {
+  test('returns the last assistant message from the newest matching session', async () => {
+    const cwd = '/work/agy-report'
+    const dir = join(agyRoot, 'conversations')
+    await mkdir(dir, { recursive: true })
+    const id = 'eeeeeeee-bbbb-4ccc-8ddd-eeeeeeeeeeee'
+    const path = join(dir, `${id}.jsonl`)
+    const lines = [
+      JSON.stringify({ type: 'meta', cwd }),
+      JSON.stringify({ type: 'PLANNER_RESPONSE', content: 'I have updated the files.' })
+    ]
+    await writeFile(path, `${lines.join('\n')}\n`)
+
+    expect(await readLastAgyAssistantMessage(cwd)).toBe('I have updated the files.')
+    expect(await readLastAgyAssistantMessage(cwd, id)).toBe('I have updated the files.')
+  })
+
+  test('returns undefined when no session matches the cwd', async () => {
+    expect(await readLastAgyAssistantMessage('/work/no-such-agy-cwd')).toBeUndefined()
   })
 })

@@ -52,6 +52,7 @@ describe('provider capability', () => {
   test('only claude supports CLI hook injection', () => {
     expect(providerSupportsCliHooks('claude')).toBe(true)
     expect(providerSupportsCliHooks('codex')).toBe(false)
+    expect(providerSupportsCliHooks('agy')).toBe(false)
   })
 })
 

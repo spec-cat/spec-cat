@@ -23,8 +23,8 @@ const archivedSession: RecoverySessionInfo = {
 
 describe('planRecovery', () => {
   test('kills an orphaned managed tmux session with no stored session', () => {
-    const plan = planRecovery([], [`claude-web-${KEY}-ghost-99999999`], [], KEY)
-    expect(plan.tmuxToKill).toEqual([`claude-web-${KEY}-ghost-99999999`])
+    const plan = planRecovery([], [`claude-web-${KEY}-ghost-99999999`, `agy-web-${KEY}-ghost-88888888`], [], KEY)
+    expect(plan.tmuxToKill).toEqual([`claude-web-${KEY}-ghost-99999999`, `agy-web-${KEY}-ghost-88888888`])
   })
 
   test('keeps the tmux session of a stored active session', () => {
@@ -50,7 +50,7 @@ describe('planRecovery', () => {
   test('leaves another project\'s managed tmux sessions untouched', () => {
     const plan = planRecovery(
       [],
-      [`claude-web-${OTHER_KEY}-ghost-99999999`, `codex-query-${OTHER_KEY}-abc123`],
+      [`claude-web-${OTHER_KEY}-ghost-99999999`, `codex-query-${OTHER_KEY}-abc123`, `agy-web-${OTHER_KEY}-ghost-77777777`],
       [],
       KEY
     )
@@ -60,11 +60,11 @@ describe('planRecovery', () => {
   test('kills orphaned one-shot query sessions unconditionally', () => {
     const plan = planRecovery(
       [activeSession],
-      [activeSession.tmuxName, `claude-query-${KEY}-abc123`, `codex-query-${KEY}-def456`],
+      [activeSession.tmuxName, `claude-query-${KEY}-abc123`, `codex-query-${KEY}-def456`, `agy-query-${KEY}-ghi789`],
       [],
       KEY
     )
-    expect(plan.tmuxToKill).toEqual([`claude-query-${KEY}-abc123`, `codex-query-${KEY}-def456`])
+    expect(plan.tmuxToKill).toEqual([`claude-query-${KEY}-abc123`, `codex-query-${KEY}-def456`, `agy-query-${KEY}-ghi789`])
   })
 
   test('removes an orphaned worktree directory with no stored session', () => {

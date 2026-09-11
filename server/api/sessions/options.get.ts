@@ -27,6 +27,10 @@ export default defineEventHandler(async () => {
       {
         id: 'codex',
         name: 'OpenAI Codex'
+      },
+      {
+        id: 'agy',
+        name: 'Antigravity'
       }
     ]
   }
