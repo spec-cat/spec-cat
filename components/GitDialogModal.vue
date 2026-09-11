@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { GitDialogState } from '~/types/app'
 
-defineProps<{
+const props = defineProps<{
   dialog: GitDialogState | null
   themeVars: Record<string, string>
 }>()
@@ -10,6 +10,17 @@ defineEmits<{
   confirm: []
   cancel: []
 }>()
+
+const formEl = ref<HTMLFormElement | null>(null)
+const confirmEl = ref<HTMLButtonElement | null>(null)
+
+watch(() => props.dialog, async (dialog) => {
+  if (!dialog) return
+  await nextTick()
+
+  const field = formEl.value?.querySelector<HTMLElement>('input, select, textarea')
+  ;(field || confirmEl.value)?.focus()
+}, { flush: 'post' })
 </script>
 
 <template>
@@ -19,6 +30,7 @@ defineEmits<{
     :style="themeVars"
   >
     <form
+      ref="formEl"
       class="w-full max-w-md border border-[var(--rg-border)] bg-[var(--rg-editor)] text-xs text-[var(--rg-foreground)] shadow-2xl"
       @submit.prevent="$emit('confirm')"
     >
@@ -57,6 +69,7 @@ defineEmits<{
       <div class="flex justify-end gap-2 border-t border-[var(--rg-border)] p-3">
         <button type="button" class="border border-[var(--rg-border)] px-3 py-1.5" @click="$emit('cancel')">Cancel</button>
         <button
+          ref="confirmEl"
           type="submit"
           class="px-4 py-1.5 font-bold text-white"
           :class="dialog.danger ? 'bg-[#ba0e2e] hover:brightness-110' : 'bg-[var(--rg-button)] hover:brightness-110'"
