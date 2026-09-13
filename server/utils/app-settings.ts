@@ -1,6 +1,7 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { STORE_ROOT } from './session-store'
+import { writeJsonAtomic } from './atomic-write'
 
 export type AppSettings = {
   theme?: string
@@ -40,8 +41,6 @@ export async function readAppSettings(): Promise<AppSettings> {
 export async function writeAppSettings(patch: AppSettings): Promise<AppSettings> {
   const merged = { ...(await readAppSettings()), ...normalizeAppSettings(patch) }
   await mkdir(dirname(SETTINGS_PATH), { recursive: true })
-  const tmpPath = `${SETTINGS_PATH}.tmp`
-  await writeFile(tmpPath, `${JSON.stringify(merged, null, 2)}\n`, 'utf8')
-  await rename(tmpPath, SETTINGS_PATH)
+  await writeJsonAtomic(SETTINGS_PATH, merged)
   return merged
 }

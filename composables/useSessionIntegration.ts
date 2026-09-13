@@ -1,5 +1,5 @@
 import type { Ref } from 'vue'
-import type { SessionListItem } from '~/server/utils/session-store'
+import type { SessionListItem } from '~/types/session'
 import type { SessionOptions, ToastType } from '~/types/app'
 import { shortId } from '~/utils/app-formatters'
 import { extractFetchError } from '~/utils/fetch-error'

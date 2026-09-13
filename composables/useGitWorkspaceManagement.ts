@@ -1,9 +1,10 @@
 import type { Ref } from 'vue'
 import type { GitDialogOptions, GitRemoteDetail, ToastType, WorktreeItem } from '~/types/app'
+import type { GitActionId } from '~/types/git-actions'
 import { extractFetchError } from '~/utils/fetch-error'
 
 type Dialog = (options: GitDialogOptions) => Promise<Record<string, string | boolean> | null>
-type RunAction = (action: string, payload?: Record<string, unknown>) => Promise<boolean>
+type RunAction = (action: GitActionId, payload?: Record<string, unknown>) => Promise<boolean>
 type PushToast = (type: ToastType, message: string, duration?: number) => void
 
 export function useGitWorkspaceManagement(options: {

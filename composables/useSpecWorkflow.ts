@@ -1,5 +1,5 @@
 import type { Ref } from 'vue'
-import type { ProviderId, SessionListItem } from '~/server/utils/session-store'
+import type { ProviderId, SessionListItem } from '~/types/session'
 import type { CascadeState, PendingFeatureAction, SkillInfo, SpecFeature, ToastType } from '~/types/app'
 import { extractFetchError } from '~/utils/fetch-error'
 import { buildSpeckitCommand } from '~/utils/spec-workflow'

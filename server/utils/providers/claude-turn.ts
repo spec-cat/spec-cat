@@ -12,7 +12,8 @@ export function isClaudeTurnComplete(screen: string) {
   if (promptIndex < 0) return false
 
   const tail = lines.slice(promptIndex).join('\n').toLowerCase()
-  if (/do you want|allow|deny|esc to cancel|yes\/no|y\/n/.test(tail)) return false
+  if (/do you want|allow|deny|esc to cancel|yes\/no|y\/n|enter to (?:confirm|select)|waiting for permission|review your answers|skip interview/.test(tail)) return false
+  if (/showing detailed transcript/.test(tail)) return false
 
   return tail.includes('shortcuts')
     || tail.includes('manual mode')

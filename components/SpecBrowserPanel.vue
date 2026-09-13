@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { SessionListItem } from '~/server/utils/session-store'
+import type { SessionListItem } from '~/types/session'
 import type { CascadeState, SkillInfo, SpecFeature, TraceabilityInfo } from '~/types/app'
 import { buildSpeckitCommand } from '~/utils/spec-workflow'
 

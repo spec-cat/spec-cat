@@ -1,6 +1,4 @@
-import { execFile } from 'node:child_process'
 import { access } from 'node:fs/promises'
-import { promisify } from 'node:util'
 import { autoCommitTurn } from './auto-commit'
 import {
   decideBranchFollow,
@@ -8,6 +6,7 @@ import {
   retireAbandonedBranch
 } from './branch-follow'
 import { autoResolveRebaseConflicts } from './conflict-resolver'
+import { executeGit, gitErrorMessage, readGit } from './git-process'
 import {
   isSessionDeleted,
   readStoredSession,
@@ -15,9 +14,8 @@ import {
   type StoredTerminalSession
 } from './session-store'
 import { deleteSessionWorktree } from './worktree'
+import { terminateTmuxSession } from './tmux'
 
-const execFileAsync = promisify(execFile)
-const TMUX_BIN = process.env.TMUX_BIN || 'tmux'
 const operationQueue = new Map<string, Promise<unknown>>()
 
 export async function rebaseSession(sessionId: string, targetBranch: string) {
@@ -141,7 +139,7 @@ export async function finalizeSession(sessionId: string, targetBranch: string, c
       await git(projectDir, ['checkout', target])
     }
 
-    await killTmux(session.tmuxName)
+    await terminateTmuxSession(session.tmuxName)
     await deleteSessionWorktree({
       projectDir,
       worktreePath: session.cwd,
@@ -381,10 +379,6 @@ async function ensureNoRebaseInProgress(cwd: string) {
   }
 }
 
-async function killTmux(name: string) {
-  await execFileAsync(TMUX_BIN, ['kill-session', '-t', name]).catch(() => {})
-}
-
 function serialize<T>(key: string, operation: () => Promise<T>): Promise<T> {
   const previous = operationQueue.get(key) || Promise.resolve()
   const next = previous.catch(() => {}).then(operation)
@@ -399,18 +393,13 @@ function integrationError(message: string, conflictFiles: string[]) {
 }
 
 function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error)
+  return gitErrorMessage(error, String(error))
 }
 
 async function gitOutput(cwd: string, args: string[]) {
-  const { stdout } = await git(cwd, args)
-  return stdout.trim()
+  return readGit(cwd, args)
 }
 
 function git(cwd: string, args: string[]) {
-  return execFileAsync('git', args, {
-    cwd,
-    encoding: 'utf8',
-    maxBuffer: 1024 * 1024 * 8
-  })
+  return executeGit(cwd, args)
 }

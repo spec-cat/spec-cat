@@ -1,4 +1,4 @@
-import type { SessionListItem } from '~/server/utils/session-store'
+import type { SessionListItem } from '~/types/session'
 
 export function formatSessionTime(value: string) {
   return new Intl.DateTimeFormat('en-US', {

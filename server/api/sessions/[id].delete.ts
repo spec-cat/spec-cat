@@ -1,6 +1,5 @@
 import { deleteStoredSession, readStoredSession } from '../../utils/session-store'
-import { teardownSessionRuntime } from '../../utils/session-teardown'
-import { deleteSessionBranch } from '../../utils/worktree'
+import { teardownArchivedSession, teardownSessionRuntime } from '../../utils/session-teardown'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id') || ''
@@ -16,9 +15,7 @@ export default defineEventHandler(async (event) => {
   if (session.archived) {
     // Archiving already tore down tmux and the worktree; only the kept
     // sc/<id> branch may remain.
-    if (!session.finalized && session.projectDir && session.worktreeBranch) {
-      await deleteSessionBranch(session.projectDir, session.worktreeBranch)
-    }
+    await teardownArchivedSession(session)
   } else {
     try {
       await teardownSessionRuntime(session)

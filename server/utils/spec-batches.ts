@@ -1,5 +1,5 @@
 import type { Dirent } from 'node:fs'
-import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { projectDir } from './project-dir'
 import { STORE_ROOT, type ProviderId } from './session-store'
@@ -11,6 +11,7 @@ import {
   type TraceabilityCandidate
 } from './spec-batch-runner'
 import { startSpecWorkflow, waitForSpecWorkflow } from './spec-workflows'
+import { writeJsonAtomic } from './atomic-write'
 
 const batches = new Map<string, SpecBatchRecord>()
 const batchesDir = join(STORE_ROOT, 'batches')
@@ -93,11 +94,5 @@ async function scanTraceabilityCandidates(): Promise<TraceabilityCandidate[]> {
 async function persist(record: SpecBatchRecord) {
   await mkdir(batchesDir, { recursive: true })
   const target = join(batchesDir, `${record.id}.json`)
-  const temporary = `${target}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`
-  try {
-    await writeFile(temporary, `${JSON.stringify(record, null, 2)}\n`, { flag: 'wx' })
-    await rename(temporary, target)
-  } finally {
-    await rm(temporary, { force: true }).catch(() => {})
-  }
+  await writeJsonAtomic(target, record)
 }

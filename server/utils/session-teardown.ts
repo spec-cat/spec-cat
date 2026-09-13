@@ -1,13 +1,10 @@
-import { execFile } from 'node:child_process'
 import { rm } from 'node:fs/promises'
-import { promisify } from 'node:util'
 import type { StoredTerminalSession } from './session-store'
 import { endSessionPreview } from './session-integration'
 import { deleteSessionWorktree } from './worktree'
 import { getCliHookSpoolPath } from './cli-hooks'
-
-const execFileAsync = promisify(execFile)
-const TMUX_BIN = process.env.TMUX_BIN || 'tmux'
+import { terminateTmuxSessionChecked } from './tmux'
+import { deleteSessionBranch } from './worktree'
 
 /**
  * Stops a session's tmux session, ends an active preview, and removes its
@@ -18,14 +15,7 @@ export async function teardownSessionRuntime(
   session: StoredTerminalSession,
   options: { keepBranch?: boolean } = {}
 ) {
-  try {
-    await execFileAsync(TMUX_BIN, ['kill-session', '-t', session.tmuxName])
-  } catch (error) {
-    const details = error instanceof Error ? error.message : String(error)
-    if (!/no server running|can't find session|session not found/i.test(details)) {
-      throw new Error(`Failed to stop terminal session: ${details}`)
-    }
-  }
+  await terminateTmuxSessionChecked(session.tmuxName)
 
   // The CLI hook spool is per-conversation runtime state; drop it with the
   // session. The hook monitor self-stops via its shouldDispose check, and the
@@ -42,5 +32,12 @@ export async function teardownSessionRuntime(
       branch: session.worktreeBranch,
       keepBranch: options.keepBranch
     })
+  }
+}
+
+/** Removes the branch retained by archive teardown, when one still exists. */
+export async function teardownArchivedSession(session: StoredTerminalSession) {
+  if (!session.finalized && session.projectDir && session.worktreeBranch) {
+    await deleteSessionBranch(session.projectDir, session.worktreeBranch)
   }
 }

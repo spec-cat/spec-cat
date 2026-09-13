@@ -7,6 +7,8 @@ import {
   shellRootDirectory,
   shellTmuxName
 } from '../utils/shell-terminals'
+import { TMUX_BIN } from '../utils/tmux'
+import { DEFAULT_TERMINAL_COLS, DEFAULT_TERMINAL_ROWS, clampTerminalDimension } from '../utils/terminal-protocol'
 
 type ShellMessage = {
   type?: string
@@ -24,9 +26,8 @@ type ShellClient = {
   rows: number
 }
 
-const DEFAULT_COLS = 100
-const DEFAULT_ROWS = 30
-const TMUX_BIN = process.env.TMUX_BIN || 'tmux'
+const DEFAULT_COLS = DEFAULT_TERMINAL_COLS
+const DEFAULT_ROWS = DEFAULT_TERMINAL_ROWS
 
 // Plain shells are stateless passthroughs: one tmux client per websocket peer.
 // The tmux session keeps running detached after every peer leaves, so a reload
@@ -61,8 +62,8 @@ export default defineWebSocketHandler({
     }
 
     if (parsed?.type === 'resize') {
-      const cols = clampDimension(parsed.cols, client.cols)
-      const rows = clampDimension(parsed.rows, client.rows)
+      const cols = clampTerminalDimension(parsed.cols, client.cols)
+      const rows = clampTerminalDimension(parsed.rows, client.rows)
       if (cols === client.cols && rows === client.rows) return
       client.cols = cols
       client.rows = rows
@@ -94,8 +95,8 @@ async function attachShell(
 
   detachPeer(peer)
 
-  const cols = clampDimension(requestedCols, DEFAULT_COLS)
-  const rows = clampDimension(requestedRows, DEFAULT_ROWS)
+  const cols = clampTerminalDimension(requestedCols, DEFAULT_COLS)
+  const rows = clampTerminalDimension(requestedRows, DEFAULT_ROWS)
   const pty = spawn(TMUX_BIN, ['attach-session', '-t', tmuxName], {
     name: 'xterm-256color',
     cols,
@@ -150,9 +151,4 @@ function sendControl(
   message: { type: 'hello' } | { type: 'attached'; shellId: string } | { type: 'exited'; shellId: string }
 ) {
   peer.send(`\x00${JSON.stringify(message)}`)
-}
-
-function clampDimension(value: unknown, fallback: number) {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback
-  return Math.max(8, Math.min(240, Math.floor(value)))
 }

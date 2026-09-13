@@ -1,10 +1,9 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { projectDir, projectKey } from './project-dir'
+import { ensureTmuxSession, hasTmuxSession, terminateTmuxSession, TMUX_BIN } from './tmux'
 
 const execFileAsync = promisify(execFile)
-
-const TMUX_BIN = process.env.TMUX_BIN || 'tmux'
 
 /**
  * tmux name prefix for this project's shells. The project key namespaces the
@@ -82,12 +81,7 @@ export async function listShellSessions(): Promise<ShellSessionInfo[]> {
 }
 
 export async function hasShellSession(tmuxName: string): Promise<boolean> {
-  try {
-    await execFileAsync(TMUX_BIN, ['has-session', '-t', tmuxName])
-    return true
-  } catch {
-    return false
-  }
+  return hasTmuxSession(tmuxName)
 }
 
 /**
@@ -96,26 +90,7 @@ export async function hasShellSession(tmuxName: string): Promise<boolean> {
  * true when a new tmux session was created.
  */
 export async function ensureShellSession(tmuxName: string): Promise<boolean> {
-  const exists = await hasShellSession(tmuxName)
-  if (!exists) {
-    await execFileAsync(TMUX_BIN, [
-      'new-session',
-      '-d',
-      '-s',
-      tmuxName,
-      '-c',
-      shellRootDirectory(),
-      shellCommand()
-    ])
-  }
-
-  // The web client attaches through tmux's alternate screen, so wheel
-  // scrolling and window sizing must be handled by tmux, mirroring the
-  // conversation terminals.
-  await execFileAsync(TMUX_BIN, ['set-option', '-t', tmuxName, 'mouse', 'on']).catch(() => {})
-  await execFileAsync(TMUX_BIN, ['set-option', '-w', '-t', tmuxName, 'window-size', 'latest']).catch(() => {})
-
-  return !exists
+  return ensureTmuxSession(tmuxName, shellRootDirectory(), shellCommand)
 }
 
 export async function createShellSession(): Promise<ShellSessionInfo> {
@@ -127,5 +102,5 @@ export async function createShellSession(): Promise<ShellSessionInfo> {
 
 export async function killShellSession(id: string): Promise<void> {
   const tmuxName = shellTmuxName(sanitizeShellId(id))
-  await execFileAsync(TMUX_BIN, ['kill-session', '-t', tmuxName]).catch(() => {})
+  await terminateTmuxSession(tmuxName)
 }

@@ -20,7 +20,6 @@ import { randomUUID } from 'node:crypto'
 import { promisify } from 'node:util'
 import { projectDir, projectKey } from './project-dir'
 import {
-  buildProviderQueryCommand,
   findAgySessionId,
   findCodexSessionId,
   listAgySessionIds,
@@ -28,13 +27,15 @@ import {
   readLastAgyAssistantMessage,
   readLastCodexAgentMessage
 } from './provider-resume'
+import { buildProviderQueryCommand } from './provider-command'
 import { readLastClaudeAssistantMessage } from './job-executor'
 import { isProviderTurnComplete } from './providers/turn-completion'
 import { submitPromptTurn } from './tmux-input'
 import type { ProviderId } from './session-store'
+import { captureTmuxPane, hasTmuxSession, terminateTmuxSession, TMUX_BIN } from './tmux'
+import { pollUntil } from './async-poll'
 
 const execFileAsync = promisify(execFile)
-const TMUX_BIN = process.env.TMUX_BIN || 'tmux'
 
 const DEFAULT_TIMEOUT_MS = 90_000
 /** How often the ephemeral session's screen is captured while polling. */
@@ -147,7 +148,7 @@ export async function runProviderQuery(
     if (options.trackKey && activeQueryTmuxNames.get(options.trackKey) === tmuxName) {
       activeQueryTmuxNames.delete(options.trackKey)
     }
-    await execFileAsync(TMUX_BIN, ['kill-session', '-t', tmuxName]).catch(() => {})
+    await terminateTmuxSession(tmuxName)
   }
 }
 
@@ -217,15 +218,13 @@ async function waitForReady(
   deadline: number,
   timeoutMs: number
 ): Promise<void> {
-  while (Date.now() < deadline) {
+  const ready = await pollUntil({ intervalMs: POLL_MS, deadline, check: async () => {
     const screen = await captureScreen(tmuxName)
-    if (screen) {
-      if (isProviderTurnComplete(provider, screen)) return
-    } else if (!(await hasTmuxSession(tmuxName))) {
-      throw new Error(`${provider} CLI exited before it was ready`)
-    }
-    await delay(POLL_MS)
-  }
+    if (screen) return isProviderTurnComplete(provider, screen)
+    if (!(await hasTmuxSession(tmuxName))) throw new Error(`${provider} CLI exited before it was ready`)
+    return false
+  } })
+  if (ready) return
   throw new Error(describeQueryFailure(provider, 'ready', null, timeoutMs))
 }
 
@@ -254,23 +253,31 @@ async function waitForAnswer(
   context: AnswerWaitContext
 ): Promise<string> {
   let sawWorking = false
-  while (Date.now() < context.deadline) {
+  let answer = ''
+  const completed = await pollUntil({ intervalMs: POLL_MS, deadline: context.deadline, check: async () => {
     const screen = await captureScreen(tmuxName)
     if (screen) {
       if (!isProviderTurnComplete(provider, screen)) {
         sawWorking = true
       } else if (sawWorking || Date.now() - context.submittedAtMs >= MIN_COMPLETION_ELAPSED_MS) {
         const message = await readOwnFinalMessage(provider, context)
-        if (message) return message
+        if (message) {
+          answer = message
+          return true
+        }
       }
     } else if (!(await hasTmuxSession(tmuxName))) {
       // The CLI is gone; its transcript may still hold a flushed answer.
       const message = await readOwnFinalMessage(provider, context)
-      if (message) return message
+      if (message) {
+        answer = message
+        return true
+      }
       throw new Error(`${provider} CLI exited before the turn completed`)
     }
-    await delay(POLL_MS)
-  }
+    return false
+  } })
+  if (completed) return answer
   throw new Error(describeQueryFailure(provider, 'turn', null, context.timeoutMs))
 }
 
@@ -315,28 +322,7 @@ async function readOwnFinalMessage(
 }
 
 async function captureScreen(tmuxName: string): Promise<string> {
-  try {
-    const { stdout } = await execFileAsync(TMUX_BIN, ['capture-pane', '-p', '-t', tmuxName])
-    return stdout
-  } catch {
-    return ''
-  }
-}
-
-async function hasTmuxSession(tmuxName: string): Promise<boolean> {
-  try {
-    await execFileAsync(TMUX_BIN, ['has-session', '-t', tmuxName])
-    return true
-  } catch {
-    return false
-  }
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms)
-    timer.unref?.()
-  })
+  return captureTmuxPane(tmuxName)
 }
 
 function describeQueryFailure(
@@ -362,4 +348,3 @@ function describeQueryFailure(
   }
   return `${provider} query failed to launch: ${String(error)}`
 }
-

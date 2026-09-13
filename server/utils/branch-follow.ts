@@ -6,10 +6,7 @@
  * the driver that persists the outcome.
  */
 
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
-
-const execFileAsync = promisify(execFile)
+import { executeGit, readGit } from './git-process'
 
 /**
  * Branches a conversation must never adopt as its own worktree branch. Adopting
@@ -84,11 +81,7 @@ export function decideBranchFollow(input: BranchFollowInput): BranchFollowDecisi
 /** Current branch of a worktree, or '' when HEAD is detached or git fails. */
 export async function readWorktreeBranch(cwd: string): Promise<string> {
   try {
-    const { stdout } = await execFileAsync('git', ['symbolic-ref', '--quiet', '--short', 'HEAD'], {
-      cwd,
-      encoding: 'utf8'
-    })
-    return stdout.trim()
+    return await readGit(cwd, ['symbolic-ref', '--quiet', '--short', 'HEAD'], { maxBuffer: 1024 * 1024 })
   } catch {
     return ''
   }
@@ -101,16 +94,13 @@ export async function readWorktreeBranch(cwd: string): Promise<string> {
  */
 export async function retireAbandonedBranch(projectDir: string, previous: string, current: string) {
   try {
-    await execFileAsync('git', ['merge-base', '--is-ancestor', previous, current], {
-      cwd: projectDir,
-      encoding: 'utf8'
-    })
+    await executeGit(projectDir, ['merge-base', '--is-ancestor', previous, current], { maxBuffer: 1024 * 1024 })
   } catch {
     return false
   }
 
   try {
-    await execFileAsync('git', ['branch', '-D', previous], { cwd: projectDir, encoding: 'utf8' })
+    await executeGit(projectDir, ['branch', '-D', previous], { maxBuffer: 1024 * 1024 })
     return true
   } catch {
     return false

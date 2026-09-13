@@ -1,31 +1,20 @@
 <script setup lang="ts">
 import '@xterm/xterm/css/xterm.css'
-import type { ProviderId, SessionListItem } from '~/server/utils/session-store'
+import type { ProviderId, SessionListItem } from '~/types/session'
 import type {
-  ConversationWorkspaceExpose,
-  GitWorkspaceExpose,
   ShellSessionInfo,
-  SpecWorkspaceExpose,
 } from '~/types/app'
+import type { ConversationWorkspaceExpose, GitWorkspaceExpose, SpecWorkspaceExpose } from '~/types/workspace'
 import { rainglowThemes } from '~/assets/rainglow/themes'
-import type {
-  GitDialogField,
-  GitDialogState,
-} from '~/types/app'
 import { getThemeVars, getXtermTheme as createXtermTheme } from '~/utils/rainglow-theme'
-import { extractFetchError } from '~/utils/fetch-error'
 import { runTopmostModalHandler } from '~/utils/modal-stack'
+import { filterActiveConversations, filterArchivedConversations } from '~/utils/conversation-filter'
 const GIT_GRAPH_STATE_KEY = 'code-cat-git-graph-state'
-const SIDEBAR_PANEL_KEY = 'code-cat-sidebar-panel'
-const SIDEBAR_COLLAPSED_KEY = 'code-cat-sidebar-collapsed'
-const SPEC_PANEL_COLLAPSED_KEY = 'code-cat-spec-panel-collapsed'
-const ACTIVE_SHELL_KEY = 'code-cat-active-shell'
 
 const appReady = ref(false)
 const specWorkspaceRef = ref<SpecWorkspaceExpose | null>(null)
 const gitWorkspaceRef = ref<GitWorkspaceExpose | null>(null)
 const sessions = ref<SessionListItem[]>([])
-const loadingSessions = ref(false)
 const selectedArchivedSessionId = ref('')
 const selectedThemeName = ref('peacock')
 const defaultProvider = ref<ProviderId>('claude')
@@ -62,7 +51,7 @@ const gitGraphPinned = computed({
   set: (pinned: boolean) => { gitGraphState.value = pinned ? 'pinned' : 'floating' }
 })
 
-const gitDialog = ref<GitDialogState | null>(null)
+const { gitDialog, openGitDialog, confirmGitDialog, cancelGitDialog } = useGitDialog()
 
 const conversationSearchQuery = ref('')
 // Soft cap: each conversation holds a tmux session, a worktree and a branch,
@@ -88,29 +77,34 @@ const shells = ref<ShellSessionInfo[]>([])
 const loadingShells = ref(false)
 const creatingShell = ref(false)
 const activeShellId = ref('')
-const connect: ConversationWorkspaceExpose['connect'] = (...args) => conversationWorkspaceRef.value?.connect(...args)
-const sendTerminalCommand = (value: string) => Boolean(conversationWorkspaceRef.value?.sendCommand(value))
-const sendTerminalText = (value: string) => Boolean(conversationWorkspaceRef.value?.sendText(value))
-const isTerminalConnected = () => Boolean(conversationWorkspaceRef.value?.isConnected())
-const closeConversationTerminal = () => conversationWorkspaceRef.value?.close()
-const resetConversationTerminal = (cursorBlink = true) => conversationWorkspaceRef.value?.reset(cursorBlink)
-const setConversationCursorBlink = (value: boolean) => conversationWorkspaceRef.value?.setCursorBlink(value)
-const writeConversationTerminal = (value: string, scroll = false) => conversationWorkspaceRef.value?.write(value, scroll)
-const writelnConversationTerminal = (value: string) => conversationWorkspaceRef.value?.writeln(value)
-const setSessionId = (value: string) => { sessionId.value = value; conversationWorkspaceRef.value?.setSessionId(value) }
-const clearSessionId = () => { sessionId.value = ''; conversationWorkspaceRef.value?.clearSessionId() }
-const getInitialSessionId = (fallback?: string) => conversationWorkspaceRef.value?.getInitialSessionId(fallback) || fallback
-const scheduleTerminalFit = (delay = 0) => conversationWorkspaceRef.value?.scheduleConversationFit(delay)
-const scheduleShellFit = (delay = 0) => conversationWorkspaceRef.value?.scheduleShellFit(delay)
-const settleTerminalFit = () => conversationWorkspaceRef.value?.settleConversationFit()
-const refreshShells = () => conversationWorkspaceRef.value?.refreshShells() || Promise.resolve()
-const createShell = () => conversationWorkspaceRef.value?.createShell() || Promise.resolve()
-const killShell = (id: string) => conversationWorkspaceRef.value?.killShell(id) || Promise.resolve()
-const selectShell = (id: string) => conversationWorkspaceRef.value?.selectShell(id)
+usePanelPersistence({ activeSidebarPanel, sidebarCollapsed, specPanelCollapsed, activeShellId })
+const {
+  connect, sendTerminalCommand, sendTerminalText, isTerminalConnected,
+  closeConversationTerminal, resetConversationTerminal, setConversationCursorBlink,
+  writeConversationTerminal, writelnConversationTerminal, setWorkspaceSessionId,
+  clearWorkspaceSessionId, getInitialSessionId, scheduleTerminalFit, scheduleShellFit,
+  settleTerminalFit, refreshShells, createShell, killShell, selectShell
+} = useConversationWorkspaceBridge(conversationWorkspaceRef)
+const setSessionId = (value: string) => { sessionId.value = value; setWorkspaceSessionId(value) }
+const clearSessionId = () => { sessionId.value = ''; clearWorkspaceSessionId() }
+const { selectSession, selectArchivedSession } = useConversationSelection({
+  sessions, sessionId, selectedArchivedSessionId, isMobile, sidebarCollapsed, specPanelCollapsed,
+  activeSidebarPanel, status, connect, closeTerminal: closeConversationTerminal,
+  resetTerminal: resetConversationTerminal, setCursorBlink: setConversationCursorBlink,
+  setSessionId, writeTerminal: writeConversationTerminal,
+  writelnTerminal: writelnConversationTerminal
+})
+const { loadingSessions, refreshSessions } = useSessionPollingController({
+  sessions,
+  activeSessionId: sessionId,
+  trackSessionState: (session, state) => specWorkspaceRef.value?.trackSessionState(session, state),
+  sessionLabel: (session) => sessionDisplayName(session),
+  pushToast
+})
 const {
   archivedSessions, loadingArchived, showArchivedSessions, archivingSessionId,
   restoringSessionId, deletingSessionId, editingSessionId, editingSessionTitle,
-  savingSessionTitle, sessionDisplayName, startSessionRename, cancelSessionRename,
+  sessionDisplayName, startSessionRename, cancelSessionRename,
   saveSessionRename, refreshArchivedSessions, toggleArchivedSessions, archiveSession,
   restoreArchivedSession, deleteArchivedSession, deleteAllArchivedSessions
 } = useSessionArchive({
@@ -144,15 +138,10 @@ const { loadAppSettings, persistAppSettings, disposeAppSettings } = useAppSettin
 function openNewSessionModal() {
   return openNewSessionDialog()
 }
-const sessionRuntimeStates = new Map<string, string>()
-
-let removeResizeListener: (() => void) | null = null
-let removeMobileQueryListener: (() => void) | null = null
-
-let sessionPollTimer: ReturnType<typeof setInterval> | null = null
-let gitStatePollTimer: ReturnType<typeof setInterval> | null = null
-let sessionsRequestId = 0
-let sessionsRequestRunning = false
+const { startPolling, stopPolling } = useAppPolling({
+  refreshSessions,
+  pollGitState: () => gitWorkspaceRef.value?.poll()
+})
 
 const statusText = computed(() => {
   if (selectedArchivedSessionId.value) return 'Read-only'
@@ -216,7 +205,7 @@ const {
 const {
   handleGlobalEscape, handleGlobalEnter, handleChatMaximizeShortcut,
   handleWorkspacePanelShortcut, handleToggleSidebarShortcut, handleNewConversationShortcut,
-  openChatPanel, openTerminalPanel, openDatabasePanel, toggleSidebar, selectSidebarPanel, openSpecPanel
+  openChatPanel, openTerminalPanel, openDatabasePanel, selectSidebarPanel, openSpecPanel
 } = useAppShortcuts({
   activePanel: activeSidebarPanel, databaseOpen, sidebarCollapsed, specPanelCollapsed,
   chatMaximized, isMobile, newSessionOpen: showNewSessionModal,
@@ -227,25 +216,11 @@ const {
 })
 
 const filteredSessions = computed(() => {
-  const query = conversationSearchQuery.value.trim().toLowerCase()
-  if (!query) return sessions.value
-  return sessions.value.filter((session) => {
-    return session.id.toLowerCase().includes(query)
-      || (session.title || '').toLowerCase().includes(query)
-      || session.provider.toLowerCase().includes(query)
-      || (session.worktreeBranch || '').toLowerCase().includes(query)
-      || (session.baseBranch || '').toLowerCase().includes(query)
-  })
+  return filterActiveConversations(sessions.value, conversationSearchQuery.value)
 })
 
 const filteredArchivedSessions = computed(() => {
-  const query = conversationSearchQuery.value.trim().toLowerCase()
-  if (!query) return archivedSessions.value
-  return archivedSessions.value.filter((session) => {
-    return session.id.toLowerCase().includes(query)
-      || (session.title || '').toLowerCase().includes(query)
-      || session.provider.toLowerCase().includes(query)
-  })
+  return filterArchivedConversations(archivedSessions.value, conversationSearchQuery.value)
 })
 
 /**
@@ -263,65 +238,21 @@ const themeColors = computed(() => selectedTheme.value.colors)
 
 const themeVars = computed(() => getThemeVars(themeColors.value))
 
-onMounted(async () => {
-  // Resolved before the terminals are created so they open at the mobile font
-  // size straight away; the change listener keeps it live across resizes.
-  const mobileQuery = window.matchMedia('(max-width: 768px)')
-  const applyMobile = () => {
-    isMobile.value = mobileQuery.matches
-    if (!mobileQuery.matches) {
-      // Desktop uses brick's four persistent columns. Ignore collapse state
-      // left behind by the previous activity-bar layout.
-      gitGraphState.value = 'pinned'
-      specPanelCollapsed.value = false
-      sidebarCollapsed.value = false
+useAppBrowserLifecycle({
+  appReady, isMobile, gitGraphState, specPanelCollapsed, sidebarCollapsed, activeSidebarPanel,
+  scheduleTerminalFit, scheduleShellFit, settleTerminalFit, startPolling, stopPolling,
+  disposeAppSettings, disposeToasts, handleChatMaximizeShortcut,
+  handleWorkspacePanelShortcut, handleNewConversationShortcut, handleGlobalEscape,
+  handleGlobalEnter, handleToggleSidebarShortcut,
+  initialize: async () => {
+    await Promise.allSettled([loadAppSettings(), loadSessionOptions(), refreshSessions(), refreshArchivedSessions(), refreshShells()])
+    const initialSessionId = getInitialSessionId(sessions.value[0]?.id)
+    if (initialSessionId && sessions.value.find((session) => session.id === initialSessionId)?.finalized) {
+      selectSession(initialSessionId)
+    } else if (initialSessionId) {
+      connect(initialSessionId)
     }
   }
-  applyMobile()
-  mobileQuery.addEventListener('change', applyMobile)
-  removeMobileQueryListener = () => mobileQuery.removeEventListener('change', applyMobile)
-
-  // Captured before connect()/selectSession() can flip the panel (and the
-  // persistence watch overwrite the stored value); re-applied at the end.
-  const desiredPanel = activeSidebarPanel.value
-  const resize = () => {
-    scheduleTerminalFit(80)
-    scheduleShellFit(80)
-  }
-
-  window.addEventListener('resize', resize)
-  window.addEventListener('keydown', handleChatMaximizeShortcut, { capture: true })
-  window.addEventListener('keydown', handleWorkspacePanelShortcut, { capture: true })
-  window.addEventListener('keydown', handleNewConversationShortcut)
-  window.addEventListener('keydown', handleGlobalEscape)
-  window.addEventListener('keydown', handleGlobalEnter)
-  window.addEventListener('keydown', handleToggleSidebarShortcut)
-  removeResizeListener = () => window.removeEventListener('resize', resize)
-  document.fonts?.ready.then(() => settleTerminalFit())
-
-  await Promise.allSettled([loadAppSettings(), refreshSessions(), refreshArchivedSessions(), refreshShells()])
-  // Poll at 1s so idle/working badges track the runtime state within the
-  // 1-2 second detection budget (server quiet window + one poll tick).
-  sessionPollTimer = setInterval(() => {
-    void refreshSessions()
-  }, 1000)
-  // Cheap repository fingerprint poll keeps an open git graph fresh without
-  // re-running the full graph query unless something actually changed.
-  gitStatePollTimer = setInterval(() => {
-    void gitWorkspaceRef.value?.poll()
-  }, 3000)
-  const initialSessionId = getInitialSessionId(sessions.value[0]?.id)
-  if (initialSessionId && sessions.value.find((session) => session.id === initialSessionId)?.finalized) {
-    selectSession(initialSessionId)
-  } else if (initialSessionId) {
-    connect(initialSessionId)
-  }
-  // Re-apply the restored panel last: connect()/selectSession() above may flip
-  // it back to 'conversations' (e.g. when the fallback session is finalized),
-  // which would otherwise clobber the last-viewed panel on reload.
-  activeSidebarPanel.value = desiredPanel
-  settleTerminalFit()
-  appReady.value = true
 })
 
 watch(selectedThemeName, () => {
@@ -347,53 +278,12 @@ watch(defaultProvider, () => {
 // reusing its cached atlas.
 watch(terminalFontSize, async () => { await nextTick(); scheduleTerminalFit() })
 
-onBeforeUnmount(() => {
-  removeResizeListener?.()
-  removeMobileQueryListener?.()
-  window.removeEventListener('keydown', handleChatMaximizeShortcut, { capture: true })
-  window.removeEventListener('keydown', handleWorkspacePanelShortcut, { capture: true })
-  window.removeEventListener('keydown', handleNewConversationShortcut)
-  window.removeEventListener('keydown', handleGlobalEscape)
-  window.removeEventListener('keydown', handleGlobalEnter)
-  window.removeEventListener('keydown', handleToggleSidebarShortcut)
-  if (sessionPollTimer) clearInterval(sessionPollTimer)
-  if (gitStatePollTimer) clearInterval(gitStatePollTimer)
-  disposeAppSettings()
-  disposeToasts()
-})
-
 onBeforeMount(() => {
   const stored = window.localStorage.getItem('claude-web-rainglow-theme')
   if (stored && rainglowThemes.some((theme) => theme.name === stored)) {
     selectedThemeName.value = stored
   }
 
-  // Restore the last-viewed sidebar panel and shell so a reload returns to
-  // whatever the user was looking at (conversation or terminal).
-  const storedPanel = window.localStorage.getItem(SIDEBAR_PANEL_KEY)
-  if (storedPanel === 'conversations' || storedPanel === 'terminal') {
-    activeSidebarPanel.value = storedPanel
-  }
-  const storedShellId = window.localStorage.getItem(ACTIVE_SHELL_KEY)
-  if (storedShellId) activeShellId.value = storedShellId
-  if (window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1') {
-    sidebarCollapsed.value = true
-  }
-  if (window.localStorage.getItem(SPEC_PANEL_COLLAPSED_KEY) === '1') {
-    specPanelCollapsed.value = true
-  }
-})
-
-watch(activeSidebarPanel, (panel) => {
-  window.localStorage.setItem(SIDEBAR_PANEL_KEY, panel)
-})
-
-watch(sidebarCollapsed, (collapsed) => {
-  window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? '1' : '0')
-})
-
-watch(specPanelCollapsed, (collapsed) => {
-  window.localStorage.setItem(SPEC_PANEL_COLLAPSED_KEY, collapsed ? '1' : '0')
 })
 
 // Below the mobile breakpoint the spec browser and the sidebar are both
@@ -401,71 +291,6 @@ watch(specPanelCollapsed, (collapsed) => {
 watch(isMobile, (mobile) => {
   if (mobile && !sidebarCollapsed.value) specPanelCollapsed.value = true
 })
-
-watch(activeShellId, (id) => {
-  if (id) window.localStorage.setItem(ACTIVE_SHELL_KEY, id)
-  else window.localStorage.removeItem(ACTIVE_SHELL_KEY)
-})
-
-async function refreshSessions() {
-  if (sessionsRequestRunning) return
-  sessionsRequestRunning = true
-  const requestId = ++sessionsRequestId
-  loadingSessions.value = true
-
-  try {
-    const response = await $fetch<{ sessions: SessionListItem[] }>('/api/sessions')
-    if (requestId === sessionsRequestId) {
-      sessions.value = response.sessions
-      trackSessionRuntimeStates(response.sessions)
-    }
-  } catch (error) {
-    console.warn('Failed to refresh conversations', error)
-  } finally {
-    if (requestId === sessionsRequestId) loadingSessions.value = false
-    sessionsRequestRunning = false
-  }
-}
-
-function trackSessionRuntimeStates(list: SessionListItem[]) {
-  for (const session of list) {
-    const state = session.runtime?.state || 'unknown'
-    const previous = sessionRuntimeStates.get(session.id)
-    sessionRuntimeStates.set(session.id, state)
-    specWorkspaceRef.value?.trackSessionState(session, state)
-    if (previous === 'working' && (state === 'idle' || state === 'waiting_input')) {
-      void notifyTurnComplete(session, state)
-    }
-  }
-  const knownIds = new Set(list.map((session) => session.id))
-  for (const id of sessionRuntimeStates.keys()) {
-    if (!knownIds.has(id)) sessionRuntimeStates.delete(id)
-  }
-}
-
-async function notifyTurnComplete(session: SessionListItem, state: string) {
-  const label = sessionDisplayName(session)
-  const body = state === 'waiting_input'
-    ? `${session.provider} · ${label} is waiting for input.`
-    : `${session.provider} · ${label} finished responding.`
-
-  if (document.hasFocus()) {
-    // The active conversation's completion is already visible in the terminal.
-    if (session.id !== sessionId.value) pushToast('info', body)
-    return
-  }
-
-  if (typeof Notification === 'undefined') return
-  const show = () => {
-    new Notification('Code Cat', { body, tag: `turn-complete-${session.id}` })
-  }
-  if (Notification.permission === 'granted') {
-    show()
-  } else if (Notification.permission === 'default') {
-    const permission = await Notification.requestPermission().catch(() => 'denied' as NotificationPermission)
-    if (permission === 'granted') show()
-  }
-}
 
 // Close the frontmost open modal, ordered by stacking priority (higher
 // z-index first). Returns true when something was closed. Centralizing this
@@ -497,44 +322,6 @@ function submitTopmostModal(): boolean {
   })
 }
 
-function openGitDialog(options: {
-  title: string
-  message?: string
-  danger?: boolean
-  confirmLabel?: string
-  fields?: GitDialogField[]
-}) {
-  gitDialog.value?.resolve(null)
-  return new Promise<Record<string, string | boolean> | null>((resolve) => {
-    gitDialog.value = {
-      title: options.title,
-      message: options.message || '',
-      danger: Boolean(options.danger),
-      confirmLabel: options.confirmLabel || 'OK',
-      fields: options.fields || [],
-      resolve
-    }
-  })
-}
-
-function confirmGitDialog() {
-  const dialog = gitDialog.value
-  if (!dialog) return
-  const result: Record<string, string | boolean> = {}
-  for (const field of dialog.fields) {
-    result[field.key] = field.kind === 'checkbox' ? field.value : field.value.trim()
-  }
-  gitDialog.value = null
-  dialog.resolve(result)
-}
-
-function cancelGitDialog() {
-  const dialog = gitDialog.value
-  if (!dialog) return
-  gitDialog.value = null
-  dialog.resolve(null)
-}
-
 async function copyText(value: string) {
   if (await writeClipboard(value)) {
     pushToast('success', 'Copied to clipboard.', 2000)
@@ -545,58 +332,6 @@ async function copyText(value: string) {
 
 function closeFloatingMenus() {
   gitWorkspaceRef.value?.closeFloatingMenus()
-}
-
-function selectSession(id: string) {
-  const selected = sessions.value.find((session) => session.id === id)
-  selectedArchivedSessionId.value = ''
-  setConversationCursorBlink(true)
-  // On mobile the sidebar and spec browser overlay the conversation; collapse
-  // them so opening a conversation reveals the main panel underneath.
-  if (isMobile.value) {
-    sidebarCollapsed.value = true
-    specPanelCollapsed.value = true
-  }
-  if (selected?.finalized) {
-    activeSidebarPanel.value = 'conversations'
-    closeConversationTerminal()
-    setSessionId(id)
-    status.value = 'closed'
-    resetConversationTerminal()
-    writelnConversationTerminal(`[finalized into ${selected.baseBranch || 'base'} at ${selected.finalCommit?.slice(0, 8) || 'unknown'}]`)
-    return
-  }
-  if (id === sessionId.value && status.value === 'connected') return
-  activeSidebarPanel.value = 'conversations'
-  connect(id)
-}
-
-async function selectArchivedSession(session: SessionListItem) {
-  if (isMobile.value) sidebarCollapsed.value = true
-  activeSidebarPanel.value = 'conversations'
-  selectedArchivedSessionId.value = session.id
-  closeConversationTerminal()
-  status.value = 'closed'
-  resetConversationTerminal(false)
-
-  try {
-    const response = await $fetch<{ log: string }>(
-      `/api/sessions/archives/${encodeURIComponent(session.id)}/log`
-    )
-    if (selectedArchivedSessionId.value !== session.id) return
-    if (response.log) {
-      writeConversationTerminal(response.log, true)
-    } else {
-      writelnConversationTerminal('[No persisted terminal history]')
-    }
-  } catch (error) {
-    if (selectedArchivedSessionId.value !== session.id) return
-    writelnConversationTerminal(`[Failed to load archived conversation: ${extractFetchError(error)}]`)
-  }
-}
-
-function reconnectActiveSession() {
-  connect(sessionId.value || getInitialSessionId(sessions.value[0]?.id))
 }
 
 function getXtermTheme() {
@@ -612,6 +347,7 @@ function getXtermTheme() {
   >
     <section class="grid h-full min-h-0 grid-rows-[30px_minmax(0,1fr)_22px] overflow-hidden">
       <AppTopBar
+        :project-name="sessionOptions.projectName"
         :active-session="activeSession"
         :active-sidebar-panel="activeSidebarPanel"
         :database-open="databaseOpen"

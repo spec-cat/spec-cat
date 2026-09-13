@@ -1,5 +1,5 @@
 import type { Ref } from 'vue'
-import type { ProviderId } from '~/server/utils/session-store'
+import type { ProviderId } from '~/types/session'
 import type { PendingFeatureAction, SessionOptions, SessionProviderOption, ToastType } from '~/types/app'
 import { extractFetchError } from '~/utils/fetch-error'
 
@@ -21,7 +21,7 @@ export function useNewSession(options: {
 }) {
   const showNewSessionModal = ref(false)
   const showSettingsModal = ref(false)
-  const sessionOptions = ref<SessionOptions>({ branches: [], providers: [] })
+  const sessionOptions = ref<SessionOptions>({ projectName: '', branches: [], providers: [] })
   const loadingSessionOptions = ref(false)
   const creatingSession = ref(false)
   const newSessionProvider = ref<ProviderId>('claude')

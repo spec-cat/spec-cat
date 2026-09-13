@@ -133,7 +133,6 @@ function classifyProviderScreen(
   screen: string,
   activity?: TerminalRuntimeActivity
 ): SessionRuntimeState['state'] {
-  const normalized = screen.toLowerCase()
   const hasPrompt = provider === 'codex'
     ? isCodexTurnComplete(screen)
     : provider === 'agy'

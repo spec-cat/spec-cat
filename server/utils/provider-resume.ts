@@ -18,11 +18,10 @@
 import { open, readdir, readFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import type { ProviderId } from './session-store'
+import { isProviderSessionId } from './provider-command'
 
 const CLAUDE_SESSION_FILENAME_RE = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i
 const CODEX_ROLLOUT_FILENAME_RE = /^rollout-.*-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i
-const RESUME_SESSION_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const CWD_RE = /"cwd"\s*:\s*"((?:[^"\\]|\\.)*)"/
 const HEAD_BYTES = 8192
 
@@ -30,43 +29,6 @@ type SessionFileCandidate = {
   path: string
   id: string
   mtime: number
-}
-
-/**
- * Builds the shell command string a tmux session runs for `provider`. Without
- * a resume id this is the plain launch command; with one, the command resumes
- * the recorded provider session. Throws when the id is not a UUID so nothing
- * unexpected can reach the shell.
- */
-export function buildProviderCommand(provider: ProviderId, resumeSessionId?: string | null): string {
-  if (provider === 'codex') {
-    const bin = process.env.CODEX_CLI_PATH || process.env.CODEX_BIN || 'codex'
-    if (!resumeSessionId) return `${bin} --dangerously-bypass-approvals-and-sandbox`
-    return `${bin} resume ${quoteResumeSessionId(resumeSessionId)} --dangerously-bypass-approvals-and-sandbox`
-  }
-  if (provider === 'agy') {
-    const bin = process.env.AGY_BIN || process.env.AGY_CLI_PATH || 'agy'
-    if (!resumeSessionId) return `${bin} --dangerously-skip-permissions`
-    return `${bin} --conversation ${quoteResumeSessionId(resumeSessionId)} --dangerously-skip-permissions`
-  }
-
-  const bin = process.env.CLAUDE_BIN || 'claude'
-  if (!resumeSessionId) return `${bin} --dangerously-skip-permissions`
-  return `${bin} --resume ${quoteResumeSessionId(resumeSessionId)} --dangerously-skip-permissions`
-}
-
-/**
- * Builds the launch command for a throwaway one-shot query session. Claude is
- * started with an explicit `--session-id` so the transcript file the query
- * writes is known up front — resolving it by newest-mtime would race with any
- * other Claude session running in the same cwd. Codex and AGY launch plain
- * and their sessions are found by exclusion instead.
- */
-export function buildProviderQueryCommand(provider: ProviderId, claudeSessionId: string): string {
-  if (provider === 'codex') return buildProviderCommand('codex')
-  if (provider === 'agy') return buildProviderCommand('agy')
-  const bin = process.env.CLAUDE_BIN || 'claude'
-  return `${bin} --session-id ${quoteResumeSessionId(claudeSessionId)} --dangerously-skip-permissions`
 }
 
 /** Claude encodes a project cwd into a directory name by replacing `/` and `.` with `-`. */
@@ -211,7 +173,7 @@ export async function readLastCodexAgentMessage(
   const candidates = await collectCodexCandidates(getCodexSessionsDir())
 
   let filePath: string | null = null
-  if (providerSessionId && RESUME_SESSION_ID_RE.test(providerSessionId)) {
+  if (providerSessionId && isProviderSessionId(providerSessionId)) {
     filePath = candidates.find((c) => c.id.toLowerCase() === providerSessionId.toLowerCase())?.path ?? null
   }
   if (!filePath) {
@@ -356,15 +318,6 @@ export function extractAgyAgentText(entry: unknown): string | undefined {
   return undefined
 }
 
-function quoteResumeSessionId(resumeSessionId: string): string {
-  if (!RESUME_SESSION_ID_RE.test(resumeSessionId)) {
-    throw new Error(`Invalid provider resume session id: ${JSON.stringify(resumeSessionId)}`)
-  }
-  // The UUID format excludes shell metacharacters; single quotes are a second
-  // layer of defense for the `sh -c` invocation inside tmux.
-  return `'${resumeSessionId}'`
-}
-
 function getClaudeProjectsDir(): string {
   const home = process.env.CLAUDE_CONFIG_DIR || join(process.env.HOME || homedir(), '.claude')
   return join(home, 'projects')
@@ -477,7 +430,7 @@ async function collectAgyCandidates(afterMs = 0): Promise<SessionFileCandidate[]
     for (const entry of entries) {
       if (!entry.isDirectory()) continue
       const id = entry.name
-      if (!RESUME_SESSION_ID_RE.test(id) || seenIds.has(id.toLowerCase())) continue
+      if (!isProviderSessionId(id) || seenIds.has(id.toLowerCase())) continue
       const fullPath = join(brainDir, id)
       const transcriptPath = join(fullPath, '.system_generated', 'logs', 'transcript.jsonl')
       const mtime = (await getFileMtime(transcriptPath)) ?? (await getFileMtime(fullPath))

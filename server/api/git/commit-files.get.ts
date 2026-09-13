@@ -1,6 +1,5 @@
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
 import { requireAllowedGitCwd, requireObjectName } from '../../utils/git-access'
+import { readGit } from '../../utils/git-process'
 
 type CommitFile = {
   path: string
@@ -8,7 +7,6 @@ type CommitFile = {
   oldPath?: string
 }
 
-const execFileAsync = promisify(execFile)
 
 export default defineEventHandler(async (event) => {
   const query = getQuery(event)
@@ -46,10 +44,5 @@ function parseNameStatus(output: string): CommitFile[] {
 }
 
 async function git(cwd: string, args: string[], options: { trim?: boolean } = {}) {
-  const { stdout } = await execFileAsync('git', args, {
-    cwd,
-    encoding: 'utf8',
-    maxBuffer: 1024 * 1024 * 8
-  })
-  return options.trim === false ? stdout : stdout.trim()
+  return readGit(cwd, args, options)
 }

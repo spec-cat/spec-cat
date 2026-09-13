@@ -1,58 +1,10 @@
-import { mkdir, open, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, open, readFile, readdir, realpath, rm, stat } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve } from 'node:path'
-import { randomUUID } from 'node:crypto'
 import { getConfiguredProjectRoot } from './git-access'
 import { projectStoreRoot } from './project-dir'
-
-export type ProviderId = 'claude' | 'codex' | 'agy'
-
-export type StoredTerminalSession = {
-  id: string
-  provider: ProviderId
-  title?: string
-  tmuxName: string
-  cwd: string
-  cliBin: string
-  /** Provider-side conversation id used to resume the CLI after tmux dies. */
-  providerSessionId?: string
-  projectDir?: string
-  /**
-   * Spec feature this conversation was opened for. Recorded at creation time so
-   * spec-browser actions can find the conversation before a feature branch
-   * exists; once a speckit step checks one out, `worktreeBranch` carries the
-   * same link (see branch-follow.ts).
-   */
-  featureId?: string
-  worktreeBranch?: string
-  baseBranch?: string
-  previewBranch?: string
-  finalized?: boolean
-  finalizedAt?: string
-  finalCommit?: string
-  archived?: boolean
-  archivedAt?: string
-  branchKept?: boolean
-  createdAt: string
-  updatedAt: string
-}
-
-export type SessionRuntimeState = {
-  state: 'idle' | 'working' | 'waiting_input' | 'disconnected' | 'dead' | 'unknown'
-  active: boolean
-  tmuxAlive: boolean
-  tmuxAttached: boolean
-  paneCommand?: string
-  panePid?: number
-  checkedAt: string
-  reason?: string
-}
-
-export type SessionListItem = StoredTerminalSession & {
-  logBytes: number
-  runtime?: SessionRuntimeState
-  preview?: string
-  linkedFeatures?: string[]
-}
+import { writeJsonAtomic } from './atomic-write'
+import type { SessionListItem, StoredTerminalSession } from '../../types/session'
+export type { ProviderId, SessionListItem, SessionRuntimeState, StoredTerminalSession } from '../../types/session'
 
 export const STORE_ROOT = projectStoreRoot()
 export const SESSION_DIR = join(STORE_ROOT, 'sessions')
@@ -202,13 +154,7 @@ export async function writeStoredSession(session: StoredTerminalSession) {
   deletedSessionIds.delete(session.id)
   await mkdir(SESSION_DIR, { recursive: true })
   const target = getSessionMetaPath(session.id)
-  const temporary = `${target}.${process.pid}.${randomUUID()}.tmp`
-  try {
-    await writeFile(temporary, `${JSON.stringify(session, null, 2)}\n`, { flag: 'wx' })
-    await rename(temporary, target)
-  } finally {
-    await rm(temporary, { force: true }).catch(() => {})
-  }
+  await writeJsonAtomic(target, session)
 }
 
 export async function deleteStoredSession(id: string) {

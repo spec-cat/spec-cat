@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { PendingFeatureAction, SessionOptions } from '~/types/app'
-import type { ProviderId } from '~/server/utils/session-store'
+import type { ProviderId } from '~/types/session'
 
 defineProps<{
   open: boolean

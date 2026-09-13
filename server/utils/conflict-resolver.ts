@@ -11,14 +11,11 @@
  * messages are collected into a transient report the caller can surface once;
  * nothing is persisted separately.
  */
-import { execFile } from 'node:child_process'
 import { access } from 'node:fs/promises'
 import { isAbsolute, resolve } from 'node:path'
-import { promisify } from 'node:util'
+import { executeGit } from './git-process'
 import { getJobQueue } from './job-executor'
 import type { StoredTerminalSession } from './session-store'
-
-const execFileAsync = promisify(execFile)
 
 /** Max agent turns spent resolving conflicts before giving up and aborting. */
 const MAX_ROUNDS = 8
@@ -212,10 +209,7 @@ async function rebaseInProgress(cwd: string): Promise<boolean> {
  * --continue would otherwise open one for commit messages.
  */
 function gitNoEditor(cwd: string, args: string[]) {
-  return execFileAsync('git', args, {
-    cwd,
-    encoding: 'utf8',
-    maxBuffer: 1024 * 1024 * 8,
+  return executeGit(cwd, args, {
     env: { ...process.env, GIT_EDITOR: 'true', GIT_SEQUENCE_EDITOR: 'true' }
   })
 }

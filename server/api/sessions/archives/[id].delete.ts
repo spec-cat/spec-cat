@@ -1,5 +1,5 @@
 import { deleteStoredSession, readStoredSession } from '../../../utils/session-store'
-import { deleteSessionBranch } from '../../../utils/worktree'
+import { teardownArchivedSession } from '../../../utils/session-teardown'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id') || ''
@@ -15,9 +15,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Session is not archived' })
   }
 
-  if (!session.finalized && session.projectDir && session.worktreeBranch) {
-    await deleteSessionBranch(session.projectDir, session.worktreeBranch)
-  }
+  await teardownArchivedSession(session)
   await deleteStoredSession(id)
 
   return { deleted: true, id }

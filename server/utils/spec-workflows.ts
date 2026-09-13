@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { createAutomationConversation } from '../api/terminal'
 import { getJobQueue } from './job-executor'
@@ -9,6 +9,7 @@ import {
   runSpecWorkflow,
   type SpecWorkflowRecord
 } from './spec-workflow-runner'
+import { writeJsonAtomic } from './atomic-write'
 
 const workflows = new Map<string, SpecWorkflowRecord>()
 const workflowRuns = new Map<string, Promise<SpecWorkflowRecord>>()
@@ -75,11 +76,5 @@ export async function getSpecWorkflow(id: string) {
 async function persist(record: SpecWorkflowRecord) {
   await mkdir(workflowsDir, { recursive: true })
   const target = join(workflowsDir, `${record.id}.json`)
-  const temporary = `${target}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`
-  try {
-    await writeFile(temporary, `${JSON.stringify(record, null, 2)}\n`, { flag: 'wx' })
-    await rename(temporary, target)
-  } finally {
-    await rm(temporary, { force: true }).catch(() => {})
-  }
+  await writeJsonAtomic(target, record)
 }

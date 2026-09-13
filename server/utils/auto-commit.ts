@@ -1,8 +1,6 @@
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
 import type { ProviderId } from './session-store'
+import { executeGit } from './git-process'
 
-const execFileAsync = promisify(execFile)
 const commitQueue = new Map<string, Promise<AutoCommitResult>>()
 
 export type AutoCommitResult = {
@@ -40,7 +38,7 @@ async function commitChanges(cwd: string, provider: ProviderId): Promise<AutoCom
 }
 
 async function git(cwd: string, args: string[]) {
-  return execFileAsync('git', args, { cwd })
+  return executeGit(cwd, args, { maxBuffer: 1024 * 1024 })
 }
 
 async function gitExitCode(cwd: string, args: string[]) {

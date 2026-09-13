@@ -203,6 +203,20 @@ export function graphSegmentPath(segment: GraphSegment) {
   return `M ${fromX} ${centerY} L ${fromX} ${midY} L ${toX} ${GRAPH_ROW_HEIGHT}`
 }
 
+export function shouldLoadMoreGraph(options: {
+  scrollTop: number
+  clientHeight: number
+  scrollHeight: number
+  loaded: number
+  limit: number
+  maximum?: number
+}) {
+  const maximum = options.maximum ?? 1000
+  return options.loaded >= options.limit
+    && options.limit < maximum
+    && options.scrollTop + options.clientHeight >= options.scrollHeight - 200
+}
+
 export function parseUnifiedDiff(diff: string): GitDiffLine[] {
   const lines: GitDiffLine[] = []
   let oldLine = 0

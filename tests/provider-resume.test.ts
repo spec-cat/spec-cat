@@ -3,8 +3,6 @@ import { mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
-  buildProviderCommand,
-  buildProviderQueryCommand,
   encodeClaudeProjectDir,
   extractAgyAgentText,
   extractCodexAgentText,
@@ -16,6 +14,7 @@ import {
   readLastAgyAssistantMessage,
   readLastCodexAgentMessage
 } from '../server/utils/provider-resume'
+import { buildProviderCommand, buildProviderQueryCommand } from '../server/utils/provider-command'
 
 // The command builder and the session-file finders resolve binaries and roots
 // from the environment at call time, so pin them for deterministic assertions.

@@ -1,8 +1,5 @@
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
 import { requireAllowedGitCwd, requireObjectName } from '../../utils/git-access'
-
-const execFileAsync = promisify(execFile)
+import { readGit } from '../../utils/git-process'
 const MAX_DIFF_BYTES = 256 * 1024
 
 export default defineEventHandler(async (event) => {
@@ -45,10 +42,5 @@ function requirePath(value: unknown, name: string) {
 }
 
 async function git(cwd: string, args: string[], options: { trim?: boolean } = {}) {
-  const { stdout } = await execFileAsync('git', args, {
-    cwd,
-    encoding: 'utf8',
-    maxBuffer: 1024 * 1024 * 12
-  })
-  return options.trim === false ? stdout : stdout.trim()
+  return readGit(cwd, args, { ...options, maxBuffer: 1024 * 1024 * 12 })
 }

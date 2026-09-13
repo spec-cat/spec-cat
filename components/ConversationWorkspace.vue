@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { ComponentPublicInstance } from 'vue'
-import type { ProviderId, SessionListItem } from '~/server/utils/session-store'
+import type { ProviderId, SessionListItem } from '~/types/session'
 import type { ToastType } from '~/types/app'
 import { displayBranch, formatRuntimeState, formatSessionTime } from '~/utils/app-formatters'
 
@@ -56,7 +56,7 @@ onMounted(async () => {
 watch(() => [props.fontSize, props.terminalTheme] as const, ([fontSize, theme]) => {
   conversation.updateAppearance(fontSize, theme)
   shell.updateAppearance(fontSize, theme)
-}, { deep: true })
+})
 watch(() => props.activePanel, (panel) => { if (panel === 'terminal') void shell.refreshShells().then(shell.activate) })
 watch(() => props.initialShellId, (id) => {
   if (id && !shell.activeShellId.value) shell.activeShellId.value = id
@@ -64,7 +64,7 @@ watch(() => props.initialShellId, (id) => {
 watch(conversation.status, (value) => emit('statusChanged', value), { immediate: true })
 watch([shell.shells, shell.loadingShells, shell.creatingShell, shell.activeShellId], () => emit('shellStateChanged', {
   shells: shell.shells.value, loading: shell.loadingShells.value, creating: shell.creatingShell.value, activeId: shell.activeShellId.value
-}), { deep: true, immediate: true })
+}), { immediate: true })
 onBeforeUnmount(() => {
   conversation.dispose()
   shell.dispose()

@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import type { SessionListItem } from '~/server/utils/session-store'
-import type { GitCommit, GitContextMenu, GitDialogField, GitStash, GitWorkspaceExpose, ToastType } from '~/types/app'
+import type { SessionListItem } from '~/types/session'
+import type { GitCommit, GitContextMenu, GitDialogField, GitStash, ToastType } from '~/types/app'
+import type { GitWorkspaceExpose } from '~/types/workspace'
+import type { GitActionId } from '~/types/git-actions'
 import { diffLineClass } from '~/utils/git-graph'
 import { extractFetchError } from '~/utils/fetch-error'
 
@@ -47,7 +49,7 @@ const model = useGitGraphModel({
   previewingSession: previewingSessionRef
 })
 
-async function runAction(action: string, payload: Record<string, unknown> = {}) {
+async function runAction(action: GitActionId, payload: Record<string, unknown> = {}) {
   if (gitActionRunning.value) return false
   gitActionRunning.value = true
   gitActionMessage.value = ''
@@ -111,7 +113,7 @@ function restoreSettings() {
 watch(cwd, () => { repository.invalidateGitState(); void repository.refreshGitGraph() }, { immediate: true })
 watch(repository.selectedCommitHash, () => void repository.refreshSelectedCommitFiles())
 watch(repository.gitGraphSearch, () => { repository.graphFindIndex.value = -1 })
-watch(graphSettings, (value) => window.localStorage.setItem('code-cat-git-graph-settings', JSON.stringify(value)), { deep: true })
+watch(graphSettings, (value) => window.localStorage.setItem('code-cat-git-graph-settings', JSON.stringify(value)))
 onBeforeMount(restoreSettings)
 
 function closeHighPriorityModal() {

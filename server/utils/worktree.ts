@@ -1,11 +1,9 @@
-import { execFile } from 'node:child_process'
 import { mkdir, readFile, readdir, rm } from 'node:fs/promises'
 import { join, resolve, sep } from 'node:path'
-import { promisify } from 'node:util'
 import { projectWorktreeRoot } from './project-dir'
 import { PROTECTED_BRANCHES } from './branch-follow'
+import { executeGit } from './git-process'
 
-const execFileAsync = promisify(execFile)
 export const WORKTREE_ROOT = projectWorktreeRoot()
 const MANAGED_BRANCH_PATTERN = /^sc\/[a-zA-Z0-9_-]{8,120}$/
 // A conversation whose worktree switched branches (a speckit step creating
@@ -264,7 +262,7 @@ async function gitOutput(cwd: string, args: string[]) {
 }
 
 function git(cwd: string, args: string[]) {
-  return execFileAsync('git', args, { cwd, encoding: 'utf8' })
+  return executeGit(cwd, args, { maxBuffer: 1024 * 1024 })
 }
 
 function assertManagedWorktreePath(path: string) {

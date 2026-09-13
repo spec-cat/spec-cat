@@ -12,6 +12,7 @@ const publicDir = resolve(outputDir, 'public')
 const nodePtyRoot = resolve(outputDir, 'server/node_modules/node-pty')
 const BOOT_TIMEOUT_MS = 30_000
 const POLL_INTERVAL_MS = 250
+const staticOnly = process.argv.includes('--static')
 
 const passed = []
 
@@ -71,6 +72,12 @@ if (nativeFound.length === 0) {
 }
 for (const found of nativeFound) {
   ok(`node-pty native assets present: ${found}`)
+}
+
+if (staticOnly) {
+  console.log(`\nStatic build verification passed (${passed.length} checks):`)
+  for (const message of passed) console.log(`  - ${message}`)
+  process.exit(0)
 }
 
 // --- 2. Smoke-boot the built server ----------------------------------------

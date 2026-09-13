@@ -1,6 +1,5 @@
-import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { promisify } from 'node:util'
+import { readGit } from './git-process'
 
 export type PorcelainFiles = {
   untracked: string[]
@@ -43,15 +42,8 @@ export type GitCompareFile = {
   deletions: number
 }
 
-const execFileAsync = promisify(execFile)
-
 export async function runGit(cwd: string, args: string[], options: { trim?: boolean } = {}) {
-  const { stdout } = await execFileAsync('git', args, {
-    cwd,
-    encoding: 'utf8',
-    maxBuffer: 1024 * 1024 * 8
-  })
-  return options.trim === false ? stdout : stdout.trim()
+  return readGit(cwd, args, options)
 }
 
 export function hashText(input: string) {

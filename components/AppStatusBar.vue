@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { SessionListItem } from '~/server/utils/session-store'
+import type { SessionListItem } from '~/types/session'
 
 defineProps<{
   themes: { name: string }[]

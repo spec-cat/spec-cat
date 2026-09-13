@@ -1,7 +1,4 @@
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
-
-const execFileAsync = promisify(execFile)
+import { readGit } from './git-process'
 const DEFAULT_POLL_MS = 1500
 
 export type WorktreeCommitWatcher = { stop: () => void }
@@ -86,8 +83,7 @@ export function startWorktreeCommitWatcher(options: Options): WorktreeCommitWatc
 
 async function gitOutput(cwd: string, args: string[]): Promise<string | null> {
   try {
-    const { stdout } = await execFileAsync('git', args, { cwd, encoding: 'utf8' })
-    return stdout.trim()
+    return await readGit(cwd, args, { maxBuffer: 1024 * 1024 })
   } catch {
     return null
   }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ProviderId } from '~/server/utils/session-store'
+import type { ProviderId } from '~/types/session'
 import type { SessionProviderOption } from '~/types/app'
 
 defineProps<{

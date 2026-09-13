@@ -1,5 +1,5 @@
 import type { Ref } from 'vue'
-import type { SessionListItem } from '~/server/utils/session-store'
+import type { SessionListItem } from '~/types/session'
 import type { CommitFileTreeRow, GitBranch, GitCommit, GitCommitFile, GitFileDiff, GitGraphResponse } from '~/types/app'
 import { GRAPH_COLUMN_WIDTH, GRAPH_PADDING, computeGraphRows, parseUnifiedDiff } from '~/utils/git-graph'
 

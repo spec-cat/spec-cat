@@ -1,6 +1,7 @@
 import type { Ref } from 'vue'
 import type { GitCommitFile, GitCompareResponse, GitFileDiff, GitGraphResponse, ToastType } from '~/types/app'
 import { extractFetchError } from '~/utils/fetch-error'
+import { shouldLoadMoreGraph } from '~/utils/git-graph'
 
 type PushToast = (type: ToastType, message: string, duration?: number) => void
 
@@ -33,33 +34,52 @@ export function useGitRepository(options: {
   const compareView = ref<GitCompareResponse | null>(null)
   const loadingCompare = ref(false)
   let graphRequestId = 0
+  let pollRequestId = 0
+  let commitFilesRequestId = 0
+  let diffRequestId = 0
+  let compareRequestId = 0
+  let graphInFlight: { signature: string; promise: Promise<void> } | null = null
   let pollRunning = false
   let lastFingerprint = ''
 
-  function invalidateGitState() { lastFingerprint = '' }
+  function invalidateGitState() { lastFingerprint = ''; pollRequestId++ }
   function closeDiffPreview() {
+    diffRequestId++
     selectedCommitFilePath.value = ''
     diffPreview.value = null
     diffPreviewError.value = ''
     loadingDiffPreview.value = false
   }
-  async function refreshGitGraph() {
-    const requestId = ++graphRequestId
+  function refreshGitGraph(): Promise<void> {
     const requestedCwd = options.cwd.value
+    const requestedLimit = graphLimit.value
+    const requestedBranches = graphBranchFilter.value.join(',')
+    const signature = JSON.stringify([requestedCwd, requestedLimit, requestedBranches])
+    if (graphInFlight?.signature === signature) return graphInFlight.promise
+
+    const promise = loadGitGraph(requestedCwd, requestedLimit, requestedBranches)
+    graphInFlight = { signature, promise }
+    return promise.finally(() => {
+      if (graphInFlight?.promise === promise) graphInFlight = null
+    })
+  }
+
+  async function loadGitGraph(requestedCwd: string, requestedLimit: number, requestedBranches: string) {
+    const requestId = ++graphRequestId
     loadingGitGraph.value = true
     gitGraphError.value = ''
     try {
       const response = await $fetch<GitGraphResponse>('/api/git/graph', { query: {
         cwd: requestedCwd || undefined,
-        limit: graphLimit.value !== 120 ? graphLimit.value : undefined,
-        branches: graphBranchFilter.value.length ? graphBranchFilter.value.join(',') : undefined
+        limit: requestedLimit !== 120 ? requestedLimit : undefined,
+        branches: requestedBranches || undefined
       } })
-      if (requestId !== graphRequestId) return
+      if (requestId !== graphRequestId || requestedCwd !== options.cwd.value) return
       gitGraph.value = response
       if (!selectedCommitHash.value || !response.commits.some((commit) => commit.hash === selectedCommitHash.value)) selectedCommitHash.value = response.commits[0]?.hash || ''
       else void refreshSelectedCommitFiles()
     } catch (error) {
-      if (requestId !== graphRequestId) return
+      if (requestId !== graphRequestId || requestedCwd !== options.cwd.value) return
       gitGraphError.value = error instanceof Error ? error.message : 'Failed to load git graph'
       gitGraph.value = null
       selectedCommitHash.value = ''
@@ -72,8 +92,11 @@ export function useGitRepository(options: {
   async function pollGitState() {
     if (pollRunning || loadingGitGraph.value || options.gitActionRunning.value) return
     pollRunning = true
+    const requestId = ++pollRequestId
+    const requestedCwd = options.cwd.value
     try {
-      const state = await $fetch<{ headCommit: string; branchListHash: string; workingTreeHash: string; stashListHash: string }>('/api/git/state', { query: { cwd: options.cwd.value || undefined } })
+      const state = await $fetch<{ headCommit: string; branchListHash: string; workingTreeHash: string; stashListHash: string }>('/api/git/state', { query: { cwd: requestedCwd || undefined } })
+      if (requestId !== pollRequestId || requestedCwd !== options.cwd.value) return
       const fingerprint = [state.headCommit, state.branchListHash, state.workingTreeHash, state.stashListHash].join(':')
       if (lastFingerprint && fingerprint !== lastFingerprint) await refreshGitGraph()
       lastFingerprint = fingerprint
@@ -82,8 +105,13 @@ export function useGitRepository(options: {
   function handleGraphListScroll(event: Event) {
     const element = event.target
     if (!(element instanceof HTMLElement) || loadingGitGraph.value || !gitGraph.value) return
-    if (gitGraph.value.commits.length < graphLimit.value || graphLimit.value >= 1000) return
-    if (element.scrollTop + element.clientHeight < element.scrollHeight - 200) return
+    if (!shouldLoadMoreGraph({
+      scrollTop: element.scrollTop,
+      clientHeight: element.clientHeight,
+      scrollHeight: element.scrollHeight,
+      loaded: gitGraph.value.commits.length,
+      limit: graphLimit.value
+    })) return
     graphLimit.value = Math.min(1000, graphLimit.value + 120)
     void refreshGitGraph()
   }
@@ -112,54 +140,64 @@ export function useGitRepository(options: {
   function selectCommit(hash: string) {
     selectedCommitHash.value = hash
     selectedUncommittedChanges.value = false
-    compareView.value = null
+    closeCompareView()
     closeDiffPreview()
   }
   function selectUncommittedChanges() {
     selectedUncommittedChanges.value = true
     selectedCommitHash.value = ''
     selectedCommitFiles.value = []
-    compareView.value = null
+    closeCompareView()
     closeDiffPreview()
   }
   async function compareWithSelected(hash: string) {
     const from = selectedCommitHash.value
     options.closeContextMenu()
     if (!from || from === hash) return
+    const requestId = ++compareRequestId
+    const requestedCwd = options.cwd.value
     loadingCompare.value = true
     try {
-      compareView.value = await $fetch<GitCompareResponse>('/api/git/compare', { query: { cwd: options.cwd.value || undefined, from, to: hash } })
+      const response = await $fetch<GitCompareResponse>('/api/git/compare', { query: { cwd: requestedCwd || undefined, from, to: hash } })
+      if (requestId === compareRequestId && requestedCwd === options.cwd.value) compareView.value = response
     } catch (error) {
-      options.pushToast('error', `Failed to compare commits: ${extractFetchError(error)}`, 6000)
-    } finally { loadingCompare.value = false }
+      if (requestId === compareRequestId) options.pushToast('error', `Failed to compare commits: ${extractFetchError(error)}`, 6000)
+    } finally { if (requestId === compareRequestId) loadingCompare.value = false }
   }
-  function closeCompareView() { compareView.value = null }
+  function closeCompareView() { compareRequestId++; compareView.value = null; loadingCompare.value = false }
   async function refreshSelectedCommitFiles() {
     const commit = options.selectedCommit()
-    if (!commit || selectedUncommittedChanges.value) { selectedCommitFiles.value = []; commitFilesError.value = ''; return }
+    const requestId = ++commitFilesRequestId
+    if (!commit || selectedUncommittedChanges.value) { selectedCommitFiles.value = []; commitFilesError.value = ''; loadingCommitFiles.value = false; return }
     loadingCommitFiles.value = true
     commitFilesError.value = ''
     const requestedHash = commit.hash
+    const requestedCwd = options.cwd.value
     try {
-      const response = await $fetch<{ files: GitCommitFile[] }>('/api/git/commit-files', { query: { cwd: options.cwd.value || undefined, hash: requestedHash } })
-      if (selectedCommitHash.value !== requestedHash) return
+      const response = await $fetch<{ files: GitCommitFile[] }>('/api/git/commit-files', { query: { cwd: requestedCwd || undefined, hash: requestedHash } })
+      if (requestId !== commitFilesRequestId || selectedCommitHash.value !== requestedHash || requestedCwd !== options.cwd.value) return
       selectedCommitFiles.value = response.files
       if (selectedCommitFilePath.value && !response.files.some((file) => file.path === selectedCommitFilePath.value)) closeDiffPreview()
     } catch (error) {
-      if (selectedCommitHash.value === requestedHash) { commitFilesError.value = extractFetchError(error); selectedCommitFiles.value = [] }
-    } finally { if (selectedCommitHash.value === requestedHash) loadingCommitFiles.value = false }
+      if (requestId === commitFilesRequestId && selectedCommitHash.value === requestedHash) { commitFilesError.value = extractFetchError(error); selectedCommitFiles.value = [] }
+    } finally { if (requestId === commitFilesRequestId) loadingCommitFiles.value = false }
   }
   async function openDiffPreview(file: GitCommitFile) {
     const commit = options.selectedCommit()
     if (!commit) return
     if (selectedCommitFilePath.value === file.path && !diffPreviewError.value) return closeDiffPreview()
+    const requestId = ++diffRequestId
+    const requestedCwd = options.cwd.value
+    const requestedHash = commit.hash
     selectedCommitFilePath.value = file.path
     loadingDiffPreview.value = true
     diffPreviewError.value = ''
     try {
-      diffPreview.value = await $fetch<GitFileDiff>('/api/git/file-diff', { query: { cwd: options.cwd.value || undefined, hash: commit.hash, path: file.path, oldPath: file.oldPath || undefined } })
-    } catch (error) { diffPreviewError.value = extractFetchError(error); diffPreview.value = null }
-    finally { loadingDiffPreview.value = false }
+      const response = await $fetch<GitFileDiff>('/api/git/file-diff', { query: { cwd: requestedCwd || undefined, hash: requestedHash, path: file.path, oldPath: file.oldPath || undefined } })
+      if (requestId === diffRequestId && selectedCommitFilePath.value === file.path && requestedCwd === options.cwd.value) diffPreview.value = response
+    } catch (error) {
+      if (requestId === diffRequestId) { diffPreviewError.value = extractFetchError(error); diffPreview.value = null }
+    } finally { if (requestId === diffRequestId) loadingDiffPreview.value = false }
   }
   return { gitGraph, loadingGitGraph, gitGraphError, gitGraphSearch, graphFindIndex, graphLimit,
     graphBranchFilter, showGraphBranchDropdown, showGraphSettingsDropdown, selectedCommitHash,

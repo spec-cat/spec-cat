@@ -36,6 +36,22 @@ describe('provider turn completion', () => {
     expect(isAgyTurnComplete('Do you want to run this command?\n> [y/N]')).toBe(false)
   })
 
+  test('recognizes current-region blockers used by Codex and Claude forms', () => {
+    expect(isCodexTurnComplete('› Allow command?\npress enter to confirm or esc to cancel\ngpt-5 · normal')).toBe(false)
+    expect(isCodexTurnComplete('› Question\nenter to submit answer\ngpt-5 · normal')).toBe(false)
+    expect(isClaudeTurnComplete('❯ 1. Yes\nEnter to select · Esc to cancel\nshortcuts')).toBe(false)
+    expect(isClaudeTurnComplete('❯ Review your answers\nshortcuts')).toBe(false)
+  })
+
+  test('does not report transcript viewers as idle prompts', () => {
+    expect(isCodexTurnComplete('›\n↑/↓ to scroll · q to quit\ngpt-5 · normal')).toBe(false)
+    expect(isClaudeTurnComplete('❯\nShowing detailed transcript\nshortcuts')).toBe(false)
+  })
+
+  test('ignores historical blockers above the latest Codex prompt', () => {
+    expect(isCodexTurnComplete('Allow command? [y/n]\ncommand completed\n›\ngpt-5 · normal')).toBe(true)
+  })
+
   test('does not treat running turns as complete while esc-to-interrupt / esc-to-cancel is shown', () => {
     expect(isClaudeTurnComplete('✻ Thinking… (esc to interrupt)\n❯\nshortcuts')).toBe(false)
     expect(isCodexTurnComplete('▌ Working (Esc to interrupt)\n›\ngpt-5 · normal')).toBe(false)

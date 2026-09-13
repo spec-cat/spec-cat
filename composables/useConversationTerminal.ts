@@ -1,6 +1,7 @@
 import type { Terminal } from '@xterm/xterm'
-import type { ProviderId } from '~/server/utils/session-store'
+import type { ProviderId } from '~/types/session'
 import { ref } from 'vue'
+import { createTerminalFitScheduler } from '~/utils/terminal-fit'
 
 type TerminalTheme = NonNullable<Terminal['options']['theme']>
 type ConnectRequest = {
@@ -22,13 +23,11 @@ export function useConversationTerminal(options: {
   let socket: WebSocket | null = null
   let resizeObserver: ResizeObserver | null = null
   let removeClipboardBridge: (() => void) | null = null
-  let fitFrame: number | null = null
-  let fitTimer: ReturnType<typeof setTimeout> | null = null
-  const settleTimers = new Set<ReturnType<typeof setTimeout>>()
   let lastSentSize = { cols: 0, rows: 0 }
   let observedSize = { width: 0, height: 0 }
   let pendingConnect: ConnectRequest | null = null
   let disposed = false
+  const fitScheduler = createTerminalFitScheduler(() => performFit())
 
   async function initialize(config: {
     fontSize: number
@@ -172,27 +171,17 @@ export function useConversationTerminal(options: {
     if (notifyServer && sendResize()) lastSentSize = { cols: terminal.cols, rows: terminal.rows }
   }
   function scheduleFit(delay = 0) {
-    if (fitTimer) clearTimeout(fitTimer)
-    if (fitFrame !== null) cancelAnimationFrame(fitFrame)
-    fitTimer = setTimeout(() => { fitFrame = requestAnimationFrame(() => { fitFrame = null; performFit() }) }, delay)
+    fitScheduler.schedule(delay)
   }
   function settleFit() {
-    for (const timer of settleTimers) clearTimeout(timer)
-    settleTimers.clear()
-    scheduleFit()
-    for (const delay of [50, 150, 350]) {
-      const timer = setTimeout(() => { settleTimers.delete(timer); scheduleFit() }, delay)
-      settleTimers.add(timer)
-    }
+    fitScheduler.settle()
   }
   function dispose() {
     disposed = true
     pendingConnect = null
     resizeObserver?.disconnect()
     removeClipboardBridge?.()
-    if (fitFrame !== null) cancelAnimationFrame(fitFrame)
-    if (fitTimer) clearTimeout(fitTimer)
-    for (const timer of settleTimers) clearTimeout(timer)
+    fitScheduler.dispose()
     socket?.close()
     terminal?.dispose()
   }

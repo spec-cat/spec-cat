@@ -1,5 +1,5 @@
 import type { Ref } from 'vue'
-import type { ProviderId } from '~/server/utils/session-store'
+import type { ProviderId } from '~/types/session'
 import type { AppSettingsPayload } from '~/types/app'
 
 export function useAppSettings(options: {

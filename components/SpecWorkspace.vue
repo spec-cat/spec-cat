@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import type { ProviderId, SessionListItem } from '~/server/utils/session-store'
-import type { SpecWorkspaceExpose, ToastType } from '~/types/app'
+import type { ProviderId, SessionListItem } from '~/types/session'
+import type { ToastType } from '~/types/app'
+import type { SpecWorkspaceExpose } from '~/types/workspace'
 
 const props = defineProps<{
   collapsed: boolean

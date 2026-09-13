@@ -12,10 +12,11 @@
  * is behind the injectable JobExecutor interface — see job-executor.ts for
  * the real tmux-backed implementation; tests inject a fake.
  */
-import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ProviderId } from './session-store'
 import { STORE_ROOT } from './session-store'
+import { writeJsonAtomic, writeTextAtomic } from './atomic-write'
 
 export type JobStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled'
 
@@ -142,13 +143,7 @@ export function createJobQueue(options: JobQueueOptions): JobQueue {
     const next = previous.catch(() => {}).then(async () => {
       await mkdir(jobsDir, { recursive: true })
       const target = join(jobsDir, `${job.id}.json`)
-      const temporary = `${target}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`
-      try {
-        await writeFile(temporary, `${snapshot}\n`, { flag: 'wx' })
-        await rename(temporary, target)
-      } finally {
-        await rm(temporary, { force: true }).catch(() => {})
-      }
+      await writeTextAtomic(target, `${snapshot}\n`)
     })
     persistChains.set(job.id, next)
     void next.finally(() => {
@@ -348,13 +343,7 @@ async function reconcileInterruptedJobs(jobsDir: string) {
     })
 
     const target = join(jobsDir, name)
-    const temporary = `${target}.${process.pid}.reconcile.tmp`
-    try {
-      await writeFile(temporary, `${JSON.stringify(job, null, 2)}\n`)
-      await rename(temporary, target)
-    } catch {
-      await rm(temporary, { force: true }).catch(() => {})
-    }
+    await writeJsonAtomic(target, job).catch(() => {})
   }
 }
 

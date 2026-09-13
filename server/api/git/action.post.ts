@@ -1,9 +1,7 @@
-import { execFile } from 'node:child_process'
 import { access } from 'node:fs/promises'
-import { promisify } from 'node:util'
 import { requireAllowedGitCwd, requireObjectName, requireRef, requireRemote, requireRemoteUrl } from '../../utils/git-access'
-
-const execFileAsync = promisify(execFile)
+import { executeGit } from '../../utils/git-process'
+import { isGitActionId, type GitActionId } from '../../../types/git-actions'
 
 type GitActionBody = {
   cwd?: string
@@ -35,6 +33,7 @@ export default defineEventHandler(async (event) => {
   try {
     await access(cwd)
     const root = await git(cwd, ['rev-parse', '--show-toplevel'])
+    if (!isGitActionId(action)) throw new Error(`Unsupported git action: ${action}`)
     const result = await runGitAction(root, action, body)
     return { success: true, output: result }
   } catch (error) {
@@ -46,7 +45,7 @@ export default defineEventHandler(async (event) => {
   }
 })
 
-async function runGitAction(cwd: string, action: string, body: GitActionBody) {
+async function runGitAction(cwd: string, action: GitActionId, body: GitActionBody) {
   switch (action) {
     case 'checkout':
       return git(cwd, ['checkout', requireRef(body.branch, 'branch')])
@@ -186,11 +185,7 @@ function stashRef(value: unknown) {
 }
 
 async function git(cwd: string, args: string[], options: { trim?: boolean } = {}) {
-  const { stdout, stderr } = await execFileAsync('git', args, {
-    cwd,
-    encoding: 'utf8',
-    maxBuffer: 1024 * 1024 * 8
-  })
+  const { stdout, stderr } = await executeGit(cwd, args)
   const output = `${stdout || ''}${stderr || ''}`
   return options.trim === false ? output : output.trim()
 }

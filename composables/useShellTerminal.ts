@@ -2,6 +2,7 @@ import type { FitAddon } from '@xterm/addon-fit'
 import type { Terminal } from '@xterm/xterm'
 import type { ShellSessionInfo, ToastType } from '~/types/app'
 import { extractFetchError } from '~/utils/fetch-error'
+import { createTerminalFitScheduler } from '~/utils/terminal-fit'
 
 type PushToast = (type: ToastType, message: string, duration?: number) => void
 
@@ -25,12 +26,10 @@ export function useShellTerminal(pushToast: PushToast) {
   let connectedShellId = ''
   let resizeObserver: ResizeObserver | null = null
   let removeClipboardBridge: (() => void) | null = null
-  let fitFrame: number | null = null
-  let fitTimer: ReturnType<typeof setTimeout> | null = null
-  const settleTimers = new Set<ReturnType<typeof setTimeout>>()
   let lastSentSize = { cols: 0, rows: 0 }
   let observedSize = { width: 0, height: 0 }
   let disposed = false
+  const fitScheduler = createTerminalFitScheduler(() => performFit())
 
   async function initialize(options: {
     fontSize: number
@@ -192,24 +191,11 @@ export function useShellTerminal(pushToast: PushToast) {
   }
 
   function scheduleFit(delay = 0) {
-    if (fitTimer) clearTimeout(fitTimer)
-    if (fitFrame !== null) cancelAnimationFrame(fitFrame)
-    fitTimer = setTimeout(() => {
-      fitFrame = requestAnimationFrame(() => { fitFrame = null; performFit() })
-    }, delay)
+    fitScheduler.schedule(delay)
   }
 
   function settleFit() {
-    for (const timer of settleTimers) clearTimeout(timer)
-    settleTimers.clear()
-    scheduleFit()
-    for (const delay of [50, 150, 350]) {
-      const timer = setTimeout(() => {
-        settleTimers.delete(timer)
-        scheduleFit()
-      }, delay)
-      settleTimers.add(timer)
-    }
+    fitScheduler.settle()
   }
 
   function activate() {
@@ -231,10 +217,7 @@ export function useShellTerminal(pushToast: PushToast) {
     disposed = true
     resizeObserver?.disconnect()
     removeClipboardBridge?.()
-    if (fitFrame !== null) cancelAnimationFrame(fitFrame)
-    if (fitTimer) clearTimeout(fitTimer)
-    for (const timer of settleTimers) clearTimeout(timer)
-    settleTimers.clear()
+    fitScheduler.dispose()
     socket?.close()
     connectedShellId = ''
     terminal?.dispose()

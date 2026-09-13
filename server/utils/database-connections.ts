@@ -1,7 +1,8 @@
-import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { Client, type ClientConfig, type QueryResult } from 'pg'
 import { STORE_ROOT } from './session-store'
+import { writeJsonAtomic } from './atomic-write'
 
 export type DatabaseConnection = {
   id: string
@@ -37,10 +38,7 @@ export async function readDatabaseConnections(): Promise<DatabaseConnection[]> {
 
 export async function writeDatabaseConnections(connections: DatabaseConnection[]) {
   await mkdir(dirname(CONNECTIONS_PATH), { recursive: true })
-  const temporaryPath = `${CONNECTIONS_PATH}.tmp`
-  await writeFile(temporaryPath, `${JSON.stringify(connections, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 })
-  await chmod(temporaryPath, 0o600)
-  await rename(temporaryPath, CONNECTIONS_PATH)
+  await writeJsonAtomic(CONNECTIONS_PATH, connections, 0o600)
 }
 
 export async function findDatabaseConnection(id: string) {

@@ -1,13 +1,11 @@
 import { deleteStoredSession, listArchivedSessions } from '../../utils/session-store'
-import { deleteSessionBranch } from '../../utils/worktree'
+import { teardownArchivedSession } from '../../utils/session-teardown'
 
 export default defineEventHandler(async () => {
   const sessions = await listArchivedSessions()
 
   for (const session of sessions) {
-    if (!session.finalized && session.projectDir && session.worktreeBranch) {
-      await deleteSessionBranch(session.projectDir, session.worktreeBranch)
-    }
+    await teardownArchivedSession(session)
     await deleteStoredSession(session.id)
   }
 

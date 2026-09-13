@@ -1,8 +1,7 @@
-import { execFile } from 'node:child_process'
 import { access } from 'node:fs/promises'
-import { promisify } from 'node:util'
 import { requireAllowedGitCwd, requireRef } from '../../utils/git-access'
 import { listStoredSessions } from '../../utils/session-store'
+import { readGit } from '../../utils/git-process'
 
 type GitAuthor = {
   name: string
@@ -55,7 +54,6 @@ type GitStash = {
   date: string
 }
 
-const execFileAsync = promisify(execFile)
 const DEFAULT_LIMIT = 120
 const MAX_LIMIT = 1000
 const FIELD_SEPARATOR = '\x1f'
@@ -333,10 +331,5 @@ function groupRefsByHash(branches: GitBranch[]) {
 }
 
 async function git(cwd: string, args: string[], options: { trim?: boolean } = {}) {
-  const { stdout } = await execFileAsync('git', args, {
-    cwd,
-    encoding: 'utf8',
-    maxBuffer: 1024 * 1024 * 8
-  })
-  return options.trim === false ? stdout : stdout.trim()
+  return readGit(cwd, args, options)
 }

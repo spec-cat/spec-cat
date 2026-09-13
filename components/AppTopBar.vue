@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import type { SessionListItem } from '~/server/utils/session-store'
+import type { SessionListItem } from '~/types/session'
 
 defineProps<{
+  projectName: string
   activeSession: SessionListItem | undefined
   activeSidebarPanel: 'conversations' | 'terminal'
   databaseOpen: boolean
@@ -23,7 +24,7 @@ defineEmits<{
   <header class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center border-b border-[var(--rg-border)] bg-[var(--rg-sidebar)] px-3 text-[11px] text-[var(--rg-muted)]">
     <div class="flex min-w-0 items-center gap-2">
       <span class="text-[11px] font-bold uppercase tracking-wider text-[var(--rg-accent)]">SPECCAT</span>
-      <span class="truncate font-mono text-[11px]">/ {{ activeSession?.projectDir?.split('/').filter(Boolean).pop() || 'workspace' }}</span>
+      <span class="truncate font-mono text-[11px]">/ {{ projectName || activeSession?.projectDir?.split('/').filter(Boolean).pop() || 'workspace' }}</span>
     </div>
     <div class="flex h-full min-w-0 items-center gap-0.5 font-mono text-[11px]">
       <button class="workspace-tab" :class="activeSidebarPanel === 'conversations' && !databaseOpen ? 'workspace-tab-active' : ''" title="Chat (⌘⌥1 / Ctrl+Alt+1)" @click="$emit('openChat')">Chat</button>

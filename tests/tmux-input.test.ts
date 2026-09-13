@@ -25,6 +25,7 @@ beforeAll(async () => {
     [
       '#!/bin/sh',
       `echo "ARGS $*" >> "${logPath}"`,
+      `if [ "$1" = "paste-buffer" ] && [ -f "${join(workDir, 'fail-paste')}" ]; then exit 9; fi`,
       'if [ "$1" = "load-buffer" ]; then',
       `  { printf "STDIN "; cat; printf "\\n"; } >> "${logPath}"`,
       'fi',
@@ -65,5 +66,23 @@ describe('submitPromptTurn', () => {
     expect(args[1]).toBe(`paste-buffer -d -p -b ${bufferName} -t query-session`)
     // Enter is a separate key press, after the paste has landed.
     expect(args[2]).toBe('send-keys -t query-session Enter')
+  })
+
+  test('preserves multiline, Unicode, and leading-dash prompts exactly', async () => {
+    const prompt = '-not-an-option\nsecond line\n한글 🧱'
+    await submitPromptTurn('unicode-session', prompt)
+    const log = await readFile(logPath, 'utf8')
+    expect(log).toContain(`STDIN ${prompt}`)
+    expect(log).toContain('paste-buffer -d -p')
+  })
+
+  test('deletes the temporary buffer when paste fails and does not press Enter', async () => {
+    await writeFile(join(workDir, 'fail-paste'), '')
+    const before = await readFile(logPath, 'utf8')
+    await expect(submitPromptTurn('failed-session', 'keep me')).rejects.toThrow()
+    const calls = (await readFile(logPath, 'utf8')).slice(before.length)
+    expect(calls).toContain('ARGS delete-buffer -b code-cat-prompt-')
+    expect(calls).not.toContain('send-keys -t failed-session Enter')
+    await rm(join(workDir, 'fail-paste'))
   })
 })

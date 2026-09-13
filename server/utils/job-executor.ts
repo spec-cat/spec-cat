@@ -28,6 +28,8 @@ import { startCliHookMonitor, type CliHookMonitor } from './cli-hook-monitor'
 import { encodeClaudeProjectDir, readLastAgyAssistantMessage, readLastCodexAgentMessage } from './provider-resume'
 import { isProviderTurnComplete } from './providers/turn-completion'
 import { submitPromptTurn } from './tmux-input'
+import { captureTmuxPane, hasTmuxSession, TMUX_BIN } from './tmux'
+import { pollUntil } from './async-poll'
 import {
   createJobQueue,
   type EmitJobEvent,
@@ -37,7 +39,6 @@ import {
   type JobResult
 } from './job-queue'
 
-const TMUX_BIN = process.env.TMUX_BIN || 'tmux'
 const SCREEN_POLL_MS = 1000
 const MIN_COMPLETION_ELAPSED_MS = 3000
 const execFileAsync = promisify(execFile)
@@ -159,62 +160,27 @@ export function createTmuxJobExecutor(): JobExecutor {
  * before accepting, to avoid an instant false-positive from a screen that has
  * not started rendering the turn yet.
  */
-function pollScreenForCompletion(job: JobRecord, context: JobRunContext, signal: AbortSignal) {
-  return new Promise<void>((resolve, reject) => {
-    let timer: NodeJS.Timeout | undefined
-    let sawWorking = false
-
-    const onAbort = () => {
-      if (timer) clearTimeout(timer)
-      reject(new Error('Job aborted'))
-    }
-    signal.addEventListener('abort', onAbort, { once: true })
-
-    const settle = (fn: () => void) => {
-      signal.removeEventListener('abort', onAbort)
-      fn()
-    }
-
-    const tick = async () => {
-      if (signal.aborted) return
-      const screen = await captureScreen(context.tmuxName)
-      if (signal.aborted) return
-
+async function pollScreenForCompletion(job: JobRecord, context: JobRunContext, signal: AbortSignal) {
+  let sawWorking = false
+  await pollUntil({
+    intervalMs: SCREEN_POLL_MS,
+    signal,
+    abortedMessage: 'Job aborted',
+    check: async () => {
+      const screen = await captureTmuxPane(context.tmuxName)
       if (screen) {
         const complete = isProviderTurnComplete(job.provider, screen)
         if (!complete) {
           sawWorking = true
         } else if (sawWorking || Date.now() - context.submittedAtMs >= MIN_COMPLETION_ELAPSED_MS) {
-          return settle(resolve)
+          return true
         }
       } else if (!(await hasTmuxSession(context.tmuxName))) {
-        return settle(() => reject(new Error('tmux session died while the job was running')))
+        throw new Error('tmux session died while the job was running')
       }
-
-      timer = setTimeout(() => { void tick() }, SCREEN_POLL_MS)
-      timer.unref?.()
+      return false
     }
-
-    void tick()
   })
-}
-
-async function hasTmuxSession(tmuxName: string) {
-  try {
-    await execFileAsync(TMUX_BIN, ['has-session', '-t', tmuxName])
-    return true
-  } catch {
-    return false
-  }
-}
-
-async function captureScreen(tmuxName: string) {
-  try {
-    const { stdout } = await execFileAsync(TMUX_BIN, ['capture-pane', '-p', '-t', tmuxName])
-    return stdout
-  } catch {
-    return ''
-  }
 }
 
 function extractToolName(payload: Record<string, unknown> | null | undefined) {

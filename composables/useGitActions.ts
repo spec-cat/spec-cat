@@ -1,5 +1,6 @@
 import type { Ref } from 'vue'
 import type { GitDialogField } from '~/types/app'
+import type { GitActionId } from '~/types/git-actions'
 import { stashName } from '~/utils/app-formatters'
 
 type DialogOptions = {
@@ -10,7 +11,7 @@ type DialogOptions = {
   fields?: GitDialogField[]
 }
 type DialogResult = Record<string, string | boolean> | null
-type RunAction = (action: string, payload?: Record<string, unknown>) => Promise<boolean>
+type RunAction = (action: GitActionId, payload?: Record<string, unknown>) => Promise<boolean>
 
 export function useGitActions(options: {
   gitCommitMessage: Ref<string>
@@ -19,7 +20,7 @@ export function useGitActions(options: {
   runAction: RunAction
 }) {
   const { gitCommitMessage, selectedUncommittedChanges, openDialog, runAction } = options
-  const simple = (action: string, payload: Record<string, unknown> = {}) => runAction(action, payload)
+  const simple = (action: GitActionId, payload: Record<string, unknown> = {}) => runAction(action, payload)
   const remoteParts = (branch: string) => {
     const [remote, ...rest] = branch.split('/')
     return { remote, branch: rest.join('/') || branch }
